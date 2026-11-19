@@ -1,0 +1,1053 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T2 Coach — UI layout directions</title>
+<style>
+:root {
+  --bg: #f4f1ec;
+  --panel: #ffffff;
+  --text: #1f1d1a;
+  --muted: #6d675f;
+  --border: #ddd6cc;
+  --accent: #c2410c;
+  --accent-text: #ffffff;
+  --note: #2f2b27;
+  --note-text: #ffffff;
+  --ok: #237a35;
+  --wood: #3b2a1e;
+  --wood-dark: #2c1f16;
+  --fret: #b9b4ab;
+  --string: #d8d2c4;
+  --canvas: #e7e1d7;
+  --canvas-2: #f0ece5;
+  --wash: rgba(31, 29, 26, .055);
+  --shadow: 0 24px 60px rgba(48, 36, 24, .14);
+  --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px;
+  --space-6: 24px; --space-8: 32px; --space-12: 48px;
+}
+html[data-theme="dark"] {
+  --bg: #161412;
+  --panel: #201d1a;
+  --text: #eee9e2;
+  --muted: #a39b90;
+  --border: #3a342e;
+  --accent: #ff7a3d;
+  --accent-text: #1a0f08;
+  --note: #f1ece4;
+  --note-text: #1b1815;
+  --ok: #51cf66;
+  --canvas: #0f0d0c;
+  --canvas-2: #171513;
+  --wash: rgba(238, 233, 226, .06);
+  --shadow: 0 24px 60px rgba(0, 0, 0, .5);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background: var(--canvas);
+  color: var(--text);
+  font: 400 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+button, select, input { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.only-phone { display: none !important; }
+.page {
+  max-width: 1660px; margin: 0 auto; padding: 24px;
+  display: grid; gap: 20px;
+}
+/* ---------- Page header ---------- */
+.page-head {
+  display: flex; flex-wrap: wrap; gap: 16px 28px;
+  align-items: flex-end; justify-content: space-between;
+}
+.eyebrow {
+  margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--muted);
+}
+.page-title { margin: 6px 0 4px; font-size: clamp(26px, 3vw, 40px); font-weight: 600; line-height: 1.08; letter-spacing: -.01em; }
+.page-lede { margin: 0; max-width: 64ch; color: var(--muted); font-size: 15px; line-height: 1.55; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg {
+  display: flex; gap: 4px; padding: 4px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.seg button {
+  min-height: 36px; padding: 0 12px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted); font-size: 14px;
+}
+.seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); font-weight: 600; }
+.seg button:hover:not([aria-pressed="true"]) { background: var(--wash); color: var(--text); }
+.tool-btn {
+  min-height: 44px; padding: 0 14px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--panel); color: var(--text); font-size: 14px;
+}
+.tool-btn:hover { background: var(--wash); }
+/* ---------- Diagnosis strip ---------- */
+.diagnosis {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 8px;
+}
+.diag {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 10px; padding: 12px 14px;
+}
+.diag b { display: block; font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.diag span { display: block; font-size: 12px; line-height: 1.45; color: var(--muted); }
+/* ---------- Stage ---------- */
+.stage {
+  display: grid; grid-template-columns: minmax(0, 1fr) 360px;
+  gap: 24px; align-items: start;
+}
+.canvas {
+  min-height: 780px; padding: 28px; border-radius: 22px;
+  background: var(--canvas-2); border: 1px solid var(--border);
+  display: grid; grid-template-columns: minmax(0, 1fr); place-items: start center;
+  overflow: auto;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.35);
+}
+html[data-theme="dark"] .canvas { box-shadow: inset 0 1px 0 rgba(255,255,255,.04); }
+.mock-frame {
+  width: 100%; max-width: 1120px; overflow: hidden;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 16px; box-shadow: var(--shadow);
+  container-type: inline-size;
+}
+.canvas[data-viewport="phone"] { min-height: 840px; padding: 20px; }
+.canvas[data-viewport="phone"] .mock-frame {
+  width: 390px; max-width: 100%; border-radius: 38px;
+  border: 10px solid #1b1815; box-shadow: 0 30px 70px rgba(0,0,0,.35);
+}
+.canvas[data-viewport="phone"] .only-desktop { display: none !important; }
+.canvas[data-viewport="phone"] .only-phone { display: initial !important; }
+.canvas[data-viewport="phone"] .only-phone.flex { display: flex !important; }
+.canvas[data-viewport="phone"] .only-phone.grid { display: grid !important; }
+.canvas[data-viewport="phone"] .only-phone.block { display: block !important; }
+/* ---------- Notes ---------- */
+.notes {
+  position: sticky; top: 20px;
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px; padding: 22px;
+  display: grid; gap: 18px;
+}
+.notes h2 { margin: 0; font-size: 22px; font-weight: 600; line-height: 1.2; }
+.notes h3 {
+  margin: 0; font-size: 12px; font-weight: 600; line-height: 1.3;
+  letter-spacing: .07em; text-transform: uppercase; color: var(--muted);
+}
+.notes p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.notes ul { margin: 0; padding-left: 18px; display: grid; gap: 7px; color: var(--muted); font-size: 14px; line-height: 1.45; }
+.notes li::marker { color: var(--accent); }
+.notes .lede { color: var(--text); font-size: 15px; }
+.notes .kv { display: grid; gap: 4px; padding: 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--border); }
+.notes .kv b { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.notes .kv span { font-size: 14px; line-height: 1.5; }
+.notes .tagrow { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag {
+  font-size: 12px; font-weight: 600; padding: 3px 8px;
+  border: 1px solid var(--border); border-radius: 999px; color: var(--muted);
+}
+.tag.accent { color: var(--accent); border-color: var(--accent); }
+.rec { display: grid; gap: 6px; padding-top: 14px; border-top: 1px solid var(--border); }
+.rec strong { font-size: 14px; }
+/* ---------- Shared mock primitives ---------- */
+.mock { background: var(--bg); color: var(--text); font-size: 16px; line-height: 1.5; }
+.m-appbar {
+  min-height: 56px; display: flex; align-items: center; gap: 10px;
+  padding: 8px 16px; background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.m-brand { font-size: 20px; font-weight: 600; line-height: 1.2; margin-right: auto; white-space: nowrap; }
+.m-brand small { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 8px; }
+.m-pill {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 30px;
+  padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg); color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap;
+}
+.m-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); flex: none; }
+.m-dot.off { background: var(--muted); }
+.m-ghost {
+  min-height: 36px; padding: 0 10px; border: 1px solid transparent;
+  border-radius: 8px; background: transparent; color: var(--text); font-size: 14px;
+}
+.m-ghost:hover { background: var(--wash); }
+.m-icon {
+  width: 36px; height: 36px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--panel); color: var(--text); font-size: 16px; line-height: 1;
+}
+.m-primary {
+  min-height: 44px; padding: 0 18px; border: 1px solid var(--accent);
+  border-radius: 9px; background: var(--accent); color: var(--accent-text); font-weight: 600;
+}
+.m-secondary {
+  min-height: 44px; padding: 0 14px; border: 1px solid var(--border);
+  border-radius: 9px; background: var(--panel); color: var(--text); font-weight: 400;
+}
+.m-label {
+  font-size: 10px; font-weight: 600; line-height: 1.3; letter-spacing: .07em;
+  text-transform: uppercase; color: var(--muted);
+}
+.m-sub { font-size: 12px; line-height: 1.4; color: var(--muted); }
+.m-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.m-card {
+  display: grid; gap: 6px; padding: 12px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 10px;
+}
+/* Board */
+.b-scroll { overflow-x: auto; border-radius: 10px; background: var(--wood); box-shadow: inset -16px 0 16px -16px rgba(0,0,0,.5), inset 16px 0 16px -16px rgba(0,0,0,.5); }
+.b-grid { min-width: max-content; padding: 8px 12px 4px; }
+.b-row { display: grid; grid-template-columns: 26px repeat(var(--frets), var(--cell)); align-items: center; height: var(--row); }
+.b-string { font-size: 9px; font-weight: 600; color: #cfc6b8; text-align: center; }
+.b-cell { position: relative; height: 100%; border-right: 2px solid var(--fret); }
+.b-cell.marker::after {
+  content: ""; position: absolute; left: 50%; bottom: 4px;
+  width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,.22);
+  transform: translateX(-50%);
+}
+.b-note {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: var(--dot); height: var(--dot); border-radius: 50%;
+  display: grid; place-items: center; background: var(--note); color: var(--note-text);
+  font-size: 10px; font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,.45); z-index: 2;
+}
+.b-note.root { background: var(--accent); color: var(--accent-text); }
+.b-note.target {
+  outline: 3px solid #fff; outline-offset: 2px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.35), 0 0 22px rgba(255, 122, 61, .55);
+}
+.b-frets { display: grid; grid-template-columns: 26px repeat(var(--frets), var(--cell)); padding-top: 2px; }
+.b-fret { font-size: 9px; color: #cfc6b8; text-align: center; font-variant-numeric: tabular-nums; }
+/* ---------- Concept A: split studio ---------- */
+.mock-a { display: flex; flex-direction: column; min-height: 660px; }
+.a-workspace { display: grid; grid-template-columns: 208px minmax(0, 1fr) 300px; flex: 1; }
+.a-library {
+  display: grid; gap: 14px; align-content: start;
+  padding: 16px; border-right: 1px solid var(--border); background: var(--panel);
+}
+.a-lib-tabs { display: grid; gap: 2px; }
+.a-lib-tab {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 8px 10px; border-radius: 8px; font-size: 14px; color: var(--muted); text-align: left;
+}
+.a-lib-tab.active { background: var(--bg); color: var(--text); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
+.a-field { display: grid; gap: 4px; }
+.a-select {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 34px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--panel); font-size: 13px;
+}
+.a-select span:last-child { color: var(--muted); font-size: 10px; }
+.a-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.a-chip {
+  min-width: 30px; padding: 4px 5px; text-align: center; border: 1px solid var(--border);
+  border-radius: 6px; font-size: 12px; font-weight: 600;
+}
+.a-chip.root { border-color: var(--accent); color: var(--accent); }
+.a-libfoot { margin-top: auto; padding-top: 12px; border-top: 1px solid var(--border); display: grid; gap: 4px; }
+.a-boardzone { display: grid; gap: 12px; align-content: start; padding: 16px 18px; min-width: 0; }
+.a-zonehead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+.a-title { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.a-transport {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 10px; border: 1px solid var(--border); border-radius: 12px;
+  background: var(--panel);
+}
+.a-tempo { display: flex; align-items: center; gap: 2px; padding: 2px; border: 1px solid var(--border); border-radius: 8px; }
+.a-tempo button { width: 26px; height: 30px; border: 0; background: transparent; color: var(--muted); }
+.a-tempo b { min-width: 34px; text-align: center; font-size: 14px; font-variant-numeric: tabular-nums; }
+.a-beats { display: flex; gap: 5px; align-items: center; }
+.a-beat { width: 8px; height: 8px; border-radius: 50%; background: var(--border); }
+.a-beat.on { background: var(--accent); }
+.a-progress { flex: 1 1 60px; height: 2px; background: var(--border); position: relative; border-radius: 2px; overflow: hidden; }
+.a-progress::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 34%; background: var(--accent); }
+.a-hintline { display: flex; gap: 6px; align-items: center; font-size: 10px; color: var(--muted); white-space: nowrap; }
+.a-pips { display: flex; gap: 3px; }
+.a-pip { width: 7px; height: 7px; border-radius: 50%; background: var(--border); }
+.a-pip.on { background: var(--accent); }
+.a-feedback { font-size: 12px; color: var(--muted); }
+.a-coach {
+  display: grid; gap: 10px; align-content: start;
+  padding: 14px; border-left: 1px solid var(--border); background: var(--panel);
+}
+.a-drill {
+  display: flex; align-items: center; justify-content: space-between;
+  min-height: 36px; padding: 0 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg); font-size: 13px; font-weight: 600;
+}
+.a-hintcard { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; display: grid; gap: 6px; }
+.a-hintcard .a-hintline { font-size: 10px; }
+.a-hinttitle { display: flex; gap: 6px; align-items: center; font-size: 13px; font-weight: 600; }
+.a-criteria { font-size: 11px; line-height: 1.4; color: var(--muted); margin: 0; }
+.a-next { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: end; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); }
+.a-nextnote { font-size: 36px; font-weight: 600; line-height: 1; color: var(--accent); }
+.a-nextmeta { font-size: 11px; line-height: 1.4; color: var(--muted); }
+.a-nextbar { grid-column: 1 / -1; height: 2px; background: var(--border); position: relative; border-radius: 2px; overflow: hidden; }
+.a-nextbar::after { content: ""; position: absolute; inset: 0 auto 0 0; width: 62%; background: var(--accent); }
+.a-session { display: grid; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); box-shadow: inset 3px 0 0 var(--accent); }
+.a-session b { font-size: 15px; font-weight: 600; }
+.a-band { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 10px; border: 1px solid var(--border); border-radius: 9px; font-size: 12px; color: var(--muted); background: var(--panel); }
+.a-band b { color: var(--text); font-weight: 600; }
+.a-learn { min-height: 36px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); font-size: 13px; }
+.a-phonehead { display: none; }
+.a-phonedock { display: none; }
+.a-sheet { display: none; }
+/* A phone */
+.canvas[data-viewport="phone"] .mock-a { min-height: 700px; }
+.canvas[data-viewport="phone"] .a-workspace { display: block; order: 1; }
+.canvas[data-viewport="phone"] .a-sheet { order: 2; }
+.canvas[data-viewport="phone"] .a-phonedock { order: 3; }
+.canvas[data-viewport="phone"] .a-library, .canvas[data-viewport="phone"] .a-coach { display: none; }
+.canvas[data-viewport="phone"] .a-boardzone { padding: 12px 12px 0; gap: 10px; }
+.canvas[data-viewport="phone"] .a-zonehead { align-items: center; }
+.canvas[data-viewport="phone"] .a-title { font-size: 17px; }
+.canvas[data-viewport="phone"] .a-transport { display: none; }
+.canvas[data-viewport="phone"] .a-phonedock {
+  display: grid; grid-template-columns: 1fr auto auto; gap: 8px; align-items: center;
+  padding: 10px 12px 14px; margin-top: auto; background: var(--panel); border-top: 1px solid var(--border);
+}
+.canvas[data-viewport="phone"] .a-sheet {
+  display: grid; gap: 6px; padding: 10px 12px 12px; border-top: 1px solid var(--border);
+  background: var(--panel);
+}
+.a-handle { width: 36px; height: 4px; border-radius: 2px; background: var(--border); justify-self: center; margin-bottom: 2px; }
+/* ---------- Concept B: focus stage ---------- */
+.mock-b { display: flex; flex-direction: column; min-height: 680px; position: relative; }
+.b-topbar {
+  display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.b-title { display: grid; gap: 1px; margin-right: auto; }
+.b-title b { font-size: 15px; font-weight: 600; line-height: 1.2; }
+.b-title span { font-size: 11px; color: var(--muted); }
+.b-stage {
+  flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) 190px;
+  gap: 26px; padding: 22px 24px; align-content: start;
+}
+.b-boardwrap { display: grid; gap: 10px; min-width: 0; }
+.b-boardtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.b-target {
+  display: inline-flex; align-items: center; gap: 8px; align-self: start;
+  padding: 5px 11px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); font-size: 12px; color: var(--muted);
+}
+.b-target b { font-size: 14px; color: var(--accent); }
+.b-levelrail { display: grid; gap: 6px; align-content: start; }
+.b-level {
+  display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start;
+  padding: 7px 8px; border-radius: 8px; color: var(--muted); font-size: 11px; line-height: 1.35;
+}
+.b-level.active { background: var(--panel); border: 1px solid var(--border); box-shadow: inset 3px 0 0 var(--accent); color: var(--text); }
+.b-levelnum { font-size: 10px; font-weight: 600; color: var(--muted); text-align: center; padding-top: 1px; }
+.b-level.active .b-levelnum { color: var(--accent); }
+.b-level b { display: block; font-size: 12px; font-weight: 600; color: inherit; }
+.b-why { margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); font-size: 11px; line-height: 1.5; color: var(--muted); }
+.b-dock {
+  display: flex; align-items: center; gap: 14px; padding: 12px 20px;
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+.b-dockgroup { display: flex; align-items: center; gap: 8px; }
+.b-pause {
+  width: 62px; height: 62px; border-radius: 50%; border: 0;
+  background: var(--accent); color: var(--accent-text); font-weight: 600; font-size: 14px;
+  margin: 0 auto; flex: none; box-shadow: 0 6px 18px rgba(194,65,12,.28);
+}
+.b-dockright { display: grid; gap: 4px; min-width: 96px; }
+.b-progressline { height: 2px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.b-progressline::after { content: ""; display: block; width: 38%; height: 100%; background: var(--accent); }
+.b-review {
+  display: none; position: absolute; inset: 0; z-index: 8;
+  place-items: center; padding: 24px;
+  background: color-mix(in srgb, var(--bg) 68%, transparent);
+  backdrop-filter: blur(3px);
+}
+.mock-b[data-state="review"] .b-review { display: grid; }
+.b-reviewcard {
+  width: min(520px, 100%); display: grid; gap: 12px; padding: 20px;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0,0,0,.22);
+}
+.b-reviewcard h3 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2; }
+.b-reviewcard p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.b-reviewstats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.b-reviewstat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; }
+.b-reviewstat b { display: block; font-size: 18px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.b-reviewstat span { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.b-reviewactions { display: flex; gap: 8px; flex-wrap: wrap; }
+.b-reviewactions .m-primary { flex: 1 1 auto; }
+/* B phone */
+.canvas[data-viewport="phone"] .mock-b { min-height: 700px; }
+.canvas[data-viewport="phone"] .b-topbar { padding: 8px 12px; }
+.canvas[data-viewport="phone"] .b-title span { display: none; }
+.canvas[data-viewport="phone"] .b-stage { display: block; padding: 12px; }
+.canvas[data-viewport="phone"] .b-levelrail {
+  grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 10px;
+}
+.canvas[data-viewport="phone"] .b-level { grid-template-columns: 1fr; gap: 2px; padding: 6px; text-align: center; }
+.canvas[data-viewport="phone"] .b-level b { font-size: 10px; }
+.canvas[data-viewport="phone"] .b-levelnum { display: none; }
+.canvas[data-viewport="phone"] .b-why { display: none; }
+.canvas[data-viewport="phone"] .b-dock { gap: 8px; padding: 10px 12px 14px; }
+.canvas[data-viewport="phone"] .b-pause { width: 56px; height: 56px; }
+.canvas[data-viewport="phone"] .b-dockgroup .a-tempo { display: flex; }
+.canvas[data-viewport="phone"] .b-dockright { min-width: 74px; }
+.canvas[data-viewport="phone"] .b-reviewcard { padding: 16px; }
+/* ---------- Concept C: today ---------- */
+.mock-c { display: flex; flex-direction: column; min-height: 700px; }
+.c-main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 22px; padding: 22px; flex: 1; align-content: start; }
+.c-left { display: grid; gap: 18px; align-content: start; }
+.c-hero { display: grid; gap: 14px; }
+.c-date { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.c-hero h2 { margin: 0; font-size: 40px; font-weight: 600; line-height: 1.05; letter-spacing: -.02em; }
+.c-hero p { margin: 0; font-size: 14px; color: var(--muted); }
+.c-hero .m-row { margin-top: 2px; }
+.c-timeline {
+  display: grid; grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px; position: relative; padding-top: 12px;
+}
+.c-timeline::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 4px; height: 1px; background: var(--border);
+}
+.c-block { display: grid; gap: 3px; padding-top: 8px; border-top: 3px solid var(--border); position: relative; }
+.c-block.active { border-color: var(--accent); }
+.c-block.active::before {
+  content: ""; position: absolute; top: -7px; left: 0; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--bg);
+}
+.c-blocknum { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.c-blockname { font-size: 13px; font-weight: 600; line-height: 1.3; }
+.c-blockmin { font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.c-blockreason { font-size: 10px; line-height: 1.35; color: var(--muted); }
+.c-lower { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 12px; }
+.c-focus { display: grid; grid-template-columns: 212px 1fr; gap: 12px; align-items: center; padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); }
+.c-focuscopy { display: grid; gap: 4px; }
+.c-focuscopy b { font-size: 15px; font-weight: 600; }
+.c-week { padding: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--panel); display: grid; gap: 8px; }
+.c-weekbars { display: flex; gap: 4px; align-items: flex-end; height: 64px; }
+.c-weekbar { flex: 1; background: color-mix(in srgb, var(--muted) 22%, transparent); border-radius: 2px 2px 0 0; }
+.c-weekbar.accent { background: var(--accent); }
+.c-weeklabels { display: flex; justify-content: space-between; font-size: 9px; color: var(--muted); }
+.c-rail { display: grid; gap: 12px; align-content: start; }
+.c-statgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.c-stat { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); display: grid; gap: 2px; }
+.c-stat b { font-size: 20px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.c-stat span { font-size: 10px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.c-due { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); display: grid; gap: 8px; }
+.c-duehead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.c-duehead b { font-size: 13px; font-weight: 600; }
+.c-dueitem { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; padding: 7px 0; border-top: 1px solid var(--border); }
+.c-dueitem span { color: var(--muted); }
+.c-free { padding: 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); display: grid; gap: 8px; }
+.c-free .m-row { gap: 4px; }
+.c-chip { min-height: 30px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg); font-size: 11px; color: var(--text); }
+.c-sticky { display: none; }
+/* C phone */
+.canvas[data-viewport="phone"] .mock-c { height: 860px; min-height: 860px; overflow: hidden; position: relative; }
+.canvas[data-viewport="phone"] .c-main { display: block; padding: 14px 12px 118px; height: 100%; overflow-y: auto; }
+.canvas[data-viewport="phone"] .c-left { gap: 14px; }
+.canvas[data-viewport="phone"] .c-hero h2 { font-size: 32px; }
+.canvas[data-viewport="phone"] .c-hero .m-row { display: none; }
+.canvas[data-viewport="phone"] .c-timeline { grid-template-columns: 1fr; gap: 0; padding-top: 4px; }
+.canvas[data-viewport="phone"] .c-timeline::before { display: none; }
+.canvas[data-viewport="phone"] .c-block { grid-template-columns: 24px 1fr auto; gap: 2px 8px; align-items: center; border-top: 0; border-left: 2px solid var(--border); padding: 7px 0 7px 10px; }
+.canvas[data-viewport="phone"] .c-block.active { border-left-color: var(--accent); }
+.canvas[data-viewport="phone"] .c-block.active::before { top: 12px; left: -5px; }
+.canvas[data-viewport="phone"] .c-blockreason { grid-column: 2 / -1; }
+.canvas[data-viewport="phone"] .c-blockmin { grid-column: 3; grid-row: 1; }
+.canvas[data-viewport="phone"] .c-lower { grid-template-columns: 1fr; }
+.canvas[data-viewport="phone"] .c-focus { grid-template-columns: 1fr; }
+.canvas[data-viewport="phone"] .c-rail { display: none; }
+.canvas[data-viewport="phone"] .c-sticky {
+  position: absolute; left: 0; right: 0; bottom: 0; z-index: 6;
+  display: grid; gap: 8px; padding: 10px 12px 14px;
+  background: var(--panel); border-top: 1px solid var(--border);
+}
+/* ---------- Narrow page ---------- */
+/* The mock degrades with the available width: the rail goes first, then the coach. */
+@media (max-width: 1180px) {
+  .a-workspace { grid-template-columns: minmax(0, 1fr) 280px; }
+  .a-library { display: none; }
+  .c-main { grid-template-columns: minmax(0, 1fr) 260px; }
+}
+@media (max-width: 980px) {
+  .a-workspace { grid-template-columns: 1fr; }
+  .a-coach { display: none; }
+  .b-stage { grid-template-columns: 1fr; }
+  .b-levelrail { display: none; }
+  .c-main { grid-template-columns: 1fr; }
+  .c-rail { display: none; }
+}
+.verdict {
+  display: grid; grid-template-columns: 1.15fr 1fr 1fr; gap: 24px;
+  padding: 24px; background: var(--panel); border: 1px solid var(--border);
+  border-radius: 16px;
+}
+.verdict h2 { margin: 6px 0 0; font-size: 24px; font-weight: 600; line-height: 1.2; letter-spacing: -.01em; }
+.verdict p { margin: 8px 0 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.verdict ol { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 6px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+.verdict li::marker { color: var(--accent); font-weight: 600; }
+.verdict .keep { display: grid; gap: 8px; align-content: start; }
+.verdict .keep span { font-size: 13px; color: var(--muted); line-height: 1.5; }
+.verdict .keep b { color: var(--text); font-weight: 600; }
+@media (max-width: 1180px) {
+  .stage { grid-template-columns: 1fr; }
+  .notes { position: static; }
+  .verdict { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 720px) {
+  .page { padding: 16px; }
+  .canvas { padding: 14px; }
+  .canvas[data-viewport="phone"] { padding: 12px; }
+  .mock-frame { border-radius: 12px; }
+  .diagnosis { grid-template-columns: 1fr 1fr; }
+  .verdict { grid-template-columns: 1fr; }
+}
+@media (max-width: 460px) {
+  .diagnosis { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">T2 Coach · design study</p>
+      <h1 class="page-title">Three layout directions for practice</h1>
+      <p class="page-lede">The current shell is one long column: an eight-control header, setup above the board, the transport below it, and every panel pushing the page down. These directions keep the identity and the tokens, but move the board to the center and the primary action into reach.</p>
+    </div>
+    <div class="toolbar">
+      <div class="seg" id="conceptTabs" aria-label="Layout direction">
+        <button type="button" data-concept="a" aria-pressed="true">Split studio</button>
+        <button type="button" data-concept="b" aria-pressed="false">Focus stage</button>
+        <button type="button" data-concept="c" aria-pressed="false">Today flow</button>
+      </div>
+      <div class="seg" id="viewportTabs" aria-label="Preview width">
+        <button type="button" data-viewport="desktop" aria-pressed="true">Desktop</button>
+        <button type="button" data-viewport="phone" aria-pressed="false">Phone</button>
+      </div>
+      <button type="button" class="tool-btn" id="stateToggle" hidden>Show pass review</button>
+      <button type="button" class="tool-btn" id="themeToggle">Dark mode</button>
+    </div>
+  </header>
+
+  <section class="diagnosis" aria-label="Current layout issues">
+    <div class="diag"><b>Header overload</b><span>Eight controls compete with the drill: connect, Session, Progress, Stage, Lights, Mic, Calibrate.</span></div>
+    <div class="diag"><b>Setup above the board</b><span>Tabs, four selects and chips sit between the top of the page and the thing you are practising.</span></div>
+    <div class="diag"><b>Board and action apart</b><span>Start drill lives below the board inside a nine-button transport row. On a phone it is mid-page.</span></div>
+    <div class="diag"><b>Panels push the page</b><span>Session, Progress, Calibration and Learn expand above main, moving the board and losing your place.</span></div>
+    <div class="diag"><b>Flat hierarchy</b><span>Family picker, hint strip, chart, transport and setup all read at one weight; the eye has no first stop.</span></div>
+  </section>
+
+  <div class="stage">
+    <div class="canvas" id="canvas" data-viewport="desktop">
+      <!-- ================= CONCEPT A ================= -->
+      <div class="mock mock-a" id="mockA">
+        <header class="m-appbar">
+          <div class="m-brand">T2 Coach</div>
+          <span class="m-pill"><span class="m-dot"></span>Connected · 82%</span>
+          <span class="m-pill">3 due</span>
+          <button type="button" class="m-icon" aria-label="More">⋯</button>
+        </header>
+        <div class="a-workspace">
+          <aside class="a-library">
+            <p class="m-label">Library</p>
+            <nav class="a-lib-tabs" aria-label="Content">
+              <button type="button" class="a-lib-tab active">Scales <span>›</span></button>
+              <button type="button" class="a-lib-tab">Chords <span>›</span></button>
+              <button type="button" class="a-lib-tab">Progressions <span>›</span></button>
+              <button type="button" class="a-lib-tab">Songs <span>›</span></button>
+            </nav>
+            <div class="a-field"><span class="m-label">Key</span><div class="a-select">A minor <span>⌄</span></div></div>
+            <div class="a-field"><span class="m-label">Scale</span><div class="a-select">Minor pentatonic <span>⌄</span></div></div>
+            <div class="a-field"><span class="m-label">Position</span><div class="a-select">Position 1 <span>⌄</span></div></div>
+            <div class="a-field"><span class="m-label">Labels</span><div class="a-select">Note names <span>⌄</span></div></div>
+            <div class="a-chips" aria-label="Scale notes">
+              <span class="a-chip root">A</span><span class="a-chip">C</span><span class="a-chip">D</span><span class="a-chip">E</span><span class="a-chip">G</span>
+            </div>
+            <div class="a-libfoot">
+              <span class="m-label">Today</span>
+              <span class="m-sub">3 skills due · 4-day streak</span>
+              <span class="m-sub">38 min practised this week</span>
+            </div>
+          </aside>
+
+          <section class="a-boardzone">
+            <div class="a-zonehead">
+              <div>
+                <div class="a-title">A minor pentatonic</div>
+                <div class="m-sub">Position 1 · 70 BPM · Level 1 of 4</div>
+              </div>
+              <span class="m-pill"><span class="m-dot"></span>Lights on</span>
+            </div>
+            <div class="b-scroll" aria-label="Fretboard preview 1">
+              <div data-board data-frets="13" style="--frets:13; --cell:40px; --row:38px; --dot:28px"></div>
+            </div>
+            <div class="a-hintcard only-phone grid">
+              <div class="a-hinttitle"><span class="a-pips"><span class="a-pip on"></span><span class="a-pip"></span><span class="a-pip"></span><span class="a-pip"></span></span>Level 1 of 4 · Full pattern</div>
+              <p class="a-criteria">3 clean passes to remove a hint · 2 failed passes to bring one back.</p>
+            </div>
+            <div class="a-transport">
+              <button type="button" class="m-primary">Start drill</button>
+              <div class="a-tempo" aria-label="Tempo">
+                <button type="button">−</button><b>70</b><button type="button">+</button>
+              </div>
+              <div class="a-beats" aria-hidden="true"><span class="a-beat on"></span><span class="a-beat"></span><span class="a-beat"></span><span class="a-beat"></span></div>
+              <div class="a-hintline"><span class="a-pips"><span class="a-pip on"></span><span class="a-pip"></span><span class="a-pip"></span><span class="a-pip"></span></span>Full pattern</div>
+              <div class="a-progress" aria-hidden="true"></div>
+            </div>
+            <div class="a-feedback">Ready — press Start drill.</div>
+          </section>
+
+          <aside class="a-coach">
+            <div class="a-field">
+              <span class="m-label">Drill family</span>
+              <div class="a-drill">Scale run <span>⌄</span></div>
+            </div>
+            <div class="a-hintcard">
+              <div class="a-hinttitle"><span class="a-pips"><span class="a-pip on"></span><span class="a-pip"></span><span class="a-pip"></span><span class="a-pip"></span></span>Level 1 of 4</div>
+              <b>Full pattern</b>
+              <p class="a-criteria">3 clean passes to remove a hint · 2 failed passes to bring one back.</p>
+            </div>
+            <div class="a-next">
+              <div>
+                <span class="m-label">Next</span>
+                <div class="a-nextnote">C</div>
+              </div>
+              <div class="a-nextmeta">string 3<br>fret 5</div>
+              <div class="a-nextbar" aria-hidden="true"></div>
+            </div>
+            <div class="a-session">
+              <span class="m-label">Session · block 2 of 5</span>
+              <b>Focus · 3 min</b>
+              <span class="m-sub">Your lowest clean rate at this position.</span>
+            </div>
+            <div class="a-band"><span>Band &amp; mic</span><span><b>Full band</b> · Mic off</span></div>
+            <button type="button" class="a-learn">Learn this drill</button>
+          </aside>
+        </div>
+
+        <div class="a-phonedock">
+          <button type="button" class="m-primary">Start drill</button>
+          <div class="a-tempo"><button type="button">−</button><b>70</b><button type="button">+</button></div>
+          <button type="button" class="m-secondary">Details</button>
+        </div>
+        <div class="a-sheet only-phone grid">
+          <span class="a-handle" aria-hidden="true"></span>
+          <div class="m-row" style="justify-content:space-between"><span class="m-label">Next · C · string 3 fret 5</span><span class="m-sub">Level 1 · Full pattern</span></div>
+          <div class="a-progress" aria-hidden="true"></div>
+        </div>
+      </div>
+
+      <!-- ================= CONCEPT B ================= -->
+      <div class="mock mock-b" id="mockB" data-state="live" hidden>
+        <header class="b-topbar">
+          <button type="button" class="m-ghost">← Exit</button>
+          <div class="b-title"><b>Scale run</b><span>A minor pentatonic · Position 1</span></div>
+          <span class="m-pill">Block 2 of 5</span>
+          <span class="m-pill only-desktop"><span class="m-dot"></span>Connected</span>
+          <button type="button" class="m-icon" aria-label="More">⋯</button>
+        </header>
+        <div class="b-stage">
+          <div class="b-boardwrap">
+            <div class="b-boardtop">
+              <span class="b-target">Next <b>C</b> string 3 · fret 5</span>
+              <span class="a-hintline only-desktop"><span class="a-pips"><span class="a-pip on"></span><span class="a-pip"></span><span class="a-pip"></span><span class="a-pip"></span></span>Pass 1 of 4</span>
+            </div>
+            <div class="b-scroll" aria-label="Fretboard preview 2">
+              <div data-board data-frets="13" style="--frets:13; --cell:52px; --row:48px; --dot:36px"></div>
+            </div>
+          </div>
+          <aside class="b-levelrail">
+            <div class="b-level active"><span class="b-levelnum">1</span><span><b>Full pattern</b>Every note, labelled.</span></div>
+            <div class="b-level"><span class="b-levelnum">2</span><span><b>Anchors</b>Roots only.</span></div>
+            <div class="b-level"><span class="b-levelnum">3</span><span><b>Hint on demand</b>Ask when stuck.</span></div>
+            <div class="b-level"><span class="b-levelnum">4</span><span><b>No lights</b>Recall, unaided.</span></div>
+            <p class="b-why"><strong>Why this block:</strong> your lowest clean rate at this position is 58%. Three clean passes move you to Anchors.</p>
+          </aside>
+        </div>
+        <div class="b-dock">
+          <div class="b-dockgroup only-desktop">
+            <div class="a-tempo"><button type="button">−</button><b>70</b><button type="button">+</button></div>
+          </div>
+          <button type="button" class="m-secondary only-desktop">Hint</button>
+          <button type="button" class="b-pause">Pause</button>
+          <div class="b-dockright">
+            <span class="m-label">Pass 1 of 4</span>
+            <div class="b-progressline" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="b-review">
+          <div class="b-reviewcard">
+            <p class="m-label">Pass review</p>
+            <h3>Pass 1 of 4 complete</h3>
+            <p>32 of 32 notes · 70 BPM · Hints: Full pattern</p>
+            <div class="b-reviewstats">
+              <div class="b-reviewstat"><b>32</b><span>Notes</span></div>
+              <div class="b-reviewstat"><b>0</b><span>Missed</span></div>
+              <div class="b-reviewstat"><b>58%</b><span>Clean rate</span></div>
+            </div>
+            <p>Clean means you kept the tempo and made no obvious mistakes.</p>
+            <div class="b-reviewactions">
+              <button type="button" class="m-primary">Next pass</button>
+              <button type="button" class="m-secondary">End drill</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ================= CONCEPT C ================= -->
+      <div class="mock mock-c" id="mockC" hidden>
+        <header class="m-appbar">
+          <div class="m-brand">T2 Coach</div>
+          <span class="m-pill"><span class="m-dot"></span>Connected</span>
+          <button type="button" class="m-ghost">Progress</button>
+          <button type="button" class="m-icon" aria-label="More">⋯</button>
+        </header>
+        <div class="c-main">
+          <div class="c-left">
+            <section class="c-hero">
+              <span class="c-date">Wednesday 10 November</span>
+              <h2>Today's practice</h2>
+              <p>13 minutes · five blocks · 2 no-light passes</p>
+              <div class="m-row">
+                <button type="button" class="m-primary">Start session</button>
+                <button type="button" class="m-secondary">Practise anything</button>
+              </div>
+            </section>
+            <section class="c-timeline" aria-label="Session plan">
+              <div class="c-block">
+                <span class="c-blocknum">01</span><span class="c-blockname">Warm-up</span><span class="c-blockmin">2 min</span>
+                <span class="c-blockreason">The position you last played.</span>
+              </div>
+              <div class="c-block active">
+                <span class="c-blocknum">02</span><span class="c-blockname">Focus</span><span class="c-blockmin">3 min</span>
+                <span class="c-blockreason">Lowest clean rate: A minor pentatonic.</span>
+              </div>
+              <div class="c-block">
+                <span class="c-blocknum">03</span><span class="c-blockname">New material</span><span class="c-blockmin">3 min</span>
+                <span class="c-blockreason">Oldest unplayed skill: C major, position 2.</span>
+              </div>
+              <div class="c-block">
+                <span class="c-blocknum">04</span><span class="c-blockname">Play-along</span><span class="c-blockmin">3 min</span>
+                <span class="c-blockreason">Weakest pair: C → G, 62% clean.</span>
+              </div>
+              <div class="c-block">
+                <span class="c-blocknum">05</span><span class="c-blockname">Recall</span><span class="c-blockmin">2 min</span>
+                <span class="c-blockreason">The focus skill, no lights.</span>
+              </div>
+            </section>
+            <div class="c-lower">
+              <section class="c-focus">
+                <div class="b-scroll" aria-label="Fretboard preview 3">
+                  <div data-board data-frets="9" style="--frets:9; --cell:18px; --row:20px; --dot:13px"></div>
+                </div>
+                <div class="c-focuscopy">
+                  <span class="m-label">Focus today</span>
+                  <b>A minor pentatonic · Position 1</b>
+                  <span class="m-sub">Due now · clean rate 58% · best 74 BPM</span>
+                  <button type="button" class="m-secondary" style="justify-self:start; min-height:34px">Preview the drill</button>
+                </div>
+              </section>
+              <section class="c-week">
+                <div class="m-row" style="justify-content:space-between"><span class="m-label">This week</span><span class="m-sub">2h 14m</span></div>
+                <div class="c-weekbars" aria-hidden="true">
+                  <span class="c-weekbar" style="height:34%"></span>
+                  <span class="c-weekbar" style="height:58%"></span>
+                  <span class="c-weekbar accent" style="height:76%"></span>
+                  <span class="c-weekbar" style="height:42%"></span>
+                  <span class="c-weekbar" style="height:64%"></span>
+                  <span class="c-weekbar accent" style="height:48%"></span>
+                  <span class="c-weekbar" style="height:22%"></span>
+                </div>
+                <div class="c-weeklabels"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div>
+              </section>
+            </div>
+          </div>
+          <aside class="c-rail">
+            <div class="c-statgrid">
+              <div class="c-stat"><b>4 days</b><span>Streak</span></div>
+              <div class="c-stat"><b>38 min</b><span>Practised</span></div>
+              <div class="c-stat"><b>9 min</b><span>Unguided</span></div>
+              <div class="c-stat"><b>3</b><span>Due now</span></div>
+            </div>
+            <div class="c-due">
+              <div class="c-duehead"><b>Due now</b><span class="m-sub">Weakest first</span></div>
+              <div class="c-dueitem"><span>A minor pentatonic · Position 1</span><span>58%</span></div>
+              <div class="c-dueitem"><span>Note finding · C major</span><span>64%</span></div>
+              <div class="c-dueitem"><span>Chord changes · C → G</span><span>62%</span></div>
+              <button type="button" class="m-secondary" style="min-height:34px">Open Progress</button>
+            </div>
+            <div class="c-free">
+              <div class="c-duehead"><b>Practise anything</b><span class="m-sub">Free choice</span></div>
+              <div class="m-row">
+                <button type="button" class="c-chip">Scale run</button>
+                <button type="button" class="c-chip">Find the note</button>
+                <button type="button" class="c-chip">Chord changes</button>
+                <button type="button" class="c-chip">Progression</button>
+                <button type="button" class="c-chip">Song</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+        <div class="c-sticky">
+          <button type="button" class="m-primary">Start session · 13 min</button>
+          <button type="button" class="m-secondary">Practise anything</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= NOTES ================= -->
+    <aside class="notes" aria-live="polite">
+      <div class="tagrow">
+        <span class="tag accent" id="noteTag">Direction A</span>
+        <span class="tag" id="noteTag2">Desktop-first</span>
+      </div>
+      <h2 id="noteTitle">Split studio</h2>
+      <p class="lede" id="noteLede">Three working lanes: browse on the left, the board in the middle, and everything that explains or controls the pass in a persistent coach rail.</p>
+      <div class="kv">
+        <b>Structural change</b>
+        <span id="noteChange">The single column becomes a three-zone workspace, and the transport sits directly under the board instead of below a stack of setup rows.</span>
+      </div>
+      <div>
+        <h3>What moves</h3>
+        <ul id="noteMoves">
+          <li>The header keeps the brand, connection state, due count and a menu. Stage, lights, mic, calibration and Progress move into the menu.</li>
+          <li>Tabs and content selectors become a library rail; scale chips stay with the library, not above the board.</li>
+          <li>The board owns the center; Start/Pause and tempo sit in a transport bar attached to it.</li>
+          <li>The family picker, hint strip, next target, session block and Learn move into the right rail.</li>
+          <li>Progress, Session, Calibration and Learn open in the rail slot, so the board never moves.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Responsive</h3>
+        <ul id="noteResponsive">
+          <li>The library and coach rails disappear below 900px; a compact top bar and a bottom dock take over.</li>
+          <li>The board scrolls horizontally inside its own frame; the page never scrolls sideways.</li>
+          <li>Details and setup open as a bottom sheet over the board, not as new page height.</li>
+        </ul>
+      </div>
+      <div>
+        <h3>Tradeoff</h3>
+        <p id="noteTradeoff">The rail is excellent at 1280px and wider. On a tablet it has to collapse; on a phone it becomes a sheet, so the layout has two real modes to maintain.</p>
+      </div>
+      <div class="rec">
+        <strong>Use it for</strong>
+        <p id="noteUse">A desktop practice session where you want setup, guidance and the next target visible without scrolling away from the neck.</p>
+      </div>
+    </aside>
+  </div>
+
+  <section class="verdict" aria-label="Recommendation">
+    <div>
+      <p class="eyebrow">Recommendation</p>
+      <h2>Ship Today as the home, Focus stage as the drill, and the split studio from 1024px up.</h2>
+      <p>The three directions are not three competing skins. Today answers “what should I do now”; Focus stage answers “let me play”; the split studio is what Focus becomes when there is room for context beside the neck.</p>
+    </div>
+    <div>
+      <p class="eyebrow">First five moves</p>
+      <ol>
+        <li>Cut the header to brand, status, due count and menu.</li>
+        <li>Put the board before setup; move setup into a library rail or sheet.</li>
+        <li>Attach the transport to the board and make one action filled.</li>
+        <li>Turn Session, Progress, Calibration and Learn into drawers, not page height.</li>
+        <li>Add a dedicated practice route with a bottom-docked transport.</li>
+      </ol>
+    </div>
+    <div class="keep">
+      <p class="eyebrow">Do not lose</p>
+      <span><b>The warm paper/wood identity.</b> The accent stays reserved for the primary action and the root note.</span>
+      <span><b>The four-level ladder.</b> Hints, pass review and the no-light pass remain exactly where they are conceptually.</span>
+      <span><b>Screen-only work.</b> Every drill still runs with no guitar and no mic; the new layout must not make hardware feel required.</span>
+    </div>
+  </section>
+</div>
+
+<script>
+const SCALE_DOTS = [
+  { s: 6, f: 5, note: 'A', root: true }, { s: 6, f: 8, note: 'C' },
+  { s: 5, f: 5, note: 'D' }, { s: 5, f: 7, note: 'E' },
+  { s: 4, f: 5, note: 'G' }, { s: 4, f: 7, note: 'A', root: true },
+  { s: 3, f: 5, note: 'C' }, { s: 3, f: 7, note: 'D' },
+  { s: 2, f: 5, note: 'E' }, { s: 2, f: 8, note: 'G' },
+  { s: 1, f: 5, note: 'A', root: true }, { s: 1, f: 8, note: 'C' },
+];
+const TARGET = { s: 3, f: 5 };
+const STRINGS = ['E', 'B', 'G', 'D', 'A', 'E'];
+
+function renderBoard(host) {
+  const frets = Number(host.dataset.frets || 13);
+  const grid = document.createElement('div');
+  grid.className = 'b-grid';
+  for (let s = 1; s <= 6; s++) {
+    const row = document.createElement('div');
+    row.className = 'b-row';
+    const label = document.createElement('span');
+    label.className = 'b-string';
+    label.textContent = STRINGS[s - 1];
+    row.append(label);
+    for (let f = 1; f <= frets; f++) {
+      const cell = document.createElement('span');
+      cell.className = 'b-cell';
+      if ([3, 5, 7, 9, 12].includes(f)) cell.classList.add('marker');
+      const dot = SCALE_DOTS.find(n => n.s === s && n.f === f);
+      if (dot) {
+        const note = document.createElement('span');
+        note.className = 'b-note' + (dot.root ? ' root' : '') + (TARGET.s === s && TARGET.f === f ? ' target' : '');
+        note.textContent = dot.note;
+        cell.append(note);
+      }
+      row.append(cell);
+    }
+    grid.append(row);
+  }
+  const fretsRow = document.createElement('div');
+  fretsRow.className = 'b-frets';
+  fretsRow.append(document.createElement('span'));
+  for (let f = 1; f <= frets; f++) {
+    const num = document.createElement('span');
+    num.className = 'b-fret';
+    num.textContent = f;
+    fretsRow.append(num);
+  }
+  grid.append(fretsRow);
+  host.replaceChildren(grid);
+}
+
+document.querySelectorAll('[data-board]').forEach(renderBoard);
+
+const canvas = document.getElementById('canvas');
+const stateToggle = document.getElementById('stateToggle');
+const themeToggle = document.getElementById('themeToggle');
+let concept = 'a';
+let state = 'live';
+
+const NOTES = {
+  a: {
+    tag: 'Direction A', tag2: 'Desktop-first', title: 'Split studio',
+    lede: 'Three working lanes: browse on the left, the board in the middle, and everything that explains or controls the pass in a persistent coach rail.',
+    change: 'The single column becomes a three-zone workspace, and the transport sits directly under the board instead of below a stack of setup rows.',
+    moves: [
+      'The header keeps the brand, connection state, due count and a menu. Stage, lights, mic, calibration and Progress move into the menu.',
+      'Tabs and content selectors become a library rail; scale chips stay with the library, not above the board.',
+      'The board owns the center; Start/Pause and tempo sit in a transport bar attached to it.',
+      'The family picker, hint strip, next target, session block and Learn move into the right rail.',
+      'Progress, Session, Calibration and Learn open in the rail slot, so the board never moves.',
+    ],
+    responsive: [
+      'The library and coach rails disappear below 900px; a compact top bar and bottom dock take over.',
+      'The board scrolls horizontally inside its own frame; the page never scrolls sideways.',
+      'Details and setup open as a bottom sheet over the board, not as new page height.',
+    ],
+    tradeoff: 'The rail is excellent at 1280px and wider. On a tablet it has to collapse; on a phone it becomes a sheet, so the layout has two real modes to maintain.',
+    use: 'A desktop practice session where you want setup, guidance and the next target visible without scrolling away from the neck.',
+  },
+  b: {
+    tag: 'Direction B', tag2: 'Practice mode', title: 'Focus stage',
+    lede: 'The pass gets the whole screen. Everything that is not the neck, the next target or the transport leaves until you exit.',
+    change: 'A dedicated practice route replaces the page column: slim exit bar, board-centered stage, a level rail, and one docked primary action.',
+    moves: [
+      'Setup, tabs, library, progress and lesson live outside this route; you enter it from Today, a Play seed or a session block.',
+      'The board is the page. The next target floats beside it, and the four-level ladder becomes a quiet vertical rail.',
+      'Pause is the single filled action, centered in the bottom dock; tempo, hint and pass progress sit around it.',
+      'Pass review and the result appear as a card over the dimmed board, so the neck never leaves the screen.',
+      'Exit returns to the exact place you came from, with the drill state intact.',
+    ],
+    responsive: [
+      'On a phone the stage is the viewport: slim top bar, board, horizontal level strip, bottom dock.',
+      'Pause sits in the bottom quarter; tempo is one tap away rather than in a wrapping row.',
+      'Landscape keeps the board wide and moves the level strip to the side.',
+    ],
+    tradeoff: 'You cannot change the key or scale from inside the stage. That is the point, but it means every setup change is an exit and re-entry.',
+    use: 'The actual practice moment, especially on a phone on a music stand, where chrome is the enemy of playing.',
+  },
+  c: {
+    tag: 'Direction C', tag2: 'Session home', title: 'Today flow',
+    lede: 'A daily home built around the one question that matters: what should I do for the next thirteen minutes, and why?',
+    change: 'The app opens on a session page instead of a browser page: a hero start, a five-block timeline, the focus skill, and the week at a glance.',
+    moves: [
+      'Today replaces the first screen: one Start session action, a transparent five-block plan, and the reason for every block.',
+      'The focus skill gets a mini board and a preview action; free choice lives beside the plan, not in a separate menu.',
+      'Streak, practised minutes, unguided minutes and due count become a compact rail, not a panel you open.',
+      'The session timeline is the reading path; the browser and its selectors move behind the free-choice lane.',
+      'Starting a block transitions into the focus stage; the session summary returns here.',
+    ],
+    responsive: [
+      'On a phone the timeline becomes vertical and the start action sticks to the bottom.',
+      'The stats rail becomes a 2×2 row above the plan; the week chart stays below the fold.',
+      'Free choice becomes a set of chips under the plan, one tap to seed a drill.',
+    ],
+    tradeoff: 'It adds a real home screen and a transition. If the product is only ever opened to practise one scale, this is one tap of overhead.',
+    use: 'The daily habit: open the app, see the plan, start the session, and know why each block is there.',
+  },
+};
+
+function setConcept(next) {
+  concept = next;
+  document.querySelectorAll('#conceptTabs button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.concept === next));
+  });
+  ['a', 'b', 'c'].forEach(key => {
+    document.getElementById('mock' + key.toUpperCase()).hidden = key !== next;
+  });
+  const note = NOTES[next];
+  document.getElementById('noteTag').textContent = note.tag;
+  document.getElementById('noteTag2').textContent = note.tag2;
+  document.getElementById('noteTitle').textContent = note.title;
+  document.getElementById('noteLede').textContent = note.lede;
+  document.getElementById('noteChange').textContent = note.change;
+  document.getElementById('noteMoves').replaceChildren(...note.moves.map(line => {
+    const li = document.createElement('li'); li.textContent = line; return li;
+  }));
+  document.getElementById('noteResponsive').replaceChildren(...note.responsive.map(line => {
+    const li = document.createElement('li'); li.textContent = line; return li;
+  }));
+  document.getElementById('noteTradeoff').textContent = note.tradeoff;
+  document.getElementById('noteUse').textContent = note.use;
+  stateToggle.hidden = next !== 'b';
+  stateToggle.textContent = state === 'live' ? 'Show pass review' : 'Back to live drill';
+}
+
+function setViewport(viewport) {
+  canvas.dataset.viewport = viewport;
+  document.querySelectorAll('#viewportTabs button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.viewport === viewport));
+  });
+}
+
+function setState(next) {
+  state = next;
+  document.getElementById('mockB').dataset.state = next;
+  stateToggle.textContent = next === 'live' ? 'Show pass review' : 'Back to live drill';
+}
+
+document.querySelectorAll('#conceptTabs button').forEach(button => {
+  button.addEventListener('click', () => setConcept(button.dataset.concept));
+});
+document.querySelectorAll('#viewportTabs button').forEach(button => {
+  button.addEventListener('click', () => setViewport(button.dataset.viewport));
+});
+stateToggle.addEventListener('click', () => setState(state === 'live' ? 'review' : 'live'));
+themeToggle.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next;
+  themeToggle.textContent = next === 'dark' ? 'Light mode' : 'Dark mode';
+});
+
+setConcept('a');
+
+const params = new URLSearchParams(location.search);
+if (params.get('concept') && NOTES[params.get('concept')]) setConcept(params.get('concept'));
+if (params.get('viewport') === 'phone' || params.get('viewport') === 'desktop') setViewport(params.get('viewport'));
+if (params.get('theme') === 'dark') {
+  document.documentElement.dataset.theme = 'dark';
+  themeToggle.textContent = 'Light mode';
+}
+if (params.get('state') === 'review') setState('review');
+
+</script>
+</body>
+</html>

@@ -1,0 +1,512 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T2 Coach — Field Guide × Luthier's Bench</title>
+<style>
+/* ============================================================
+   GALLERY
+   ============================================================ */
+:root {
+  --wall: #12100e;
+  --wall-2: #1b1714;
+  --wall-3: #241f1a;
+  --ink: #f3ede4;
+  --muted: #a99d8f;
+  --line: #3b332b;
+  --amber: #e28a4a;
+  --paper: #f4efe7;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden], .only-phone { display: none !important; }
+body {
+  background:
+    radial-gradient(circle at 16% -12%, rgba(226, 138, 74, .13), transparent 38rem),
+    radial-gradient(circle at 100% 108%, rgba(80, 105, 120, .10), transparent 42rem),
+    var(--wall);
+  color: var(--ink);
+  font: 400 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button, a { font: inherit; color: inherit; }
+button { cursor: pointer; }
+button:focus-visible, a:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.page { max-width: 1680px; margin: 0 auto; padding: 28px; display: grid; gap: 20px; }
+.eyebrow { margin: 0; font: 600 10px/1.3 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+.page-head { display: flex; flex-wrap: wrap; gap: 24px; align-items: end; justify-content: space-between; }
+.page-title { margin: 8px 0; font: 600 clamp(38px, 4.4vw, 62px)/.98 var(--serif); letter-spacing: -.03em; }
+.page-title em { font-style: italic; color: var(--amber); }
+.page-lede { margin: 0; max-width: 70ch; color: var(--muted); font-size: 15px; line-height: 1.6; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.back {
+  min-height: 38px; display: inline-flex; align-items: center; padding: 0 12px;
+  border: 1px solid var(--line); border-radius: 9px; color: var(--muted);
+  text-decoration: none; font-size: 12px;
+}
+.back:hover { color: var(--ink); border-color: var(--muted); }
+.seg { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 10px; background: var(--wall-2); }
+.seg button { min-height: 36px; padding: 0 13px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--paper); color: #1b1714; font-weight: 600; }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 30px; padding: 4px 10px;
+  border: 1px solid var(--line); border-radius: 999px; color: var(--muted);
+  font: 500 11px/1.2 var(--mono);
+}
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+
+.stage-wrap { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+.canvas {
+  min-height: 860px; padding: 24px; border: 1px solid var(--line); border-radius: 22px;
+  background: linear-gradient(135deg, rgba(255,255,255,.025), transparent 40%), var(--wall-2);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+.mock-frame {
+  width: 100%; max-width: 1160px; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 40px 90px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+}
+.canvas[data-viewport="phone"] { min-height: 900px; padding: 18px; }
+.canvas[data-viewport="phone"] .mock-frame {
+  width: 390px; max-width: 100%; border-radius: 38px; border: 8px solid #080706;
+  box-shadow: 0 30px 70px rgba(0,0,0,.6);
+}
+.canvas[data-viewport="phone"] .only-phone { display: block !important; }
+.canvas[data-viewport="phone"] .only-phone.grid { display: grid !important; }
+.canvas[data-viewport="phone"] .only-phone.flex { display: flex !important; }
+
+.notes {
+  position: sticky; top: 20px; background: var(--paper); color: #1b1714;
+  border-radius: 18px; padding: 24px; display: grid; gap: 17px;
+}
+.note-kicker { display: flex; align-items: baseline; gap: 8px; font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: #8b7e70; }
+.note-kicker b { font-size: 18px; color: #a94d18; letter-spacing: 0; }
+.notes h2 { margin: -6px 0 0; font: 600 30px/1.05 var(--serif); letter-spacing: -.02em; }
+.notes .note-lede { margin: 0; color: #5f554b; font-size: 14px; line-height: 1.55; }
+.note-block { display: grid; gap: 6px; }
+.note-block h3 { margin: 0; font: 600 10px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #8b7e70; }
+.note-block p { margin: 0; font-size: 13px; line-height: 1.55; color: #4f463d; }
+.note-block ul { margin: 0; padding-left: 17px; display: grid; gap: 5px; color: #4f463d; font-size: 13px; line-height: 1.45; }
+.note-block li::marker { color: #a94d18; }
+.two-col-diagram { display: flex; height: 28px; border-radius: 6px; overflow: hidden; border: 1px solid #d8cdbd; }
+.two-col-diagram span { display: flex; align-items: center; justify-content: center; font: 600 9px/1 var(--mono); }
+.two-col-diagram .path { width: 26%; background: #a94d18; color: #fff; }
+.two-col-diagram .work { flex: 1; background: #e8dfd1; color: #5f554b; }
+.swatches { display: flex; gap: 5px; }
+.swatches span { width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
+.fit-note { padding: 10px 12px; border-radius: 10px; background: #eae2d6; color: #4f463d; font-size: 12px; line-height: 1.5; }
+.fit-note b { color: #1b1714; }
+.next-link { display: inline-flex; align-items: center; gap: 6px; justify-self: start; min-height: 34px; padding: 0 11px; border: 1px solid #1b1714; border-radius: 7px; color: #1b1714; text-decoration: none; font-size: 12px; font-weight: 600; }
+
+.decision { display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 22px; padding: 24px; border: 1px solid var(--line); border-radius: 18px; background: var(--wall-2); }
+.decision h2 { margin: 6px 0 0; font: 600 26px/1.12 var(--serif); }
+.decision p { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.decision ol { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.decision li::marker { color: var(--amber); }
+
+/* ============================================================
+   HYBRID
+   ============================================================ */
+.hybrid {
+  --h-bg: #efe8db; --h-panel: #f8f4ec; --h-rail: #e9dfd1; --h-ink: #251e18;
+  --h-muted: #7b6e60; --h-line: #d8cdbd; --h-accent: #a94d18; --h-brass: #997849;
+  --fb-muted: #d6c8b5; --fb-fret: rgba(255,255,255,.16); --fb-marker: rgba(255,255,255,.28);
+  --fb-note-bg: #2c211a; --fb-note-ink: #fff8ed; --fb-root-bg: #b45309; --fb-root-ink: #fff;
+  --fb-target: #fff7e8; --fb-glow: rgba(255,190,110,.55);
+  background: var(--h-bg); color: var(--h-ink); min-height: 760px;
+  display: flex; flex-direction: column; font-family: var(--sans);
+}
+.h-top { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--h-line); background: var(--h-panel); }
+.h-brand { display: flex; align-items: center; gap: 8px; margin-right: auto; font: 600 20px/1 var(--serif); letter-spacing: -.02em; }
+.h-mark { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: #3a2418; color: #f7e9d3; font-size: 10px; }
+.h-status { display: flex; align-items: center; gap: 6px; font: 500 11px/1 var(--mono); color: var(--h-muted); }
+.h-status .dot { width: 7px; height: 7px; border-radius: 50%; background: #3e7d4b; }
+.h-nav { display: flex; gap: 2px; align-items: center; }
+.h-nav button { min-height: 32px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--h-muted); font-size: 12px; }
+.h-nav button.on { background: var(--h-ink); color: var(--h-panel); font-weight: 600; }
+.h-icon { width: 32px; border: 1px solid var(--h-line) !important; background: var(--h-panel) !important; color: var(--h-ink) !important; }
+.h-body { display: grid; grid-template-columns: 264px minmax(0, 1fr); flex: 1; min-height: 660px; }
+.h-rail { padding: 15px 14px; border-right: 1px solid var(--h-line); background: var(--h-rail); display: grid; gap: 10px; align-content: start; min-width: 0; }
+.h-path-head { display: flex; align-items: end; justify-content: space-between; gap: 8px; }
+.h-path-head h2 { margin: 2px 0 0; font: 600 25px/1 var(--serif); letter-spacing: -.02em; }
+.h-path-count { font: 500 9px/1.2 var(--mono); color: var(--h-muted); text-align: right; }
+.h-path-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.h-path-list li { display: grid; grid-template-columns: 23px 1fr auto; gap: 6px; align-items: center; padding: 6px 7px; border-radius: 7px; color: var(--h-muted); font-size: 11px; line-height: 1.25; }
+.h-path-list .num { font: 600 9px/1 var(--mono); color: var(--h-muted); }
+.h-path-list b { font-weight: 500; color: var(--h-ink); }
+.h-path-list li.done .num { color: #3e7d4b; }
+.h-path-list li.done::after { content: "✓"; color: #3e7d4b; font-size: 9px; }
+.h-path-list li.on { background: var(--h-ink); color: var(--h-panel); box-shadow: inset 3px 0 0 var(--h-accent); }
+.h-path-list li.on b, .h-path-list li.on .num { color: var(--h-panel); }
+.h-path-list li.on .num { color: #e7a26c; }
+.h-path-list li.on::after { content: "now"; font: 600 8px/1 var(--mono); color: #e7a26c; }
+.h-path-next { padding: 7px 8px; border-left: 2px solid var(--h-accent); background: #e1d4c2; border-radius: 0 6px 6px 0; font: 500 9px/1.35 var(--mono); color: var(--h-muted); }
+.h-rail-divider { border: 0; border-top: 1px solid var(--h-line); margin: 1px 0; }
+.h-today { padding: 8px 9px; border-radius: 8px; background: var(--h-panel); border: 1px solid var(--h-line); display: grid; gap: 2px; }
+.h-today .label, .h-tuner .label, .h-youtube .label { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--h-muted); }
+.h-today b { font: 600 22px/1 var(--serif); }
+.h-today p { margin: 0; font-size: 9px; line-height: 1.35; color: var(--h-muted); }
+.h-today-bars { display: flex; gap: 3px; margin-top: 3px; }
+.h-today-bars i { flex: 1; height: 4px; border-radius: 2px; background: var(--h-line); }
+.h-today-bars i.on { background: var(--h-accent); }
+.h-tuner { display: flex; align-items: baseline; gap: 7px; padding: 7px 9px; border-radius: 8px; background: var(--h-panel); border: 1px solid var(--h-line); }
+.h-tuner b { font: 600 21px/1 var(--serif); }
+.h-tuner em { font: 500 9px/1 var(--mono); color: #3e7d4b; font-style: normal; }
+.h-youtube { display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 7px; align-items: center; padding: 7px; border-radius: 8px; background: var(--h-panel); border: 1px solid var(--h-line); color: var(--h-ink); text-decoration: none; }
+.h-youtube:hover { border-color: var(--h-accent); }
+.h-youtube img { width: 54px; height: 44px; object-fit: cover; border-radius: 5px; display: block; }
+.h-youtube b { display: block; font-size: 10px; line-height: 1.25; }
+.h-youtube small { display: block; margin-top: 2px; color: var(--h-muted); font: 500 8px/1.2 var(--mono); }
+.h-youtube .arrow { color: var(--h-accent); font-size: 14px; }
+.h-main { padding: 16px 20px 14px; display: grid; gap: 9px; align-content: start; min-width: 0; }
+.h-kicker { display: flex; align-items: center; gap: 7px; font: 600 9px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--h-muted); }
+.h-kicker span { width: 21px; height: 21px; display: grid; place-items: center; border-radius: 50%; background: var(--h-accent); color: #fff; font-size: 9px; letter-spacing: 0; }
+.h-title-row { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.h-title-row h2 { margin: 3px 0 0; font: 600 29px/1.02 var(--serif); letter-spacing: -.03em; max-width: 18ch; }
+.h-title-row h2 em { color: var(--h-accent); font-style: italic; }
+.h-due { padding: 4px 7px; border: 1px solid var(--h-line); border-radius: 999px; background: var(--h-panel); font: 600 9px/1 var(--mono); color: var(--h-muted); white-space: nowrap; }
+.h-sub { margin: -1px 0 0; color: var(--h-muted); font-size: 11px; }
+.h-setup { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; padding: 5px 7px; border: 1px solid var(--h-line); border-radius: 7px; background: var(--h-panel); }
+.h-setup span, .h-setup b, .h-setup i { font-size: 9px; line-height: 1.2; }
+.h-setup span { font: 600 8px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--h-muted); }
+.h-setup b { font-weight: 600; }
+.h-setup i { font-style: normal; color: var(--h-muted); }
+.h-setup button { margin-left: auto; min-height: 22px; padding: 0 6px; border: 1px solid var(--h-line); border-radius: 4px; background: transparent; color: var(--h-muted); font-size: 9px; }
+.h-media { display: grid; grid-template-columns: 172px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 7px; border: 1px solid var(--h-line); border-radius: 9px; background: var(--h-panel); }
+.h-media img { width: 172px; height: 92px; object-fit: cover; border-radius: 6px; display: block; }
+.h-media div { display: grid; gap: 2px; min-width: 0; }
+.h-media span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--h-accent); }
+.h-media b { font: 600 14px/1.15 var(--serif); }
+.h-media p { margin: 0; color: var(--h-muted); font-size: 10px; line-height: 1.35; }
+.h-watch { min-height: 30px; padding: 0 9px; border: 1px solid var(--h-line); border-radius: 6px; background: transparent; color: var(--h-ink); font-size: 10px; font-weight: 600; white-space: nowrap; }
+.h-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+.h-steps li { display: grid; grid-template-columns: 17px 1fr; gap: 5px; padding: 6px 7px; border: 1px solid var(--h-line); border-radius: 7px; background: rgba(255,255,255,.5); min-width: 0; }
+.h-steps .step-num { font: 600 9px/1.4 var(--mono); color: var(--h-accent); }
+.h-steps b { display: block; font-size: 10px; line-height: 1.25; }
+.h-steps p { margin: 1px 0 0; color: var(--h-muted); font-size: 9px; line-height: 1.35; }
+.h-board { padding: 10px 12px 6px; border-radius: 10px; background: linear-gradient(90deg, rgba(255,255,255,.04), transparent 24%), linear-gradient(180deg, #4a2f1f, #2b1b12); box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -18px 26px rgba(0,0,0,.22), 0 8px 18px rgba(60,35,20,.15); }
+.h-board-top { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 6px; }
+.h-board-top span { font: 500 8px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: #d9c9b2; }
+.h-board .fb { --cell: 36px; --row: 31px; --dot: 25px; --frets: 13; margin: 0 auto; }
+.h-transport { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; padding: 7px 8px; border: 1px solid var(--h-line); border-radius: 9px; background: var(--h-panel); }
+.h-primary { min-height: 36px; padding: 0 13px; border: 1px solid var(--h-accent); border-radius: 7px; background: var(--h-accent); color: #fff; font-size: 12px; font-weight: 600; }
+.h-tempo { display: flex; align-items: center; gap: 1px; border: 1px solid var(--h-line); border-radius: 6px; background: var(--h-bg); }
+.h-tempo button { width: 21px; height: 28px; border: 0; background: transparent; color: var(--h-muted); }
+.h-tempo b { min-width: 26px; text-align: center; font: 600 11px/1 var(--mono); }
+.h-beats { display: flex; gap: 4px; }
+.h-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--h-line); }
+.h-beat.on { background: var(--h-accent); }
+.h-ghost { min-height: 30px; padding: 0 9px; border: 1px solid var(--h-line); border-radius: 6px; background: var(--h-panel); color: var(--h-ink); font-size: 10px; }
+.h-hint { margin-left: auto; font: 500 9px/1.2 var(--mono); color: var(--h-muted); }
+.h-foot { display: flex; gap: 16px; flex-wrap: wrap; padding: 9px 18px; border-top: 1px solid var(--h-line); background: var(--h-panel); color: var(--h-muted); font: 500 10px/1.2 var(--mono); }
+.h-foot span:first-child { color: var(--h-ink); font-weight: 600; }
+.h-phone-path, .h-phone-tune { display: none; }
+
+/* generic fretboard */
+.fb-wrap { overflow-x: auto; }
+.fb { display: grid; gap: 2px; min-width: max-content; }
+.fb-row { display: grid; grid-template-columns: 22px repeat(var(--frets), var(--cell)); align-items: center; height: var(--row); }
+.fb-string { font: 500 8px/1 var(--mono); color: var(--fb-muted); text-align: center; }
+.fb-cell { position: relative; height: 100%; border-right: 1px solid var(--fb-fret); }
+.fb-cell.marker::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 3px; height: 3px; border-radius: 50%; background: var(--fb-marker); transform: translateX(-50%); }
+.fb-note { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: var(--dot); height: var(--dot); border-radius: 50%; display: grid; place-items: center; background: var(--fb-note-bg); color: var(--fb-note-ink); font: 600 9px/1 var(--sans); box-shadow: 0 1px 3px rgba(0,0,0,.35); }
+.fb-note.root { background: var(--fb-root-bg); color: var(--fb-root-ink); }
+.fb-note.target { outline: 3px solid var(--fb-target); outline-offset: 2px; box-shadow: 0 0 20px var(--fb-glow); }
+.fb-nums { display: grid; grid-template-columns: 22px repeat(var(--frets), var(--cell)); }
+.fb-num { font: 500 8px/1 var(--mono); color: var(--fb-muted); text-align: center; padding-top: 2px; }
+
+/* phone */
+.canvas[data-viewport="phone"] .hybrid { min-height: 760px; }
+.canvas[data-viewport="phone"] .h-top { padding: 10px 12px; gap: 8px; }
+.canvas[data-viewport="phone"] .h-brand { font-size: 17px; }
+.canvas[data-viewport="phone"] .h-status { display: none; }
+.canvas[data-viewport="phone"] .h-nav button:not(.on):not(.h-icon) { display: none; }
+.canvas[data-viewport="phone"] .h-body { display: block; min-height: 0; }
+.canvas[data-viewport="phone"] .h-rail { display: none; }
+.canvas[data-viewport="phone"] .h-main { padding: 13px 12px 12px; gap: 9px; }
+.canvas[data-viewport="phone"] .h-phone-path { padding: 9px 10px; border: 1px solid var(--h-line); border-radius: 8px; background: var(--h-panel); }
+.canvas[data-viewport="phone"] .hp-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.canvas[data-viewport="phone"] .hp-head span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--h-muted); }
+.canvas[data-viewport="phone"] .hp-head b { font: 600 11px/1.2 var(--sans); }
+.canvas[data-viewport="phone"] .hp-dots { display: flex; gap: 4px; margin-top: 6px; }
+.canvas[data-viewport="phone"] .hp-dots i { flex: 1; height: 4px; border-radius: 2px; background: var(--h-line); }
+.canvas[data-viewport="phone"] .hp-dots i.done { background: #3e7d4b; }
+.canvas[data-viewport="phone"] .hp-dots i.on { background: var(--h-accent); }
+.canvas[data-viewport="phone"] .h-phone-tune { align-items: baseline; gap: 7px; padding: 6px 9px; border: 1px solid var(--h-line); border-radius: 7px; background: var(--h-panel); }
+.canvas[data-viewport="phone"] .h-phone-tune span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--h-muted); }
+.canvas[data-viewport="phone"] .h-phone-tune b { font: 600 18px/1 var(--serif); }
+.canvas[data-viewport="phone"] .h-phone-tune em { font: 500 9px/1 var(--mono); color: #3e7d4b; font-style: normal; }
+.canvas[data-viewport="phone"] .h-title-row h2 { font-size: 25px; }
+.canvas[data-viewport="phone"] .h-sub { font-size: 10px; }
+.canvas[data-viewport="phone"] .h-media { grid-template-columns: 1fr; }
+.canvas[data-viewport="phone"] .h-media img { width: 100%; height: 146px; }
+.canvas[data-viewport="phone"] .h-watch { justify-self: start; }
+.canvas[data-viewport="phone"] .h-steps { grid-template-columns: 1fr 1fr; }
+.canvas[data-viewport="phone"] .h-board .fb { --cell: 24px; --row: 26px; --dot: 20px; }
+.canvas[data-viewport="phone"] .h-board { padding: 8px 8px 4px; }
+.canvas[data-viewport="phone"] .h-hint { display: none; }
+.canvas[data-viewport="phone"] .h-foot { display: none; }
+
+.watch-dialog { width: min(760px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line); border-radius: 14px; background: #0e0c0a; color: var(--ink); box-shadow: 0 40px 100px rgba(0,0,0,.6); }
+.watch-dialog::backdrop { background: rgba(8,7,6,.76); backdrop-filter: blur(4px); }
+.watch-dialog video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+.watch-dialog .watch-copy { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 16px; }
+.watch-dialog .watch-copy p { margin: 0; color: var(--muted); font-size: 12px; }
+.watch-dialog button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); font-size: 12px; }
+
+@media (max-width: 1420px) {
+  .stage-wrap { grid-template-columns: 1fr; }
+  .notes { position: static; }
+}
+@media (max-width: 720px) {
+  .page { padding: 16px; }
+  .canvas { padding: 12px; }
+  .page-title { font-size: 42px; }
+  .decision { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">T2 Coach / hybrid 04</p>
+      <h1 class="page-title">Field Guide, <em>built like the Bench.</em></h1>
+      <p class="page-lede">Two columns: a persistent learning path on the left, and one warm workspace for the lesson, the board and the real materials. The path leads; the board still has room to breathe.</p>
+    </div>
+    <div class="controls">
+      <a class="back" href="./ui-revamp.html">← Compare the three</a>
+      <span class="pill"><span class="dot"></span> 2 columns</span>
+      <div class="seg" id="viewTabs" aria-label="Preview width">
+        <button type="button" data-view="desktop" aria-pressed="true">Desktop</button>
+        <button type="button" data-view="phone" aria-pressed="false">Phone</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="stage-wrap">
+    <div class="canvas" id="canvas" data-viewport="desktop">
+      <div class="mock-frame">
+        <div class="mock hybrid">
+          <header class="h-top">
+            <div class="h-brand"><span class="h-mark">◆</span><span>T2 Coach</span></div>
+            <div class="h-status"><span class="dot"></span>Connected · 82%</div>
+            <nav class="h-nav">
+              <button type="button" class="on">Path</button>
+              <button type="button">Practice</button>
+              <button type="button">Library</button>
+              <button type="button">Progress</button>
+              <button type="button" class="h-icon">⋯</button>
+            </nav>
+          </header>
+
+          <div class="h-body">
+            <aside class="h-rail">
+              <div class="h-path-head">
+                <div><p class="eyebrow">Learning path</p><h2>Field Book</h2></div>
+                <span class="h-path-count">2 of 6<br>done</span>
+              </div>
+              <ol class="h-path-list">
+                <li class="done"><span class="num">01</span><b>Tune</b></li>
+                <li class="done"><span class="num">02</span><b>Find notes</b></li>
+                <li class="on"><span class="num">03</span><b>First shape</b></li>
+                <li><span class="num">04</span><b>Blues note</b></li>
+                <li><span class="num">05</span><b>Power chords</b></li>
+                <li><span class="num">06</span><b>Changes</b></li>
+              </ol>
+              <div class="h-path-next">Next after this: the blue note in the same shape.</div>
+              <hr class="h-rail-divider">
+              <div class="h-today">
+                <span class="label">Today</span>
+                <b>13 min</b>
+                <p>5 blocks · 2 no-light passes</p>
+                <div class="h-today-bars"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></div>
+              </div>
+              <div class="h-tuner"><span class="label">Tuner</span><b>A4</b><em>+2 cents</em></div>
+              <a class="h-youtube" href="https://www.youtube.com/watch?v=ZHBomQaAvQo" target="_blank" rel="noopener">
+                <img src="./assets/justinguitar-five-positions.jpg" alt="JustinGuitar minor pentatonic lesson thumbnail">
+                <div><span class="label">Watch &amp; read</span><b>Minor pentatonic: five positions</b><small>YouTube · JustinGuitar</small></div>
+                <span class="arrow">↗</span>
+              </a>
+            </aside>
+
+            <main class="h-main">
+              <div class="h-phone-path only-phone">
+                <div class="hp-head"><span>Learning path · 6 steps</span><b>03 · First shape</b></div>
+                <div class="hp-dots"><i class="done"></i><i class="done"></i><i class="on"></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="h-kicker"><span>03</span> Lesson · A minor pentatonic</div>
+              <div class="h-title-row">
+                <h2>Find the root, <em>then the shape.</em></h2>
+                <span class="h-due">3 due</span>
+              </div>
+              <p class="h-sub">Position 1 · 50 BPM · one shape, four steps, no lights at the end.</p>
+              <div class="h-setup">
+                <span>Setup</span><b>A minor</b><i>Minor pentatonic</i><i>Position 1</i><i>Finger numbers</i>
+                <button type="button">Change</button>
+              </div>
+              <div class="h-phone-tune only-phone flex"><span>Tuner</span><b>A4</b><em>+2 cents</em></div>
+
+              <div class="h-media">
+                <img src="./assets/real-fretboard.jpg" alt="Close-up of a hand fretting a guitar">
+                <div>
+                  <span>Real reference</span>
+                  <b>See a hand make the shape.</b>
+                  <p>Photo and a 6-second clip, then you play it.</p>
+                </div>
+                <button type="button" class="h-watch js-watch">▶ Watch the clip</button>
+              </div>
+
+              <ol class="h-steps">
+                <li><span class="step-num">01</span><div><b>Anchor the root</b><p>Finger 1 on A, string 6 fret 5.</p></div></li>
+                <li><span class="step-num">02</span><div><b>Set the shape</b><p>One finger per fret, frets 5–8.</p></div></li>
+                <li><span class="step-num">03</span><div><b>Play it slowly</b><p>Up and back at 50 BPM. Say the notes.</p></div></li>
+                <li><span class="step-num">04</span><div><b>Take the lights away</b><p>Once with only the target, once dark.</p></div></li>
+              </ol>
+
+              <div class="h-board">
+                <div class="h-board-top"><span>Fretboard · finger numbers</span><span>Lights on</span></div>
+                <div class="fb-wrap" data-board></div>
+              </div>
+
+              <div class="h-transport">
+                <button type="button" class="h-primary">Start the lesson</button>
+                <div class="h-tempo"><button type="button">−</button><b>50</b><button type="button">+</button></div>
+                <div class="h-beats"><span class="h-beat on"></span><span class="h-beat"></span><span class="h-beat"></span><span class="h-beat"></span></div>
+                <button type="button" class="h-ghost js-watch">Hear it</button>
+                <span class="h-hint">Hints 1/4 · full pattern</span>
+              </div>
+            </main>
+          </div>
+
+          <footer class="h-foot"><span>Today 13 min</span><span>Path 03 / 06</span><span>4-day streak</span><span>All progress local</span></footer>
+        </div>
+      </div>
+    </div>
+
+    <aside class="notes" aria-live="polite">
+      <div class="note-kicker"><b>04</b> / hybrid</div>
+      <h2>Field Guide × Luthier's Bench</h2>
+      <p class="note-lede">The teaching path from Field Guide, the warm physical workspace from Luthier's Bench, and one fewer column.</p>
+      <div class="two-col-diagram" aria-label="Two columns: path rail and workspace"><span class="path">PATH 264</span><span class="work">WORKSPACE</span></div>
+      <div class="note-block"><h3>Why two columns</h3><p>The third column was doing two jobs: library and coach. Setup moves into the lesson header; the tuner and the real YouTube card move into the path rail. The workspace gets the board width back.</p></div>
+      <div class="note-block"><h3>From Field Guide</h3><ul><li>The persistent path: tune → notes → shape → blues → power → changes.</li><li>Lesson copy that explains before it drills.</li><li>The real photo as a lesson hero, not a hidden disclosure.</li></ul></div>
+      <div class="note-block"><h3>From Luthier's Bench</h3><ul><li>Warm paper, wood board, brass points and copper actions.</li><li>Serif lesson title; compact utility type.</li><li>The board still feels like an instrument, not a diagram.</li></ul></div>
+      <div class="note-block"><h3>Materials</h3><p>The photo, the local six-second clip and the JustinGuitar thumbnail are all visible above the board. The YouTube card is a real link; the image is saved locally.</p></div>
+      <div class="note-block"><h3>Tradeoff</h3><p>The path rail costs the workspace 264px. It works at 1280px because the board is 13 frets, not a full 20-fret neck. Below 1100px the path becomes a horizontal strip above the lesson.</p></div>
+      <div class="swatches" aria-label="Palette"><span style="background:#efe8db"></span><span style="background:#3a2418"></span><span style="background:#b45309"></span><span style="background:#997849"></span><span style="background:#251e18"></span></div>
+      <div class="fit-note"><b>This is the build:</b> one path rail, one workspace, no third column. The real materials are part of the lesson, not an appendix.</div>
+      <a class="next-link" href="./ui-revamp.html">← Compare the three directions</a>
+    </aside>
+  </div>
+
+  <section class="decision">
+    <div>
+      <p class="eyebrow">The decision</p>
+      <h2>One path rail. One workspace. Nothing else.</h2>
+      <p>The Field Guide path becomes the permanent left margin. The lesson, real reference, steps, board and transport share one warm workspace. Setup is a row, not a rail.</p>
+    </div>
+    <div>
+      <p class="eyebrow">What moves</p>
+      <ol>
+        <li>Key, scale, position and labels become one setup row in the lesson header.</li>
+        <li>The tuner and Watch &amp; read card live in the path rail.</li>
+        <li>The real photo and clip sit between the lesson title and the board.</li>
+        <li>The board loses the library column and gains the width.</li>
+      </ol>
+    </div>
+    <div>
+      <p class="eyebrow">Next if approved</p>
+      <p>Rebuild the shell as a 264px path plus workspace; move setup into the lesson header; keep the drawer for the full library; then implement the Field Guide lesson copy and real-media card.</p>
+    </div>
+  </section>
+</div>
+
+<dialog class="watch-dialog" id="watchDialog">
+  <video id="watchVideo" controls playsinline muted poster="./assets/real-hand.png" src="./assets/real-hand.mp4"></video>
+  <div class="watch-copy">
+    <p>Real hand reference · video: Alejandro JV / Pexels; photo: cottonbro studio / Pexels.</p>
+    <form method="dialog"><button>Close</button></form>
+  </div>
+</dialog>
+
+<script>
+const SCALE = [
+  { s: 6, f: 5, n: 'A', root: true }, { s: 6, f: 8, n: 'C' },
+  { s: 5, f: 5, n: 'D' }, { s: 5, f: 7, n: 'E' },
+  { s: 4, f: 5, n: 'G' }, { s: 4, f: 7, n: 'A', root: true },
+  { s: 3, f: 5, n: 'C', target: true }, { s: 3, f: 7, n: 'D' },
+  { s: 2, f: 5, n: 'E' }, { s: 2, f: 8, n: 'G' },
+  { s: 1, f: 5, n: 'A', root: true }, { s: 1, f: 8, n: 'C' },
+];
+const STRINGS = ['E', 'B', 'G', 'D', 'A', 'E'];
+
+function renderBoard(host) {
+  const frets = 13;
+  const wrap = document.createElement('div');
+  wrap.className = 'fb';
+  wrap.style.setProperty('--frets', frets);
+  for (let s = 1; s <= 6; s++) {
+    const row = document.createElement('div');
+    row.className = 'fb-row';
+    const label = document.createElement('span');
+    label.className = 'fb-string';
+    label.textContent = STRINGS[s - 1];
+    row.append(label);
+    for (let f = 1; f <= frets; f++) {
+      const cell = document.createElement('span');
+      cell.className = 'fb-cell' + ([3, 5, 7, 9, 12].includes(f) ? ' marker' : '');
+      const note = SCALE.find(item => item.s === s && item.f === f);
+      if (note) {
+        const dot = document.createElement('span');
+        dot.className = 'fb-note' + (note.root ? ' root' : '') + (note.target ? ' target' : '');
+        dot.textContent = note.n;
+        cell.append(dot);
+      }
+      row.append(cell);
+    }
+    wrap.append(row);
+  }
+  const nums = document.createElement('div');
+  nums.className = 'fb-nums';
+  nums.append(document.createElement('span'));
+  for (let f = 1; f <= frets; f++) {
+    const n = document.createElement('span');
+    n.className = 'fb-num';
+    n.textContent = f;
+    nums.append(n);
+  }
+  wrap.append(nums);
+  host.replaceChildren(wrap);
+}
+document.querySelectorAll('[data-board]').forEach(renderBoard);
+
+function setView(view) {
+  document.getElementById('canvas').dataset.viewport = view;
+  document.querySelectorAll('#viewTabs button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.view === view));
+  });
+}
+document.querySelectorAll('#viewTabs button').forEach(button => {
+  button.addEventListener('click', () => setView(button.dataset.view));
+});
+
+const dialog = document.getElementById('watchDialog');
+const video = document.getElementById('watchVideo');
+document.querySelectorAll('.js-watch').forEach(button => {
+  button.addEventListener('click', () => {
+    dialog.showModal();
+    video.currentTime = 0;
+    video.play().catch(() => {});
+  });
+});
+dialog.addEventListener('close', () => video.pause());
+
+const params = new URLSearchParams(location.search);
+if (params.get('view') === 'phone') setView('phone');
+</script>
+</body>
+</html>

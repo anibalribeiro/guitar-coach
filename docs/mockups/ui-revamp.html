@@ -1,0 +1,979 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>T2 Coach — three full UI directions</title>
+<style>
+/* ============================================================
+   GALLERY
+   ============================================================ */
+:root {
+  --wall: #12100e;
+  --wall-2: #1b1714;
+  --wall-3: #241f1a;
+  --ink: #f3ede4;
+  --muted: #a99d8f;
+  --line: #3b332b;
+  --amber: #e28a4a;
+  --paper: #f4efe7;
+  --sans: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+[hidden] { display: none !important; }
+body {
+  background:
+    radial-gradient(circle at 18% -10%, rgba(226, 138, 74, .12), transparent 38rem),
+    radial-gradient(circle at 100% 110%, rgba(80, 105, 120, .10), transparent 42rem),
+    var(--wall);
+  color: var(--ink);
+  font: 400 15px/1.55 var(--sans);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--amber); outline-offset: 3px; }
+.page { max-width: 1680px; margin: 0 auto; padding: 28px; display: grid; gap: 20px; }
+.eyebrow {
+  margin: 0; font: 600 10px/1.3 var(--mono); letter-spacing: .12em;
+  text-transform: uppercase; color: var(--muted);
+}
+.page-head { display: flex; flex-wrap: wrap; gap: 24px; align-items: end; justify-content: space-between; }
+.page-title {
+  margin: 8px 0 8px; font: 600 clamp(38px, 4.5vw, 64px)/.98 var(--serif);
+  letter-spacing: -.03em; color: var(--ink);
+}
+.page-title em { font-style: italic; color: var(--amber); }
+.page-lede { margin: 0; max-width: 68ch; color: var(--muted); font-size: 15px; line-height: 1.6; }
+.gallery-controls { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.seg {
+  display: flex; gap: 4px; padding: 4px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--wall-2);
+}
+.seg button {
+  min-height: 36px; padding: 0 13px; border: 0; border-radius: 7px;
+  background: transparent; color: var(--muted); font-size: 13px;
+}
+.seg button[aria-pressed="true"] { background: var(--paper); color: #1b1714; font-weight: 600; }
+.seg button:hover:not([aria-pressed="true"]) { color: var(--ink); background: var(--wall-3); }
+.pill {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 30px;
+  padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px;
+  color: var(--muted); font: 500 11px/1.2 var(--mono);
+}
+.pill .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--amber); }
+
+.concept-tabs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+.concept-tab {
+  display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start;
+  padding: 14px 16px; text-align: left; border: 1px solid var(--line);
+  border-radius: 12px; background: var(--wall-2); color: var(--ink);
+}
+.concept-tab .num { font: 600 22px/1 var(--mono); color: var(--muted); }
+.concept-tab b { display: block; font: 600 16px/1.2 var(--serif); letter-spacing: -.01em; }
+.concept-tab em { display: block; margin-top: 3px; font-style: normal; font-size: 12px; color: var(--muted); }
+.concept-tab[aria-pressed="true"] { background: var(--paper); color: #1b1714; border-color: var(--paper); }
+.concept-tab[aria-pressed="true"] .num { color: var(--tab-accent, #b45309); }
+.concept-tab[aria-pressed="true"] em { color: #6f6458; }
+
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 22px; align-items: start; }
+.canvas {
+  min-height: 800px; padding: 24px; border: 1px solid var(--line); border-radius: 22px;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.025), transparent 40%),
+    var(--wall-2);
+  display: flex; justify-content: center; align-items: flex-start;
+}
+.mock-frame {
+  width: 100%; max-width: 1160px; border-radius: 18px; overflow: hidden;
+  box-shadow: 0 40px 90px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.04);
+}
+.canvas[data-viewport="phone"] { min-height: 840px; padding: 18px; }
+.canvas[data-viewport="phone"] .mock-frame {
+  width: 390px; max-width: 100%; border-radius: 38px;
+  border: 8px solid #080706; box-shadow: 0 30px 70px rgba(0,0,0,.6);
+}
+.canvas[data-viewport="phone"] .only-desktop { display: none !important; }
+.only-phone { display: none !important; }
+.canvas[data-viewport="phone"] .only-phone { display: block !important; }
+.canvas[data-viewport="phone"] .only-phone.grid { display: grid !important; }
+.canvas[data-viewport="phone"] .only-phone.flex { display: flex !important; }
+
+.notes {
+  position: sticky; top: 20px; background: var(--paper); color: #1b1714;
+  border-radius: 18px; padding: 24px; display: grid; gap: 18px;
+}
+.notes .note-kicker { display: flex; gap: 8px; align-items: baseline; font: 600 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: #8b7e70; }
+.notes .note-kicker b { font-size: 18px; color: var(--note-accent, #b45309); letter-spacing: 0; }
+.notes h2 { margin: -6px 0 0; font: 600 30px/1.05 var(--serif); letter-spacing: -.02em; }
+.notes .note-lede { margin: 0; color: #5f554b; font-size: 14px; line-height: 1.55; }
+.note-block { display: grid; gap: 6px; }
+.note-block h3 { margin: 0; font: 600 10px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: #8b7e70; }
+.note-block p { margin: 0; font-size: 13px; line-height: 1.55; color: #4f463d; }
+.note-block ul { margin: 0; padding-left: 17px; display: grid; gap: 5px; color: #4f463d; font-size: 13px; line-height: 1.45; }
+.note-block li::marker { color: var(--note-accent, #b45309); }
+.swatches { display: flex; gap: 5px; }
+.swatches span { width: 24px; height: 24px; border-radius: 50%; border: 1px solid rgba(0,0,0,.12); }
+.notes .fit-note { padding: 10px 12px; border-radius: 10px; background: #eae2d6; color: #4f463d; font-size: 12px; line-height: 1.5; }
+.notes .fit-note b { color: #1b1714; }
+
+.verdict {
+  display: grid; grid-template-columns: 1.2fr 1fr 1fr; gap: 22px;
+  padding: 24px; border: 1px solid var(--line); border-radius: 18px;
+  background: var(--wall-2);
+}
+.verdict h2 { margin: 6px 0 0; font: 600 24px/1.15 var(--serif); }
+.verdict p { margin: 7px 0 0; color: var(--muted); font-size: 13px; line-height: 1.55; }
+.verdict ol { margin: 8px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; line-height: 1.5; }
+.verdict li::marker { color: var(--amber); }
+.verdict .keep { display: grid; gap: 8px; align-content: start; }
+.verdict .keep span { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.verdict .keep b { color: var(--ink); }
+
+/* ============================================================
+   SHARED FRETBOARD
+   ============================================================ */
+.fb-wrap { overflow-x: auto; }
+.fb { display: grid; gap: 2px; min-width: max-content; }
+.fb-row { display: grid; grid-template-columns: 22px repeat(var(--frets), var(--cell)); align-items: center; height: var(--row); }
+.fb-string { font: 500 8px/1 var(--mono); color: var(--fb-muted); text-align: center; }
+.fb-cell { position: relative; height: 100%; border-right: 1px solid var(--fb-fret); }
+.fb-cell.marker::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 3px; height: 3px; border-radius: 50%; background: var(--fb-marker); transform: translateX(-50%); }
+.fb-note {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: var(--dot); height: var(--dot); border-radius: 50%;
+  display: grid; place-items: center; background: var(--fb-note-bg); color: var(--fb-note-ink);
+  font: 600 9px/1 var(--sans); box-shadow: 0 1px 3px rgba(0,0,0,.35);
+}
+.fb-note.root { background: var(--fb-root-bg); color: var(--fb-root-ink); }
+.fb-note.target { outline: 3px solid var(--fb-target); outline-offset: 2px; box-shadow: 0 0 20px var(--fb-glow); }
+.fb-nums { display: grid; grid-template-columns: 22px repeat(var(--frets), var(--cell)); }
+.fb-num { font: 500 8px/1 var(--mono); color: var(--fb-muted); text-align: center; padding-top: 2px; }
+
+/* ============================================================
+   01 — LUTHIER'S BENCH
+   ============================================================ */
+.bench {
+  --b-bg: #efe8db; --b-panel: #f8f4ec; --b-ink: #251e18; --b-muted: #7b6e60;
+  --b-line: #d8cdbd; --b-accent: #a94d18; --b-brass: #997849; --b-wood: #3a2418;
+  --fb-muted: #d6c8b5; --fb-fret: rgba(255,255,255,.16); --fb-marker: rgba(255,255,255,.28);
+  --fb-note-bg: #2c211a; --fb-note-ink: #fff8ed; --fb-root-bg: #b45309; --fb-root-ink: #fff;
+  --fb-target: #fff7e8; --fb-glow: rgba(255,190,110,.55);
+  background: var(--b-bg); color: var(--b-ink); font-family: var(--sans); min-height: 720px;
+}
+.b-top {
+  display: flex; align-items: center; gap: 12px; padding: 12px 18px;
+  border-bottom: 1px solid var(--b-line); background: var(--b-panel);
+}
+.b-brand { display: flex; align-items: center; gap: 8px; margin-right: auto; font: 600 20px/1 var(--serif); letter-spacing: -.02em; }
+.b-mark { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--b-wood); color: #f7e9d3; font-size: 10px; }
+.b-status { display: flex; align-items: center; gap: 6px; font: 500 11px/1 var(--mono); color: var(--b-muted); }
+.b-status .dot { width: 7px; height: 7px; border-radius: 50%; background: #3e7d4b; }
+.b-nav { display: flex; gap: 2px; align-items: center; }
+.b-nav button { min-height: 32px; padding: 0 9px; border: 0; border-radius: 7px; background: transparent; color: var(--b-muted); font-size: 12px; }
+.b-nav button.on { background: #e7ddce; color: var(--b-ink); font-weight: 600; }
+.b-icon { width: 32px; border: 1px solid var(--b-line) !important; background: var(--b-panel) !important; color: var(--b-ink) !important; }
+.b-body { display: grid; grid-template-columns: 196px minmax(0, 1fr) 286px; min-height: 610px; }
+.b-lib { padding: 16px 14px; border-right: 1px solid var(--b-line); display: grid; gap: 14px; align-content: start; }
+.b-lib .eyebrow { color: var(--b-muted); }
+.b-tabs { display: grid; gap: 2px; }
+.b-tabs button { text-align: left; padding: 7px 9px; border: 0; border-radius: 7px; background: transparent; color: var(--b-muted); font-size: 12px; }
+.b-tabs button.on { background: var(--b-panel); color: var(--b-ink); font-weight: 600; box-shadow: inset 3px 0 0 var(--b-accent); }
+.b-select { display: grid; gap: 3px; }
+.b-select span { font: 600 9px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-select b { display: flex; justify-content: space-between; padding: 7px 9px; border: 1px solid var(--b-line); border-radius: 7px; background: var(--b-panel); font-size: 12px; font-weight: 500; }
+.b-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.b-chip { min-width: 27px; padding: 3px 5px; text-align: center; border: 1px solid var(--b-line); border-radius: 5px; font: 600 11px/1.2 var(--mono); background: var(--b-panel); }
+.b-chip.root { border-color: var(--b-accent); color: var(--b-accent); }
+.b-tuner { display: grid; gap: 2px; padding: 10px; border-radius: 8px; background: #e8dfd1; border: 1px solid var(--b-line); }
+.b-tuner span { font: 600 9px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-tuner div { display: flex; align-items: baseline; gap: 6px; }
+.b-tuner b { font: 600 26px/1 var(--serif); }
+.b-tuner em { font: 500 11px/1 var(--mono); color: #3e7d4b; font-style: normal; }
+.b-path { margin-top: 2px; padding-top: 12px; border-top: 1px solid var(--b-line); display: grid; gap: 4px; }
+.b-path span { font: 600 9px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-path b { font-size: 13px; }
+.b-bar { height: 3px; border-radius: 2px; background: #d8cdbd; overflow: hidden; }
+.b-bar::after { content: ""; display: block; width: 50%; height: 100%; background: var(--b-accent); }
+.b-main { padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.b-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.b-head h2 { margin: 3px 0 2px; font: 600 28px/1.05 var(--serif); letter-spacing: -.02em; }
+.b-head p { margin: 0; font-size: 12px; color: var(--b-muted); }
+.b-due { padding: 5px 8px; border: 1px solid var(--b-line); border-radius: 999px; background: var(--b-panel); font: 600 10px/1 var(--mono); color: var(--b-muted); white-space: nowrap; }
+.b-board {
+  padding: 14px 14px 8px; border-radius: 12px; background:
+    linear-gradient(90deg, rgba(255,255,255,.04), transparent 24%),
+    linear-gradient(180deg, #4a2f1f, #2b1b12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.12), inset 0 -20px 28px rgba(0,0,0,.22), 0 8px 20px rgba(60,35,20,.18);
+}
+.b-board-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 8px; }
+.b-board-top span { font: 500 9px/1.2 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: #d9c9b2; }
+.b-board .fb { --cell: 31px; --row: 30px; --dot: 25px; --frets: 13; }
+.b-steps { display: flex; gap: 5px; flex-wrap: wrap; }
+.b-steps span { padding: 4px 7px; border: 1px solid var(--b-line); border-radius: 999px; background: var(--b-panel); font: 500 9px/1.2 var(--mono); color: var(--b-muted); }
+.b-steps span.on { background: var(--b-ink); color: var(--b-panel); border-color: var(--b-ink); }
+.b-transport { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 9px; border: 1px solid var(--b-line); border-radius: 10px; background: var(--b-panel); }
+.b-primary { min-height: 38px; padding: 0 13px; border: 1px solid var(--b-accent); border-radius: 8px; background: var(--b-accent); color: #fff; font-weight: 600; font-size: 12px; }
+.b-tempo { display: flex; align-items: center; gap: 1px; border: 1px solid var(--b-line); border-radius: 7px; background: var(--b-bg); }
+.b-tempo button { width: 22px; height: 30px; border: 0; background: transparent; color: var(--b-muted); }
+.b-tempo b { min-width: 28px; text-align: center; font: 600 12px/1 var(--mono); }
+.b-beats { display: flex; gap: 4px; }
+.b-beat { width: 6px; height: 6px; border-radius: 50%; background: var(--b-line); }
+.b-beat.on { background: var(--b-accent); }
+.b-ghost { min-height: 32px; padding: 0 9px; border: 1px solid var(--b-line); border-radius: 7px; background: var(--b-panel); color: var(--b-ink); font-size: 11px; }
+.b-coach { border-left: 1px solid var(--b-line); padding: 14px; display: grid; gap: 10px; align-content: start; background: #f4ede2; }
+.b-real { display: grid; grid-template-columns: 86px 1fr auto; gap: 9px; align-items: center; padding: 7px; background: var(--b-panel); border: 1px solid var(--b-line); border-radius: 10px; }
+.b-real img { width: 86px; height: 66px; object-fit: cover; border-radius: 6px; display: block; }
+.b-real div { display: grid; gap: 2px; }
+.b-real span { font: 600 8px/1.3 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-real b { font-size: 12px; line-height: 1.2; }
+.b-real p { margin: 0; font-size: 10px; color: var(--b-muted); }
+.b-play { width: 26px; height: 26px; border: 0; border-radius: 50%; background: var(--b-ink); color: var(--b-panel); font-size: 9px; display: grid; place-items: center; }
+.b-hint { padding: 9px 10px; border: 1px solid var(--b-line); border-radius: 9px; background: var(--b-panel); display: grid; gap: 4px; }
+.b-hint-head { display: flex; justify-content: space-between; align-items: center; }
+.b-hint-head span { font: 600 8px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-pips { display: flex; gap: 3px; }
+.b-pip { width: 6px; height: 6px; border-radius: 50%; background: var(--b-line); }
+.b-pip.on { background: var(--b-accent); }
+.b-hint b { font-size: 12px; }
+.b-hint p { margin: 0; font-size: 10px; line-height: 1.4; color: var(--b-muted); }
+.b-video { position: relative; overflow: hidden; border-radius: 9px; background: #271a12; color: #f4e9db; }
+.b-video img { display: block; width: 100%; height: 104px; object-fit: cover; opacity: .8; }
+.b-video .b-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 30px; height: 30px; background: rgba(255,255,255,.92); color: #1b1714; }
+.b-video div { position: absolute; left: 9px; right: 9px; bottom: 8px; display: flex; justify-content: space-between; gap: 6px; font: 500 9px/1.2 var(--mono); text-shadow: 0 1px 4px #000; }
+.b-learn { min-height: 34px; border: 1px solid var(--b-line); border-radius: 8px; background: var(--b-panel); font-size: 11px; font-weight: 600; }
+.b-session { padding: 9px 10px; border-left: 3px solid var(--b-accent); background: #e9dfd1; border-radius: 0 8px 8px 0; display: grid; gap: 2px; }
+.b-session span { font: 600 8px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--b-muted); }
+.b-session b { font-size: 12px; }
+.b-session p { margin: 0; font-size: 10px; color: var(--b-muted); }
+.b-foot { display: flex; gap: 16px; flex-wrap: wrap; padding: 9px 18px; border-top: 1px solid var(--b-line); background: var(--b-panel); color: var(--b-muted); font: 500 10px/1.2 var(--mono); }
+.b-foot span:first-child { color: var(--b-ink); font-weight: 600; }
+.b-sheet { display: none; }
+.b-phone-tune { display: flex; align-items: baseline; gap: 7px; padding: 7px 9px; border: 1px solid var(--b-line); border-radius: 7px; background: var(--b-panel); }
+.b-phone-tune span { font: 600 8px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--b-muted); }
+.b-phone-tune b { font: 600 18px/1 var(--serif); }
+.b-phone-tune em { font: 500 9px/1 var(--mono); color: #3e7d4b; font-style: normal; }
+
+/* ============================================================
+   02 — NIGHT STAGE
+   ============================================================ */
+.night {
+  --st-bg: #0b0e12; --st-panel: #11161d; --st-panel-2: #171d25; --st-ink: #f1eee8;
+  --st-muted: #8792a0; --st-line: #26303b; --st-accent: #ffb35c; --st-teal: #63e6c4;
+  --fb-muted: #728190; --fb-fret: rgba(130, 180, 220, .16); --fb-marker: rgba(130, 220, 255, .36);
+  --fb-note-bg: #d8e0e8; --fb-note-ink: #0b0e12; --fb-root-bg: #ffb35c; --fb-root-ink: #1a1208;
+  --fb-target: #63e6c4; --fb-glow: rgba(99, 230, 196, .55);
+  background:
+    radial-gradient(circle at 50% 26%, rgba(255, 179, 92, .10), transparent 32%),
+    radial-gradient(circle at 80% 10%, rgba(99, 230, 196, .055), transparent 26%),
+    var(--st-bg);
+  color: var(--st-ink); min-height: 720px; display: flex; flex-direction: column;
+}
+.st-top { display: flex; align-items: center; gap: 12px; padding: 12px 18px; border-bottom: 1px solid var(--st-line); background: rgba(11,14,18,.78); backdrop-filter: blur(10px); }
+.st-exit { min-height: 32px; padding: 0 10px; border: 1px solid var(--st-line); border-radius: 7px; background: transparent; color: var(--st-muted); font-size: 11px; }
+.st-title { display: grid; gap: 1px; margin-right: auto; }
+.st-title b { font: 600 16px/1.2 var(--st-sans, var(--sans)); letter-spacing: .02em; }
+.st-title span { font: 500 10px/1.2 var(--mono); color: var(--st-muted); }
+.st-block { padding: 5px 9px; border: 1px solid var(--st-line); border-radius: 7px; background: var(--st-panel); font: 600 10px/1.2 var(--mono); color: var(--st-muted); }
+.st-status { display: flex; gap: 5px; align-items: center; font: 500 10px/1 var(--mono); color: var(--st-muted); }
+.st-status .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--st-teal); box-shadow: 0 0 8px var(--st-teal); }
+.st-body { display: grid; grid-template-columns: 122px minmax(0, 1fr) 190px; gap: 18px; padding: 22px; flex: 1; align-items: center; }
+.st-next { display: grid; gap: 3px; align-content: start; padding-top: 6px; }
+.st-next span { font: 600 9px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--st-muted); }
+.st-next b { font: 600 54px/1 var(--serif); color: var(--st-accent); letter-spacing: -.04em; }
+.st-next p { margin: 0; font: 500 10px/1.4 var(--mono); color: var(--st-muted); }
+.st-next .bar { height: 2px; background: var(--st-line); margin-top: 8px; position: relative; }
+.st-next .bar::after { content: ""; position: absolute; inset: 0 35% 0 0; background: var(--st-teal); }
+.st-board { padding: 16px; border: 1px solid var(--st-line); border-radius: 14px; background: linear-gradient(180deg, rgba(255,255,255,.025), transparent 50%), rgba(8,11,15,.8); box-shadow: 0 0 40px rgba(0,0,0,.35); min-width: 0; }
+.st-board-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-bottom: 10px; }
+.st-board-top span { font: 600 9px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--st-muted); }
+.st-board .fb { --cell: 34px; --row: 32px; --dot: 24px; --frets: 13; }
+.st-live { display: grid; gap: 5px; margin-top: 12px; padding-top: 9px; border-top: 1px solid var(--st-line); }
+.st-live-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.st-live-head span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--st-muted); }
+.st-live-head b { font: 500 10px/1.2 var(--mono); color: var(--st-teal); }
+.st-wave { display: flex; align-items: center; gap: 3px; height: 25px; }
+.st-wave i { width: 3px; height: calc(var(--h) * 1px); border-radius: 2px; background: var(--st-teal); opacity: .65; }
+.st-live-foot { display: flex; justify-content: space-between; gap: 8px; font: 500 8px/1.2 var(--mono); color: var(--st-muted); }
+.st-phone-next { display: none; }
+.st-phone-next b { color: var(--st-accent); font: 600 18px/1 var(--serif); }
+.st-rail { display: grid; gap: 10px; align-content: start; }
+.st-levels { display: grid; gap: 3px; }
+.st-level { display: grid; grid-template-columns: 19px 1fr; gap: 6px; padding: 6px 7px; border-radius: 7px; color: var(--st-muted); font-size: 10px; line-height: 1.3; }
+.st-level.on { background: var(--st-panel); border: 1px solid var(--st-line); color: var(--st-ink); box-shadow: inset 2px 0 0 var(--st-accent); }
+.st-level span { font: 600 8px/1.4 var(--mono); color: var(--st-muted); }
+.st-level.on span { color: var(--st-accent); }
+.st-level b { display: block; font-size: 11px; }
+.st-cam { position: relative; overflow: hidden; border-radius: 9px; border: 1px solid var(--st-line); background: #080a0d; }
+.st-cam img { display: block; width: 100%; height: 96px; object-fit: cover; opacity: .75; }
+.st-cam .b-play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); background: rgba(255,255,255,.92); color: #0b0e12; width: 28px; height: 28px; }
+.st-cam p { position: absolute; left: 8px; right: 8px; bottom: 6px; margin: 0; font: 500 8px/1.2 var(--mono); color: #f4ede4; text-shadow: 0 1px 4px #000; }
+.st-tuner { padding: 8px 9px; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-panel); display: grid; gap: 2px; }
+.st-tuner span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--st-muted); }
+.st-tuner div { display: flex; align-items: baseline; gap: 6px; }
+.st-tuner b { font: 600 22px/1 var(--serif); color: var(--st-teal); }
+.st-tuner em { font: 500 10px/1 var(--mono); color: var(--st-muted); font-style: normal; }
+.st-dock { display: flex; align-items: center; gap: 14px; padding: 12px 20px; border-top: 1px solid var(--st-line); background: rgba(11,14,18,.92); }
+.st-tempo { display: flex; align-items: center; gap: 1px; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-panel); }
+.st-tempo button { width: 26px; height: 34px; border: 0; background: transparent; color: var(--st-muted); }
+.st-tempo b { min-width: 32px; text-align: center; font: 600 13px/1 var(--mono); }
+.st-pause { width: 54px; height: 54px; border-radius: 50%; border: 0; background: var(--st-accent); color: #1a1208; font-weight: 700; font-size: 12px; margin: 0 auto; box-shadow: 0 0 24px rgba(255,179,92,.28); }
+.st-dock-side { display: flex; gap: 12px; align-items: center; color: var(--st-muted); font: 500 9px/1.2 var(--mono); }
+.st-pips { display: flex; gap: 3px; }
+.st-pip { width: 6px; height: 6px; border-radius: 50%; background: var(--st-line); }
+.st-pip.on { background: var(--st-teal); }
+.st-progress { width: 70px; height: 2px; background: var(--st-line); position: relative; }
+.st-progress::after { content: ""; position: absolute; inset: 0 62% 0 0; background: var(--st-accent); }
+.st-phone-cam { display: none; }
+
+/* ============================================================
+   03 — FIELD GUIDE
+   ============================================================ */
+.guide {
+  --g-bg: #f7f3ea; --g-ink: #1f2a24; --g-muted: #6d766e; --g-line: #d9d2c4;
+  --g-red: #ce4a31; --g-moss: #46604d; --g-gold: #c08b2f;
+  --fb-muted: #7c8177; --fb-fret: #d9d2c4; --fb-marker: #b9b2a4;
+  --fb-note-bg: #1f2a24; --fb-note-ink: #fff; --fb-root-bg: #ce4a31; --fb-root-ink: #fff;
+  --fb-target: #1f2a24; --fb-glow: rgba(31,42,36,.18);
+  background:
+    linear-gradient(rgba(31,42,36,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31,42,36,.035) 1px, transparent 1px),
+    var(--g-bg);
+  background-size: 24px 24px;
+  color: var(--g-ink); min-height: 720px;
+}
+.g-top { display: flex; align-items: center; gap: 16px; padding: 12px 18px; border-bottom: 1px solid var(--g-line); background: rgba(247,243,234,.88); backdrop-filter: blur(8px); }
+.g-brand { display: flex; align-items: baseline; gap: 8px; margin-right: auto; }
+.g-brand b { font: 600 20px/1 var(--serif); letter-spacing: -.02em; }
+.g-brand span { font: 500 9px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--g-muted); }
+.g-nav { display: flex; gap: 2px; }
+.g-nav button { min-height: 30px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--g-muted); font-size: 11px; }
+.g-nav button.on { background: var(--g-ink); color: var(--g-bg); font-weight: 600; }
+.g-tools { display: flex; gap: 6px; align-items: center; }
+.g-status { font: 500 9px/1 var(--mono); color: var(--g-muted); }
+.g-tuner-btn { min-height: 30px; padding: 0 9px; border: 1px solid var(--g-line); border-radius: 6px; background: transparent; font-size: 11px; }
+.g-body { display: grid; grid-template-columns: 188px minmax(0, 1fr) 242px; min-height: 600px; }
+.g-path { padding: 16px 14px; border-right: 1px solid var(--g-line); display: grid; gap: 12px; align-content: start; }
+.g-path .eyebrow { color: var(--g-muted); }
+.g-path ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+.g-path li { display: grid; grid-template-columns: 20px 1fr auto; gap: 6px; align-items: center; padding: 6px 6px; border-radius: 6px; color: var(--g-muted); font-size: 11px; }
+.g-path li b { font-weight: 500; color: var(--g-ink); }
+.g-path li .num { font: 600 9px/1 var(--mono); color: var(--g-muted); }
+.g-path li.done .num { color: var(--g-moss); }
+.g-path li.done::after { content: "✓"; font-size: 9px; color: var(--g-moss); }
+.g-path li.on { background: var(--g-ink); color: var(--g-bg); }
+.g-path li.on b { color: var(--g-bg); }
+.g-path li.on .num { color: var(--g-gold); }
+.g-path-note { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--g-line); font: 500 9px/1.4 var(--mono); color: var(--g-muted); }
+.g-lesson { padding: 18px 20px; display: grid; gap: 12px; align-content: start; min-width: 0; }
+.g-hero, .g-steps, .g-board { min-width: 0; }
+.g-lesson > p { overflow-wrap: anywhere; }
+.g-kicker { display: flex; align-items: center; gap: 8px; color: var(--g-muted); font: 600 9px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; }
+.g-kicker span { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 50%; background: var(--g-red); color: #fff; font-size: 9px; letter-spacing: 0; }
+.g-lesson h2 { margin: 0; font: 600 30px/1.02 var(--serif); letter-spacing: -.03em; max-width: 14ch; }
+.g-lesson h2 em { color: var(--g-red); font-style: italic; }
+.g-lesson > p { margin: 0; color: var(--g-muted); font-size: 12px; }
+.g-hero { display: grid; grid-template-columns: 1.2fr 1fr; gap: 10px; background: #fffdf8; border: 1px solid var(--g-line); border-radius: 10px; overflow: hidden; }
+.g-hero img { width: 100%; height: 132px; object-fit: cover; display: block; }
+.g-hero-copy { padding: 11px 12px 10px 2px; display: grid; gap: 4px; align-content: center; }
+.g-hero-copy span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--g-red); }
+.g-hero-copy h3 { margin: 0; font: 600 16px/1.15 var(--serif); }
+.g-hero-copy p { margin: 0; color: var(--g-muted); font-size: 11px; line-height: 1.4; }
+.g-watch { justify-self: start; min-height: 28px; padding: 0 8px; border: 1px solid var(--g-ink); border-radius: 6px; background: transparent; color: var(--g-ink); font-size: 10px; font-weight: 600; }
+.g-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.g-steps li { display: grid; grid-template-columns: 18px 1fr; gap: 6px; padding: 6px 7px; border: 1px solid var(--g-line); border-radius: 7px; background: rgba(255,255,255,.55); }
+.g-steps li > span { font: 600 9px/1.4 var(--mono); color: var(--g-red); }
+.g-steps b { display: block; font-size: 11px; line-height: 1.3; }
+.g-steps p { margin: 1px 0 0; font-size: 10px; line-height: 1.4; color: var(--g-muted); }
+.g-board { padding: 9px 10px 5px; border: 1px solid var(--g-line); border-radius: 9px; background: #fffdf8; }
+.g-board .fb { --cell: 23px; --row: 24px; --dot: 19px; --frets: 13; }
+.g-actions { display: flex; gap: 7px; align-items: center; flex-wrap: wrap; }
+.g-primary { min-height: 36px; padding: 0 13px; border: 1px solid var(--g-red); border-radius: 7px; background: var(--g-red); color: #fff; font-size: 12px; font-weight: 600; }
+.g-ghost { min-height: 36px; padding: 0 11px; border: 1px solid var(--g-line); border-radius: 7px; background: transparent; color: var(--g-ink); font-size: 11px; }
+.g-actions span { font: 500 9px/1.3 var(--mono); color: var(--g-muted); }
+.g-rail { border-left: 1px solid var(--g-line); padding: 16px 14px; display: grid; gap: 10px; align-content: start; }
+.g-card { padding: 10px; border: 1px solid var(--g-line); border-radius: 8px; background: rgba(255,255,255,.65); display: grid; gap: 4px; }
+.g-card .label { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--g-muted); }
+.g-tuner b { font: 600 30px/1 var(--serif); color: var(--g-ink); }
+.g-tuner em { font: 500 10px/1 var(--mono); color: var(--g-moss); font-style: normal; margin-left: 4px; }
+.g-tuner .bar { height: 2px; background: var(--g-line); margin-top: 4px; position: relative; }
+.g-tuner .bar::after { content: ""; position: absolute; inset: 0 46% 0 0; background: var(--g-moss); }
+.g-session b { font: 600 24px/1 var(--serif); }
+.g-session p { margin: 0; font-size: 10px; line-height: 1.4; color: var(--g-muted); }
+.g-blocks { display: flex; gap: 3px; margin-top: 3px; }
+.g-block { flex: 1; height: 4px; border-radius: 2px; background: var(--g-line); }
+.g-block.on { background: var(--g-red); }
+.g-material img { width: 100%; height: 82px; object-fit: cover; border-radius: 5px; display: block; }
+.g-material b { font-size: 11px; }
+.g-material p { margin: 0; font-size: 9px; color: var(--g-muted); }
+.g-youtube { text-decoration: none; color: inherit; }
+.g-youtube:hover { border-color: var(--g-red); }
+.g-play-pill { justify-self: start; padding: 2px 6px; border: 1px solid var(--g-red); border-radius: 999px; color: var(--g-red); background: transparent; font: 600 8px/1.3 var(--mono); }
+.g-phone-path { padding: 9px 11px; border: 1px solid var(--g-line); border-radius: 8px; background: rgba(255,255,255,.65); display: grid; gap: 6px; }
+.g-phone-path .gpp-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.g-phone-path .gpp-head span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--g-muted); }
+.g-phone-path .gpp-head b { font: 600 11px/1.2 var(--sans); }
+.g-phone-dots { display: flex; gap: 4px; align-items: center; }
+.g-phone-dots i { flex: 1; height: 4px; border-radius: 2px; background: var(--g-line); }
+.g-phone-dots i.done { background: var(--g-moss); }
+.g-phone-dots i.on { background: var(--g-red); }
+.g-phone-tune { display: flex; align-items: baseline; gap: 8px; padding: 7px 10px; border: 1px solid var(--g-line); border-radius: 7px; background: rgba(255,255,255,.6); }
+.g-phone-tune span { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--g-muted); }
+.g-phone-tune b { font: 600 20px/1 var(--serif); }
+.g-phone-tune em { font: 500 9px/1 var(--mono); color: var(--g-moss); font-style: normal; }
+.g-phone-tune .bar { flex: 1; height: 2px; background: var(--g-line); position: relative; }
+.g-phone-tune .bar::after { content: ""; position: absolute; inset: 0 46% 0 0; background: var(--g-moss); }
+.g-foot { display: flex; gap: 14px; flex-wrap: wrap; padding: 9px 18px; border-top: 1px solid var(--g-line); color: var(--g-muted); font: 500 9px/1.2 var(--mono); }
+.g-foot button { margin-left: auto; border: 0; background: transparent; color: var(--g-ink); font-size: 9px; text-decoration: underline; }
+
+/* ============================================================
+   PHONE OVERRIDES
+   ============================================================ */
+.canvas[data-viewport="phone"] .bench { min-height: 720px; }
+.canvas[data-viewport="phone"] .b-top { padding: 10px 12px; gap: 8px; }
+.canvas[data-viewport="phone"] .b-brand { font-size: 17px; }
+.canvas[data-viewport="phone"] .b-status { display: none; }
+.canvas[data-viewport="phone"] .b-nav button:not(.on):not(.b-icon) { display: none; }
+.canvas[data-viewport="phone"] .b-body { display: flex; flex-direction: column; }
+.canvas[data-viewport="phone"] .b-lib, .canvas[data-viewport="phone"] .b-coach { display: none; }
+.canvas[data-viewport="phone"] .b-main { padding: 14px 12px 10px; gap: 10px; }
+.canvas[data-viewport="phone"] .b-head h2 { font-size: 24px; }
+.canvas[data-viewport="phone"] .b-board .fb { --cell: 24px; --row: 27px; --dot: 20px; }
+.canvas[data-viewport="phone"] .b-board { padding: 10px 10px 5px; }
+.canvas[data-viewport="phone"] .b-transport { order: 5; }
+.canvas[data-viewport="phone"] .b-sheet { display: grid; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--b-line); background: #f4ede2; }
+.canvas[data-viewport="phone"] .b-real { grid-template-columns: 98px 1fr auto; }
+.canvas[data-viewport="phone"] .b-real img { width: 98px; height: 74px; }
+.canvas[data-viewport="phone"] .b-foot { display: none; }
+
+.canvas[data-viewport="phone"] .night { min-height: 720px; }
+.canvas[data-viewport="phone"] .st-top { padding: 9px 11px; gap: 7px; }
+.canvas[data-viewport="phone"] .st-exit { padding: 0 7px; font-size: 10px; }
+.canvas[data-viewport="phone"] .st-title b { font-size: 13px; }
+.canvas[data-viewport="phone"] .st-title span, .canvas[data-viewport="phone"] .st-block, .canvas[data-viewport="phone"] .st-status { display: none; }
+.canvas[data-viewport="phone"] .st-body { display: block; padding: 12px; }
+.canvas[data-viewport="phone"] .st-next, .canvas[data-viewport="phone"] .st-rail { display: none; }
+.canvas[data-viewport="phone"] .st-board { padding: 11px; }
+.canvas[data-viewport="phone"] .st-board .fb { --cell: 24px; --row: 26px; --dot: 20px; }
+.canvas[data-viewport="phone"] .st-phone-next { display: flex; align-items: baseline; gap: 9px; padding: 9px 11px; margin-bottom: 8px; border: 1px solid var(--st-line); border-radius: 8px; background: var(--st-panel); font: 500 9px/1.2 var(--mono); color: var(--st-muted); }
+.canvas[data-viewport="phone"] .st-phone-next span:last-child { margin-left: auto; }
+.canvas[data-viewport="phone"] .st-phone-next .st-phone-tune { color: var(--st-teal); padding-left: 8px; border-left: 1px solid var(--st-line); }
+.canvas[data-viewport="phone"] .st-live { margin-top: 9px; }
+.canvas[data-viewport="phone"] .st-phone-cam { grid-template-columns: 82px minmax(0,1fr) auto; gap: 8px; align-items: center; margin-top: 10px; padding: 6px; border: 1px solid var(--st-line); border-radius: 9px; background: var(--st-panel); }
+.canvas[data-viewport="phone"] .st-phone-cam img { width: 82px; height: 62px; object-fit: cover; border-radius: 5px; }
+.canvas[data-viewport="phone"] .st-phone-cam .b-play { background: rgba(255,255,255,.92); color: #0b0e12; }
+.st-phone-cam b { display: block; font-size: 11px; }
+.canvas[data-viewport="phone"] .st-phone-cam span { font: 500 8px/1.3 var(--mono); color: var(--st-muted); }
+.canvas[data-viewport="phone"] .st-dock { margin-top: auto; padding: 9px 12px 13px; gap: 9px; }
+.canvas[data-viewport="phone"] .st-pause { width: 50px; height: 50px; }
+.canvas[data-viewport="phone"] .st-dock-side span:last-child, .canvas[data-viewport="phone"] .st-progress { display: none; }
+
+.canvas[data-viewport="phone"] .guide { min-height: 720px; }
+.canvas[data-viewport="phone"] .g-top { padding: 9px 12px; gap: 8px; }
+.canvas[data-viewport="phone"] .g-brand b { font-size: 17px; }
+.canvas[data-viewport="phone"] .g-nav button:not(.on) { display: none; }
+.canvas[data-viewport="phone"] .g-status { display: none; }
+.canvas[data-viewport="phone"] .g-body { display: block; }
+.canvas[data-viewport="phone"] .g-path, .canvas[data-viewport="phone"] .g-rail { display: none; }
+.canvas[data-viewport="phone"] .g-lesson { padding: 14px 12px 12px; gap: 10px; }
+.canvas[data-viewport="phone"] .g-lesson h2 { font-size: 26px; }
+.canvas[data-viewport="phone"] .g-hero { grid-template-columns: 1fr; }
+.canvas[data-viewport="phone"] .g-hero img { height: 160px; }
+.canvas[data-viewport="phone"] .g-hero-copy { padding: 0 11px 11px; }
+.canvas[data-viewport="phone"] .g-steps { grid-template-columns: 1fr 1fr; }
+.canvas[data-viewport="phone"] .g-board .fb { --cell: 23px; --row: 24px; --dot: 19px; }
+.canvas[data-viewport="phone"] .g-foot { display: none; }
+
+/* ============================================================
+   MODAL
+   ============================================================ */
+.watch-dialog {
+  width: min(760px, calc(100vw - 32px)); padding: 0; border: 1px solid var(--line);
+  border-radius: 14px; background: #0e0c0a; color: var(--ink);
+  box-shadow: 0 40px 100px rgba(0,0,0,.6);
+}
+.watch-dialog::backdrop { background: rgba(8,7,6,.76); backdrop-filter: blur(4px); }
+.watch-dialog video { display: block; width: 100%; aspect-ratio: 16 / 9; background: #000; }
+.watch-dialog .watch-copy { display: flex; gap: 12px; align-items: center; justify-content: space-between; padding: 12px 16px; }
+.watch-dialog .watch-copy p { margin: 0; color: var(--muted); font-size: 12px; }
+.watch-dialog button { min-height: 34px; padding: 0 12px; border: 1px solid var(--line); border-radius: 7px; background: transparent; color: var(--ink); font-size: 12px; }
+
+@media (max-width: 1420px) {
+  .stage { grid-template-columns: 1fr; }
+  .notes { position: static; }
+}
+@media (max-width: 1180px) {
+  .notes { grid-template-columns: 1fr; }
+}
+@media (max-width: 720px) {
+  .page { padding: 16px; }
+  .concept-tabs { grid-template-columns: 1fr; }
+  .canvas { padding: 12px; }
+  .page-title { font-size: 42px; }
+  .verdict { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+  <header class="page-head">
+    <div>
+      <p class="eyebrow">T2 Coach / interface directions 02</p>
+      <h1 class="page-title">Three ways to <em>learn.</em></h1>
+      <p class="page-lede">A full interface revamp, not a reskin. Each direction changes what leads: the instrument, the performance, or the lesson. All three surface the real photo and video reference that was previously buried.</p>
+    </div>
+    <div class="gallery-controls">
+      <span class="pill"><span class="dot"></span> real photo + clip included</span>
+      <a class="pill" href="./ui-hybrid.html" style="text-decoration:none;color:var(--amber);border-color:var(--amber)">Your 2-column hybrid →</a>
+      <div class="seg" id="viewTabs" aria-label="Preview width">
+        <button type="button" data-view="desktop" aria-pressed="true">Desktop</button>
+        <button type="button" data-view="phone" aria-pressed="false">Phone</button>
+      </div>
+    </div>
+  </header>
+
+  <nav class="concept-tabs" id="conceptTabs" aria-label="Design direction">
+    <button type="button" class="concept-tab" data-concept="bench" aria-pressed="true" style="--tab-accent:#b45309">
+      <span class="num">01</span><span><b>Luthier's Bench</b><em>Warm, tactile, instrument-led</em></span>
+    </button>
+    <button type="button" class="concept-tab" data-concept="stage" aria-pressed="false" style="--tab-accent:#ffb35c">
+      <span class="num">02</span><span><b>Night Stage</b><em>Focused, cinematic, performance-led</em></span>
+    </button>
+    <button type="button" class="concept-tab" data-concept="guide" aria-pressed="false" style="--tab-accent:#ce4a31">
+      <span class="num">03</span><span><b>Field Guide</b><em>Editorial, curriculum-led</em></span>
+    </button>
+  </nav>
+
+  <div class="stage">
+    <div class="canvas" id="canvas" data-viewport="desktop">
+      <div class="mock-frame">
+        <!-- ================= 01 LUTHIER'S BENCH ================= -->
+        <div class="mock bench" id="mock-bench">
+          <header class="b-top">
+            <div class="b-brand"><span class="b-mark">◆</span><span>T2 Coach</span></div>
+            <div class="b-status"><span class="dot"></span>Connected · 82%</div>
+            <nav class="b-nav">
+              <button type="button" class="on">Today</button>
+              <button type="button">Library</button>
+              <button type="button">Progress</button>
+              <button type="button" class="b-icon">⋯</button>
+            </nav>
+          </header>
+          <div class="b-body">
+            <aside class="b-lib">
+              <p class="eyebrow">Library</p>
+              <div class="b-tabs">
+                <button type="button" class="on">Scales</button>
+                <button type="button">Chords</button>
+                <button type="button">Progressions</button>
+                <button type="button">Songs</button>
+              </div>
+              <div class="b-select"><span>Key</span><b>A minor <span>⌄</span></b></div>
+              <div class="b-select"><span>Scale</span><b>Minor pentatonic <span>⌄</span></b></div>
+              <div class="b-select"><span>Position</span><b>Position 1 <span>⌄</span></b></div>
+              <div class="b-select"><span>Labels</span><b>Finger numbers <span>⌄</span></b></div>
+              <div class="b-chips"><span class="b-chip root">A</span><span class="b-chip">C</span><span class="b-chip">D</span><span class="b-chip">E</span><span class="b-chip">G</span></div>
+              <div class="b-tuner"><span>Tuner</span><div><b>A4</b><em>+2 cents</em></div></div>
+              <div class="b-path"><span>Path 03 / 06</span><b>First shape</b><div class="b-bar"></div></div>
+            </aside>
+
+            <main class="b-main">
+              <div class="b-head">
+                <div>
+                  <p class="eyebrow">Current lesson</p>
+                  <h2>A minor pentatonic</h2>
+                  <p>Position 1 · 50 BPM · 4-step lesson</p>
+                </div>
+                <span class="b-due">3 due</span>
+              </div>
+              <div class="b-board">
+                <div class="b-board-top"><span>Fretboard · finger numbers</span><span>Lights on</span></div>
+                <div class="fb-wrap" data-board></div>
+              </div>
+              <div class="b-steps"><span class="on">01 Anchor</span><span>02 Shape</span><span>03 Play</span><span>04 No lights</span></div>
+              <div class="b-transport">
+                <button type="button" class="b-primary">Start at 50</button>
+                <div class="b-tempo"><button type="button">−</button><b>50</b><button type="button">+</button></div>
+                <div class="b-beats"><span class="b-beat on"></span><span class="b-beat"></span><span class="b-beat"></span><span class="b-beat"></span></div>
+                <button type="button" class="b-ghost js-watch">Hear it</button>
+              </div>
+              <div class="b-sheet only-phone grid">
+                <div class="b-real">
+                  <img src="./assets/real-fretboard.jpg" alt="Close-up of a hand fretting a guitar">
+                  <div><span>Real reference</span><b>Hand &amp; fretboard</b><p>Photo + 6s clip</p></div>
+                  <button type="button" class="b-play js-watch" aria-label="Watch real hand footage">▶</button>
+                </div>
+                <div class="b-hint">
+                  <div class="b-hint-head"><span>Hints</span><span class="b-pips"><span class="b-pip on"></span><span class="b-pip"></span><span class="b-pip"></span><span class="b-pip"></span></span></div>
+                  <b>Level 1 · Full pattern</b>
+                  <p>3 clean passes to remove a hint · 2 failed passes to bring one back.</p>
+                </div>
+                <div class="b-phone-tune"><span>Tuner</span><b>A4</b><em>+2 cents</em></div>
+              </div>
+            </main>
+
+            <aside class="b-coach">
+              <div class="b-real">
+                <img src="./assets/real-fretboard.jpg" alt="Close-up of a hand fretting a guitar">
+                <div><span>Real reference</span><b>Hand &amp; fretboard</b><p>Photo + 6s clip</p></div>
+                <button type="button" class="b-play js-watch" aria-label="Watch real hand footage">▶</button>
+              </div>
+              <div class="b-hint">
+                <div class="b-hint-head"><span>Hints</span><span class="b-pips"><span class="b-pip on"></span><span class="b-pip"></span><span class="b-pip"></span><span class="b-pip"></span></span></div>
+                <b>Level 1 · Full pattern</b>
+                <p>3 clean passes to remove a hint · 2 failed passes to bring one back.</p>
+              </div>
+              <div class="b-video js-watch">
+                <img src="./assets/real-hand.png" alt="Real hand playing guitar">
+                <span class="b-play">▶</span>
+                <div><span>Watch the shape</span><span>0:06</span></div>
+              </div>
+              <button type="button" class="b-learn">Learn this drill</button>
+              <div class="b-session"><span>Session · block 2 of 5</span><b>Focus · 3 min</b><p>Your lowest clean rate at this position.</p></div>
+            </aside>
+          </div>
+          <footer class="b-foot"><span>Today 13 min</span><span>5 blocks</span><span>4-day streak</span><span>All progress local</span></footer>
+        </div>
+
+        <!-- ================= 02 NIGHT STAGE ================= -->
+        <div class="mock night" id="mock-stage" hidden>
+          <header class="st-top">
+            <button type="button" class="st-exit">← Exit</button>
+            <div class="st-title"><b>Scale run</b><span>A minor pentatonic · Position 1</span></div>
+            <span class="st-block">Block 2 of 5</span>
+            <span class="st-status"><span class="dot"></span>Connected</span>
+            <button type="button" class="b-icon">⋯</button>
+          </header>
+          <div class="st-body">
+            <aside class="st-next"><span>Next</span><b>C</b><p>string 3 · fret 5</p><div class="bar"></div></aside>
+            <main class="st-board">
+              <div class="st-phone-next only-phone flex"><span>Next</span><b>C</b><span>string 3 · fret 5</span><span class="st-phone-tune">A4 +2</span></div>
+              <div class="st-board-top"><span>Fretboard · live</span><span>Pass 1 of 4</span></div>
+              <div class="fb-wrap" data-board></div>
+              <div class="st-phone-cam only-phone grid">
+                <img src="./assets/real-hand.png" alt="Real hand playing guitar">
+                <div><b>Coach cam</b><span>Real hand · 0:06</span></div>
+                <button type="button" class="b-play js-watch" aria-label="Watch real hand footage">▶</button>
+              </div>
+              <div class="st-live">
+                <div class="st-live-head"><span>Listening</span><b>C · in tune</b></div>
+                <div class="st-wave" aria-hidden="true"><i style="--h:9"></i><i style="--h:16"></i><i style="--h:7"></i><i style="--h:22"></i><i style="--h:12"></i><i style="--h:19"></i><i style="--h:10"></i><i style="--h:25"></i><i style="--h:14"></i><i style="--h:8"></i><i style="--h:20"></i><i style="--h:11"></i><i style="--h:17"></i><i style="--h:6"></i><i style="--h:23"></i><i style="--h:13"></i><i style="--h:18"></i><i style="--h:8"></i><i style="--h:21"></i><i style="--h:12"></i></div>
+                <div class="st-live-foot"><span>9 / 12 clean</span><span>Pass 1 of 4</span></div>
+              </div>
+            </main>
+            <aside class="st-rail">
+              <div class="st-levels">
+                <div class="st-level on"><span>01</span><div><b>Full pattern</b>Every note, labelled.</div></div>
+                <div class="st-level"><span>02</span><div><b>Anchors</b>Roots only.</div></div>
+                <div class="st-level"><span>03</span><div><b>Hint on demand</b>Ask when stuck.</div></div>
+                <div class="st-level"><span>04</span><div><b>No lights</b>Recall, unaided.</div></div>
+              </div>
+              <div class="st-cam">
+                <img src="./assets/real-hand.png" alt="Real hand playing guitar">
+                <button type="button" class="b-play js-watch" aria-label="Watch real hand footage">▶</button>
+                <p>Coach cam · real hand</p>
+              </div>
+              <div class="st-tuner"><span>Tuner</span><div><b>A4</b><em>+2 cents</em></div></div>
+            </aside>
+          </div>
+          <footer class="st-dock">
+            <div class="st-tempo"><button type="button">−</button><b>50</b><button type="button">+</button></div>
+            <button type="button" class="st-pause">Pause</button>
+            <div class="st-dock-side">
+              <span>Hints 1/4</span><span class="st-pips"><span class="st-pip on"></span><span class="st-pip"></span><span class="st-pip"></span><span class="st-pip"></span></span>
+              <span>38%</span><span class="st-progress"></span>
+            </div>
+          </footer>
+        </div>
+
+        <!-- ================= 03 FIELD GUIDE ================= -->
+        <div class="mock guide" id="mock-guide" hidden>
+          <header class="g-top">
+            <div class="g-brand"><b>Field Guide</b><span>T2 Coach</span></div>
+            <nav class="g-nav"><button type="button" class="on">Path</button><button type="button">Practice</button><button type="button">Library</button><button type="button">Progress</button></nav>
+            <div class="g-tools"><span class="g-status">Connected</span><button type="button" class="g-tuner-btn">Tuner</button></div>
+          </header>
+          <div class="g-body">
+            <aside class="g-path">
+              <p class="eyebrow">Learning path</p>
+              <ol>
+                <li class="done"><span class="num">01</span><b>Tune</b></li>
+                <li class="done"><span class="num">02</span><b>Find notes</b></li>
+                <li class="on"><span class="num">03</span><b>First shape</b></li>
+                <li><span class="num">04</span><b>Blues note</b></li>
+                <li><span class="num">05</span><b>Power chords</b></li>
+                <li><span class="num">06</span><b>Changes</b></li>
+              </ol>
+              <div class="g-path-note">6 steps · 2 done · next: the blue note</div>
+            </aside>
+            <main class="g-lesson">
+              <div class="g-phone-path only-phone grid">
+                <div class="gpp-head"><span>Learning path · 6 steps</span><b>03 · First shape</b></div>
+                <div class="g-phone-dots"><i class="done"></i><i class="done"></i><i class="on"></i><i></i><i></i><i></i></div>
+              </div>
+              <div class="g-kicker"><span>03</span> Lesson · A minor pentatonic</div>
+              <h2>Find the root, <em>then the shape.</em></h2>
+              <p>Position 1 · 50 BPM · one shape, four steps, no lights at the end.</p>
+              <div class="g-phone-tune only-phone flex"><span>Tuner</span><b>A4</b><em>+2 cents</em><div class="bar"></div></div>
+              <div class="g-hero">
+                <img src="./assets/real-fretboard.jpg" alt="Close-up of a hand fretting a guitar">
+                <div class="g-hero-copy">
+                  <span>Real reference</span>
+                  <h3>See a hand make the shape.</h3>
+                  <p>Photo and a 6-second clip, then you play it.</p>
+                  <button type="button" class="g-watch js-watch">▶ Watch the clip</button>
+                </div>
+              </div>
+              <ol class="g-steps">
+                <li><span>01</span><div><b>Anchor the root</b><p>Finger 1 on A, string 6 fret 5.</p></div></li>
+                <li><span>02</span><div><b>Set the shape</b><p>One finger per fret, frets 5–8.</p></div></li>
+                <li><span>03</span><div><b>Play it slowly</b><p>Up and back at 50 BPM. Say the notes.</p></div></li>
+                <li><span>04</span><div><b>Take the lights away</b><p>Once with only the target, once dark.</p></div></li>
+              </ol>
+              <div class="g-board">
+                <div class="fb-wrap" data-board></div>
+              </div>
+              <div class="g-actions">
+                <button type="button" class="g-primary">Start the lesson</button>
+                <button type="button" class="g-ghost js-watch">Hear it</button>
+                <span>Lights on · count-in · 50 BPM</span>
+              </div>
+            </main>
+            <aside class="g-rail">
+              <div class="g-card g-tuner"><span class="label">Tuner</span><div><b>A4</b><em>+2 cents</em></div><div class="bar"></div></div>
+              <div class="g-card g-session"><span class="label">Today</span><b>13 min</b><p>5 blocks · 2 no-light passes</p><div class="g-blocks"><span class="g-block on"></span><span class="g-block on"></span><span class="g-block"></span><span class="g-block"></span><span class="g-block"></span></div></div>
+              <div class="g-card g-material">
+                <span class="label">Watch &amp; read</span>
+                <img src="./assets/real-hand.png" alt="Real hand playing guitar">
+                <b>Real hand reference</b>
+                <p>Photo + 6-second clip</p>
+                <button type="button" class="g-play-pill js-watch">Play here</button>
+              </div>
+              <a class="g-card g-material g-youtube" href="https://www.youtube.com/watch?v=ZHBomQaAvQo" target="_blank" rel="noopener">
+                <span class="label">Watch &amp; read</span>
+                <img src="./assets/justinguitar-five-positions.jpg" alt="JustinGuitar minor pentatonic lesson thumbnail">
+                <b>Minor pentatonic: five positions</b>
+                <p>YouTube · JustinGuitar</p>
+                <span class="g-play-pill">Play here ↗</span>
+              </a>
+            </aside>
+          </div>
+          <footer class="g-foot"><span>Everything stays in this browser</span><span>Offline ready</span><button type="button">Export progress</button></footer>
+        </div>
+      </div>
+    </div>
+
+    <aside class="notes" aria-live="polite">
+      <div class="note-kicker"><b id="noteNum">01</b> / 03</div>
+      <h2 id="noteTitle">Luthier's Bench</h2>
+      <p class="note-lede" id="noteLede">A warm, tactile workspace where the instrument is the hero and the coach sits beside it.</p>
+      <div class="note-block"><h3>The bet</h3><p id="noteBet"></p></div>
+      <div class="note-block"><h3>Learning fit</h3><ul id="noteFit"></ul></div>
+      <div class="note-block"><h3>Materials</h3><p id="noteMaterials"></p></div>
+      <div class="note-block"><h3>Tradeoff</h3><p id="noteTradeoff"></p></div>
+      <div class="swatches" id="noteSwatches" aria-label="Palette"></div>
+      <div class="fit-note"><b>Try it:</b> the photo and video cards open the real six-second reference; the board shows finger numbers and the target.</div>
+    </aside>
+  </div>
+
+  <section class="verdict">
+    <div>
+      <p class="eyebrow">Recommendation</p>
+      <h2>Ship Field Guide as the home, Night Stage as the drill, and borrow the Bench's materials rail.</h2>
+      <p>The teaching path should lead, not the fretboard. Once a lesson starts, the stage should take over and remove everything that is not the neck, the next target and the transport.</p>
+    </div>
+    <div>
+      <p class="eyebrow">First five moves</p>
+      <ol>
+        <li>Put the real reference photo and clip above the fold in every lesson.</li>
+        <li>Make the path the first screen: tune → notes → shape → blues → power → changes.</li>
+        <li>Keep the tuner visible beside the board, not in a menu.</li>
+        <li>Use one filled action per screen; move setup into a drawer.</li>
+        <li>Let Practice become its own focused route rather than a tab.</li>
+      </ol>
+    </div>
+    <div class="keep">
+      <p class="eyebrow">Do not lose</p>
+      <span><b>The warm wood and paper.</b> The current identity is good; the revamp should deepen it, not erase it.</span>
+      <span><b>The real materials.</b> Photo and footage stay local; the optional YouTube embed is the only online player.</span>
+      <span><b>The fade.</b> Lights, hints, recall and the no-light pass remain the spine of every direction.</span>
+    </div>
+  </section>
+</div>
+
+<dialog class="watch-dialog" id="watchDialog">
+  <video id="watchVideo" controls playsinline muted poster="./assets/real-hand.png" src="./assets/real-hand.mp4"></video>
+  <div class="watch-copy">
+    <p>Real hand reference · video: Alejandro JV / Pexels; photo: cottonbro studio / Pexels.</p>
+    <form method="dialog"><button>Close</button></form>
+  </div>
+</dialog>
+
+<script>
+const SCALE = [
+  { s: 6, f: 5, n: 'A', root: true }, { s: 6, f: 8, n: 'C' },
+  { s: 5, f: 5, n: 'D' }, { s: 5, f: 7, n: 'E' },
+  { s: 4, f: 5, n: 'G' }, { s: 4, f: 7, n: 'A', root: true },
+  { s: 3, f: 5, n: 'C', target: true }, { s: 3, f: 7, n: 'D' },
+  { s: 2, f: 5, n: 'E' }, { s: 2, f: 8, n: 'G' },
+  { s: 1, f: 5, n: 'A', root: true }, { s: 1, f: 8, n: 'C' },
+];
+const STRINGS = ['E', 'B', 'G', 'D', 'A', 'E'];
+
+function renderBoard(host) {
+  const frets = 13;
+  const wrap = document.createElement('div');
+  wrap.className = 'fb';
+  wrap.style.setProperty('--frets', frets);
+  for (let s = 1; s <= 6; s++) {
+    const row = document.createElement('div');
+    row.className = 'fb-row';
+    const label = document.createElement('span');
+    label.className = 'fb-string';
+    label.textContent = STRINGS[s - 1];
+    row.append(label);
+    for (let f = 1; f <= frets; f++) {
+      const cell = document.createElement('span');
+      cell.className = 'fb-cell' + ([3, 5, 7, 9, 12].includes(f) ? ' marker' : '');
+      const note = SCALE.find(item => item.s === s && item.f === f);
+      if (note) {
+        const dot = document.createElement('span');
+        dot.className = 'fb-note' + (note.root ? ' root' : '') + (note.target ? ' target' : '');
+        dot.textContent = note.n;
+        cell.append(dot);
+      }
+      row.append(cell);
+    }
+    wrap.append(row);
+  }
+  const nums = document.createElement('div');
+  nums.className = 'fb-nums';
+  nums.append(document.createElement('span'));
+  for (let f = 1; f <= frets; f++) {
+    const n = document.createElement('span');
+    n.className = 'fb-num';
+    n.textContent = f;
+    nums.append(n);
+  }
+  wrap.append(nums);
+  host.replaceChildren(wrap);
+}
+document.querySelectorAll('[data-board]').forEach(renderBoard);
+
+const NOTES = {
+  bench: {
+    num: '01', title: "Luthier's Bench", accent: '#b45309',
+    lede: 'A warm, tactile workspace where the instrument is the hero and the coach sits beside it.',
+    bet: 'The app feels like a workbench: wood, paper, brass, and a lesson card you can reach without leaving the neck. The board is the physical object; the interface gets out of its way.',
+    fit: [
+      'The real hand/fretboard photo and six-second clip sit in the coach rail, not behind a Learn button.',
+      'Finger numbers and the target are on the board; the tuner is always visible in the library.',
+      'One start action, a quiet hint ladder, and a session card that explains why this block exists.',
+    ],
+    materials: 'A real photo card, a real motion clip with a play overlay, the local tuner, and the shape diagram. No media is hidden in a collapsed section.',
+    tradeoff: 'Three columns at 1280px; the rails have to collapse or become sheets on a tablet. The warmth can drift into “vintage” if the type is not kept disciplined.',
+    swatches: ['#efe8db', '#3a2418', '#b45309', '#997849', '#251e18'],
+  },
+  stage: {
+    num: '02', title: 'Night Stage', accent: '#ffb35c',
+    lede: 'A dark, cinematic practice stage where the next target and the transport are the only things in the room.',
+    bet: 'When the pass starts, learning is performance: a glowing neck, a next-target card, a coach cam, and a large pause. Everything else belongs to the setup screen, not the stage.',
+    fit: [
+      'The real hand footage is a “coach cam” beside the neck, not a link.',
+      'The next note is literal: C, string 3, fret 5, with a progress line.',
+      'The tuner and hint ladder are visible but quiet; the pause button is the one large control.',
+    ],
+    materials: 'Coach-cam still from the real clip, a real video preview, the tuner, and a level rail. The lesson path moves to the entry screen.',
+    tradeoff: 'A focused route needs a clear exit and a way back to the lesson; a dark theme is less inviting for a first-time absolute beginner.',
+    swatches: ['#0b0e12', '#11161d', '#ffb35c', '#63e6c4', '#f1eee8'],
+  },
+  guide: {
+    num: '03', title: 'Field Guide', accent: '#ce4a31',
+    lede: 'A modern method book: a visible learning path, a real reference, and a lesson that reads before it drills.',
+    bet: 'The first screen answers “what am I learning and why?” The board becomes a diagram inside the lesson, and the path makes progress legible. Practice is a mode you enter, not a tab you find.',
+    fit: [
+      'The real photo is the lesson hero; the six-second clip is one click away.',
+      'The path runs tune → notes → shape → blues → power → changes, with current and completed steps.',
+      'The four teaching steps, finger shape and Start action sit on one page; the tuner and materials live in the margin.',
+    ],
+    materials: 'A real photo hero, a local six-second clip, a locally thumbnailed JustinGuitar lesson with a Play here link, and the tuner. The material is part of the lesson, not an appendix.',
+    tradeoff: 'The learning path needs content that is actually sequential; the board is no longer the first thing a returning player sees. It is the right trade for a beginner.',
+    swatches: ['#f7f3ea', '#1f2a24', '#ce4a31', '#46604d', '#c08b2f'],
+  },
+};
+
+const noteNum = document.getElementById('noteNum');
+const noteTitle = document.getElementById('noteTitle');
+const noteLede = document.getElementById('noteLede');
+const noteBet = document.getElementById('noteBet');
+const noteFit = document.getElementById('noteFit');
+const noteMaterials = document.getElementById('noteMaterials');
+const noteTradeoff = document.getElementById('noteTradeoff');
+const noteSwatches = document.getElementById('noteSwatches');
+const notes = document.querySelector('.notes');
+
+function setConcept(name) {
+  document.querySelectorAll('#conceptTabs button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.concept === name));
+  });
+  ['bench', 'stage', 'guide'].forEach(key => {
+    document.getElementById('mock-' + key).hidden = key !== name;
+  });
+  const note = NOTES[name];
+  notes.style.setProperty('--note-accent', note.accent);
+  noteNum.textContent = note.num;
+  noteTitle.textContent = note.title;
+  noteLede.textContent = note.lede;
+  noteBet.textContent = note.bet;
+  noteFit.replaceChildren(...note.fit.map(line => {
+    const li = document.createElement('li');
+    li.textContent = line;
+    return li;
+  }));
+  noteMaterials.textContent = note.materials;
+  noteTradeoff.textContent = note.tradeoff;
+  noteSwatches.replaceChildren(...note.swatches.map(color => {
+    const span = document.createElement('span');
+    span.style.background = color;
+    span.title = color;
+    return span;
+  }));
+}
+
+function setView(view) {
+  document.getElementById('canvas').dataset.viewport = view;
+  document.querySelectorAll('#viewTabs button').forEach(button => {
+    button.setAttribute('aria-pressed', String(button.dataset.view === view));
+  });
+}
+
+document.querySelectorAll('#conceptTabs button').forEach(button => {
+  button.addEventListener('click', () => setConcept(button.dataset.concept));
+});
+document.querySelectorAll('#viewTabs button').forEach(button => {
+  button.addEventListener('click', () => setView(button.dataset.view));
+});
+
+const dialog = document.getElementById('watchDialog');
+const video = document.getElementById('watchVideo');
+document.querySelectorAll('.js-watch').forEach(button => {
+  button.addEventListener('click', () => {
+    dialog.showModal();
+    video.currentTime = 0;
+    video.play().catch(() => {});
+  });
+});
+dialog.addEventListener('close', () => {
+  video.pause();
+});
+
+setConcept('bench');
+
+const params = new URLSearchParams(location.search);
+if (NOTES[params.get('concept')]) setConcept(params.get('concept'));
+if (params.get('view') === 'phone' || params.get('view') === 'desktop') setView(params.get('view'));
+</script>
+</body>
+</html>
