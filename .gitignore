@@ -1,0 +1,8 @@
+.DS_Store
+Poputar_*.apk
+re/apk/
+.commandcode/
+# third-party lesson thumbnail: kept locally as a reference only, not redistributed
+**/justinguitar-five-positions.jpg
+# local GSD planning state, not published
+.planning/

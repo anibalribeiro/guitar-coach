@@ -1,0 +1,11 @@
+[Service] 0000ffa0-0000-1000-8000-00805f9b34fb  Vendor specific
+   [Char] 0000ffa3-0000-1000-8000-00805f9b34fb  handle=13  (notify)  Vendor specific
+      [Desc] 00002902-0000-1000-8000-00805f9b34fb  handle=15
+      [Desc] 00002901-0000-1000-8000-00805f9b34fb  handle=16
+   [Char] 0000dc86-0000-1000-8000-00805f9b34fb  handle=17  (write-without-response)  Vendor specific
+      [Desc] 00002902-0000-1000-8000-00805f9b34fb  handle=19
+      [Desc] 00002901-0000-1000-8000-00805f9b34fb  handle=20
+[Service] 00010203-0405-0607-0809-0a0b0c0d1912  Unknown
+   [Char] 00010203-0405-0607-0809-0a0b0c0d2b12  handle=22  (read,write-without-response)  Unknown
+          value: 00  bytearray(b'\x00')
+      [Desc] 00002901-0000-1000-8000-00805f9b34fb  handle=24

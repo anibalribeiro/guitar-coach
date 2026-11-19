@@ -1,0 +1,1497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src 'self' data:; media-src 'self'; frame-src https://www.youtube-nocookie.com; worker-src 'self'; base-uri 'none'; form-action 'self'">
+<script src="./bootstrap.js"></script>
+<title>Guitar Coach</title>
+<style>
+:root {
+  color-scheme: light;
+  --bg: #efe8db;
+  --panel: #f8f4ec;
+  --text: #251e18;
+  --muted: #7b6e60;
+  --border: #d8cdbd;
+  --accent: #a94d18;
+  --accent-text: #ffffff;
+  --note: #2c211a;
+  --note-text: #fff8ed;
+  --ok: #3e7d4b;
+  --ok-text: #ffffff;
+  --danger: #c92a2a;
+  --danger-text: #ffffff;
+  /* Dark values live once; the two dark selectors below only map them. */
+  --dark-bg: #151210;
+  --dark-panel: #201c18;
+  --dark-text: #f1ece4;
+  --dark-muted: #a99d8f;
+  --dark-border: #3b332b;
+  --dark-accent: #ff9a5c;
+  --dark-accent-text: #1a0f08;
+  --dark-note: #f1ece4;
+  --dark-note-text: #1b1815;
+  --dark-ok: #63c77a;
+  --dark-ok-text: #1b1815;
+  --dark-danger: #ff8787;
+  --dark-danger-text: #1b1815;
+  --wood: #3a2418;
+  --wood-dark: #2b1b12;
+  --fret: #b9b4ab;
+  --nut: #efe6d2;
+  --string: #d8d2c4;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-12: 48px;
+  --space-16: 64px;
+}
+/* An explicit Light choice wins over a dark OS; Dark pins the app even on a light OS.
+   `System` stays attribute-driven so the media query below owns it. */
+html[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: var(--dark-bg);
+  --panel: var(--dark-panel);
+  --text: var(--dark-text);
+  --muted: var(--dark-muted);
+  --border: var(--dark-border);
+  --accent: var(--dark-accent);
+  --accent-text: var(--dark-accent-text);
+  --note: var(--dark-note);
+  --note-text: var(--dark-note-text);
+  --ok: var(--dark-ok);
+  --ok-text: var(--dark-ok-text);
+  --danger: var(--dark-danger);
+  --danger-text: var(--dark-danger-text);
+}
+@media (prefers-color-scheme: dark) {
+  html:not([data-theme="light"]) {
+    color-scheme: dark;
+    --bg: var(--dark-bg);
+    --panel: var(--dark-panel);
+    --text: var(--dark-text);
+    --muted: var(--dark-muted);
+    --border: var(--dark-border);
+    --accent: var(--dark-accent);
+    --accent-text: var(--dark-accent-text);
+    --note: var(--dark-note);
+    --note-text: var(--dark-note-text);
+    --ok: var(--dark-ok);
+    --ok-text: var(--dark-ok-text);
+    --danger: var(--dark-danger);
+    --danger-text: var(--dark-danger-text);
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--text); font: 400 16px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+[hidden] { display: none !important; }
+h1, h2, h3 { margin: 0; font-size: 20px; font-weight: 600; line-height: 1.2; }
+h1, h2 { font-family: var(--serif); letter-spacing: -.02em; }
+button, select, input[type=number] {
+  font: inherit; color: var(--text); background: var(--panel);
+  border: 1px solid var(--border); border-radius: 8px; padding: var(--space-2) var(--space-3);
+}
+button { cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, select:focus-visible, input:focus-visible, [role=tab]:focus-visible, .bar:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+header {
+  position: sticky; top: 0; z-index: 20;
+  display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; justify-content: space-between;
+  padding: var(--space-3) var(--space-4); background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.header-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.conn { display: flex; gap: var(--space-2); align-items: center; font-size: 16px; color: var(--text); }
+.conn .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); display: inline-block; flex: none; }
+.conn.on .dot { background: var(--ok); }
+#connectBtn { border-color: var(--accent); color: var(--accent); background: var(--panel); }
+#connectBtn.on { border-color: var(--border); color: var(--text); }
+.lights-toggle { display: flex; gap: var(--space-2); align-items: center; background: var(--panel); }
+.led-glyph { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.lights-toggle[aria-pressed="true"] .led-glyph { background: var(--accent); }
+#lightsState { font-weight: 600; }
+main { max-width: 1320px; margin: 0 auto; padding: var(--space-4); display: grid; gap: var(--space-4); }
+.tabs { display: flex; gap: var(--space-1); padding: var(--space-1); background: var(--panel); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+.tabs [role=tab] { border: 0; background: transparent; border-radius: 8px; min-height: 44px; padding: var(--space-2) var(--space-4); font-size: 16px; font-weight: 400; white-space: nowrap; }
+.tabs [role=tab][aria-selected="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+[role=tabpanel] { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4); }
+.controls { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-4); align-items: end; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-3) var(--space-4); }
+label, .field { display: grid; gap: var(--space-1); font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+label.inline { display: flex; align-items: center; gap: var(--space-2); text-transform: none; letter-spacing: 0; font-size: 16px; font-weight: 400; color: var(--text); }
+/* A-56 retired the Songs tab's read-only key chip: it is a real `Key` select now, so the
+   chip rule that styled it is gone with it. */
+.microcopy { margin: 0; font-size: 12px; color: var(--muted); }
+.chips { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.chip { display: grid; justify-items: center; min-width: 42px; padding: var(--space-1) var(--space-2); border-radius: 8px; background: var(--panel); border: 1px solid var(--border); }
+.chip b { font-size: 16px; font-weight: 600; line-height: 1.3; }
+.chip span { font-size: 12px; font-weight: 400; color: var(--muted); line-height: 1.3; }
+.chip.root { border-color: var(--accent); }
+.board-wrap {
+  overflow-x: auto; border-radius: 12px; -webkit-overflow-scrolling: touch;
+  background: var(--wood);
+  box-shadow: inset -16px 0 16px -16px rgba(0,0,0,.45), inset 16px 0 16px -16px rgba(0,0,0,.45);
+}
+.board-stage { position: relative; }
+#board { display: grid; background: var(--wood); border-radius: 12px; padding: var(--space-2) var(--space-3) var(--space-1); min-width: max-content; }
+.cell { position: relative; height: 38px; border-right: 3px solid var(--fret); }
+.cell:focus-visible { outline: 3px solid #fff; outline-offset: -4px; z-index: 2; }
+.cell.open { border-right: 7px solid var(--nut); }
+.cell::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 50%;
+  height: var(--thick, 1px); transform: translateY(-50%); background: var(--string);
+}
+.cell.open::before { opacity: .5; }
+.cell.marker { background: radial-gradient(circle at 50% 100%, rgba(255,255,255,.14) 0 7px, transparent 8px); }
+.num { text-align: center; font-size: 12px; color: #cfc6b8; padding: var(--space-1) 0; font-variant-numeric: tabular-nums; }
+.num.mk { color: #fff; font-weight: 600; }
+.note {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: 30px; height: 30px; border-radius: 50%;
+  display: grid; place-items: center; cursor: pointer;
+  background: var(--note); color: var(--note-text); font-size: 12px; font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,.4); z-index: 1; user-select: none;
+}
+.note.root { background: var(--accent); color: var(--accent-text); }
+.note.dim { opacity: .28; }
+.note.target { outline: 3px solid #fff; outline-offset: 2px; }
+#board.pulse-on .note.target { transform: translate(-50%, -50%) scale(1.18); }
+.note.hit { background: var(--ok) !important; color: var(--ok-text) !important; }
+.note.open { background: #f8f4ec; border: 2px solid #251e18; color: #251e18; box-shadow: none; }
+.note.open.root { border-color: #a94d18; color: #a94d18; }
+.note.muted { background: transparent; border: 0; color: var(--muted); box-shadow: none; }
+#board.disabled .cell { cursor: default; }
+@media (prefers-reduced-motion: reduce) { #board.pulse-on .note.target { transform: translate(-50%, -50%); } }
+@media (pointer: coarse) { .cell { height: 44px; } }
+.chord-detail { font-size: 16px; color: var(--text); }
+.chart { display: grid; gap: var(--space-3); }
+.chart section { display: grid; gap: var(--space-2); }
+.chart h3 { display: flex; gap: var(--space-2); align-items: center; }
+.repeat-badge { font-size: 12px; font-weight: 600; color: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 0 var(--space-1); }
+.bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: var(--space-2); }
+.bar { display: grid; gap: var(--space-1); text-align: left; padding: var(--space-2); border: 1px solid var(--border); border-radius: 8px; background: var(--panel); }
+.bar[aria-pressed="true"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.bar-name { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.bar-roman, .bar-number { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+/* The play-along stage chart: the same card geometry as the browse chart on the inset
+   surface the hint strip uses. The current bar reuses accent rule 7, widened from the
+   browse chart's selected bar to the stage. */
+.play-chart { display: grid; gap: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-4); }
+.play-chart-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: baseline; justify-content: space-between; }
+.play-chart-mode { font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.play-chart-bars { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.play-chart-bar { display: grid; gap: 4px; align-content: start; min-height: 56px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; text-align: left; }
+.play-chart-bar[aria-current="step"] { outline: 2px solid var(--accent); outline-offset: 1px; }
+.play-chart-primary { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.play-chart-secondary, .play-chart-tag { font-size: 12px; font-weight: 600; line-height: 1.3; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-variant-numeric: tabular-nums; }
+/* D-65's one new song metadata surface: the strum pattern and the song's one-line tip, 12px
+   muted, inside the chart the fade already hides at No lights (two lines, never one run-on). */
+.play-chart-strum { margin: 0; display: grid; gap: 4px; font-size: 12px; line-height: 1.3; color: var(--muted); }
+.play-chart-error { margin: 0; font-size: 12px; line-height: 1.3; color: var(--muted); }
+/* The Backing cluster: one preset, four stems and the loop window on the same inset
+   surface as the hint strip and the stage chart. Stacked blocks below 1024px, one
+   wrapping row above it, so the duck line always has a full-width line of its own. */
+.backing-cluster { display: grid; gap: 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; }
+.stem-group { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); }
+.stem-group label { display: inline-flex; gap: var(--space-1); align-items: center; }
+/* The state word is the control's visible half and its only description (D-66). */
+#sectionLoopState { font-weight: 600; }
+.backing-cluster .microcopy { margin: 0; }
+@media (min-width: 1024px) {
+  .backing-cluster { display: flex; flex-wrap: wrap; gap: 12px var(--space-4); align-items: center; }
+  .backing-cluster #backingDuckLine { flex-basis: 100%; }
+}
+@media (pointer: coarse) {
+  .stem-group label { min-height: 44px; }
+}
+.feedback { min-height: 24px; color: var(--muted); font-size: 16px; }
+.count-in-overlay {
+  position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: var(--space-1);
+  padding: var(--space-6); border-radius: 12px; background: color-mix(in srgb, var(--panel) 96%, transparent);
+  pointer-events: none; text-align: center;
+}
+.count-numeral { font-size: 40px; font-weight: 600; line-height: 1.1; color: var(--accent); }
+.count-label, .count-go { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--text); }
+.count-go { color: var(--accent); }
+.drill-stage, .result-panel {
+  display: grid; gap: var(--space-3); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: var(--space-4);
+}
+.start-here { justify-self: start; min-height: 36px; padding: 0 10px; border: 1px solid var(--accent); border-radius: 8px; background: var(--panel); color: var(--accent); font-size: 13px; font-weight: 600; }
+.coach-tools { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.tuner-toggle { min-height: 36px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: var(--text); font-size: 13px; }
+.tuner-card { display: grid; gap: 6px; background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: var(--space-3); }
+.tuner-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); }
+.tuner-note { font-size: 40px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; }
+.tuner-cents { margin: 0; font-size: 13px; line-height: 1.4; color: var(--muted); }
+.tuner-cents.in-tune { color: var(--ok); font-weight: 600; }
+.stage-row { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; }
+.hint-strip { display: grid; gap: var(--space-1); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-2) var(--space-3); }
+.hint-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.hint-pips { display: flex; gap: var(--space-1); }
+.hint-pip { width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex: none; }
+.hint-pip.current { background: var(--accent); }
+.hint-level, .pass-counter { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.hint-name { font-size: 16px; font-weight: 600; }
+.hint-sep { color: var(--muted); }
+.pass-counter { margin-left: auto; }
+.hint-criteria, .hint-reason { margin: 0; font-size: 12px; line-height: 1.3; color: var(--muted); }
+.hint-reason { color: var(--text); }
+.pass-review { display: grid; gap: var(--space-3); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-4); }
+.pass-review .decision { margin: 0; font-weight: 600; }
+.pass-review .tempo-line { margin: 0; font-weight: 600; }
+.pass-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.pass-report { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: var(--space-4); }
+.pass-card { display: grid; gap: var(--space-1); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-3); }
+.hint-confirm { display: grid; gap: var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-3); }
+.hint-confirm h3 { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.hint-confirm p { margin: 0; }
+.hint-confirm-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.result-hero-sub { margin: 0; color: var(--muted); }
+.stage-toggle { display: flex; gap: var(--space-2); align-items: center; background: var(--panel); }
+.stage-glyph { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.stage-toggle[aria-pressed="true"] .stage-glyph { background: var(--accent); }
+#stageState { font-weight: 600; }
+.cue-fade #scaleChips { display: none; }
+.cue-dark #chordDetail, .cue-dark #chart { display: none; }
+.stage-mode .note, .stage-mode .num, .stage-mode #scaleChips, .stage-mode #chart, .stage-mode #chordDetail, .stage-mode #nowPlaying, .stage-mode #pairStrip { display: none; }
+@media (max-width: 639px) {
+  .hint-row { gap: var(--space-1) var(--space-2); }
+  .hint-row .hint-level { flex-basis: 100%; }
+  .pass-counter { order: 5; flex-basis: 100%; margin-left: 0; }
+  .pass-actions { flex-direction: column; }
+  .pass-actions button { width: 100%; }
+  #playProgression, #playSong { width: 100%; }
+  /* Two stage-chart columns and the Body-token primary, so a twelve-bar chart wraps into
+     six rows instead of clipping a label at 320px (UI-SPEC Responsive). */
+  .play-chart-bars { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .play-chart-primary { font-size: 16px; }
+  header { gap: var(--space-2) var(--space-3); align-items: flex-start; }
+  .header-actions { display: contents; }
+  .conn { flex: 1 1 auto; }
+  .tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); overflow-x: visible; }
+  .tabs [role=tab] { white-space: normal; padding: var(--space-2); }
+}
+@media (min-width: 640px) {
+  .hint-row { flex-wrap: nowrap; }
+  .pass-actions { flex-direction: row; }
+  .pass-report { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.beat-dots { display: flex; gap: var(--space-2); align-items: center; }
+.beat-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--border); flex: none; }
+.beat-dot.active { background: var(--accent); }
+.beat-dot.beat-1.active { transform: scale(1.2); }
+@media (prefers-reduced-motion: reduce) { .beat-dot.beat-1.active { transform: none; } }
+.now-playing { font-size: 16px; }
+.step-count { font-size: 16px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.transport { display: flex; flex-wrap: wrap; gap: var(--space-2); margin-left: auto; }
+.cta { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+/* A-54: Play seeds the stage, it is not the accent action — `Start drill` stays the one call
+   to action. Secondary surface, 1px border, 44px target, full row width on a phone. Both
+   browse tabs carry the same secondary button: Progressions and Songs (04-03). */
+#playProgression, #playSong { background: var(--panel); border: 1px solid var(--border); color: var(--text); min-height: 44px; }
+.tempo-cluster { display: flex; flex-wrap: wrap; gap: var(--space-1); align-items: center; }
+#bpm { width: 72px; font-variant-numeric: tabular-nums; }
+#bpmTap { min-width: 52px; transition: background-color .12s ease, color .12s ease; }
+#bpmTap.tap-tick { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.tap-preview { font-size: 12px; color: var(--muted); min-width: 24px; }
+.progress { height: 2px; background: var(--border); border-radius: 1px; overflow: hidden; }
+#progressFill { width: 0; height: 100%; background: var(--accent); }
+.pause-banner {
+  display: grid; gap: var(--space-2); background: var(--panel); border: 1px solid var(--border);
+  border-left: 4px solid var(--border); border-radius: 8px; padding: var(--space-4);
+}
+.pause-banner.danger { border-left-color: var(--danger); }
+.pause-reason { margin: 0; font-weight: 600; }
+.pause-actions, .result-actions, .report-options { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.result-head { display: grid; gap: var(--space-1); }
+.result-verdict { font-size: 40px; font-weight: 600; line-height: 1.1; }
+.result-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-4); }
+.stat-label { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.stat-value { font-size: 20px; font-weight: 600; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.stat-sub { font-size: 12px; line-height: 1.3; color: var(--muted); }
+.self-report { display: grid; gap: var(--space-2); }
+.report-option[aria-checked="true"] { background: var(--ok); color: var(--ok-text); border-color: var(--ok); font-weight: 600; }
+#reportShaky[aria-checked="true"], #recallShaky[aria-checked="true"] { background: var(--panel); color: var(--text); border-color: var(--accent); }
+@media (min-width: 1024px) { .result-grid { grid-template-columns: repeat(4, 1fr); } }
+.result-mic { margin: 0; font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+/* ---------- Progress panel (Phase 2) ---------- */
+.progress-panel {
+  max-width: 1280px; margin: var(--space-4) auto 0;
+  display: grid; gap: var(--space-4);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-4);
+}
+.progress-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.progress-section { display: grid; gap: var(--space-2); }
+.progress-empty { display: grid; gap: var(--space-1); }
+.progress-empty p { margin: 0; color: var(--muted); }
+.history { display: flex; align-items: flex-end; gap: var(--space-1); height: 96px; }
+.history-bar { display: flex; flex-direction: column-reverse; flex: 1 1 0; max-width: 24px; height: 100%; }
+.history-guided { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.history-unguided { background: var(--accent); }
+.history-legend { display: flex; gap: var(--space-2); align-items: center; font-size: 12px; color: var(--muted); }
+.legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
+.legend-swatch.guided { background: color-mix(in srgb, var(--muted) 45%, transparent); }
+.legend-swatch.unguided { background: var(--accent); }
+.due-list, .skill-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.due-row, .skill-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.due-copy, .skill-copy { display: grid; gap: 2px; }
+.due-name, .skill-name { font-size: 16px; font-weight: 600; }
+.due-when, .skill-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.state-chip { border: 1px solid var(--border); border-radius: 8px; padding: 0 var(--space-2); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.state-chip.mastered { background: var(--ok); color: var(--ok-text); border-color: var(--ok); }
+.all-skills-list { max-height: 320px; overflow-y: auto; }
+.accent-outline { border-color: var(--accent); color: var(--accent); }
+.backup-actions, .import-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.backup-status { margin: 0; min-height: 24px; font-size: 16px; }
+.backup-status.ok { color: var(--ok); }
+.backup-status.danger { color: var(--danger); }
+.import-confirm { display: grid; gap: var(--space-2); background: var(--bg); border-left: 4px solid var(--danger); border-radius: 8px; padding: var(--space-3); }
+.import-confirm h3 { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.import-confirm p { margin: 0; }
+.danger-fill { background: var(--danger); color: var(--danger-text); border-color: var(--danger); font-weight: 600; }
+@media (max-width: 639px) {
+  .progress-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .skill-row { align-items: flex-start; }
+  .due-row { align-items: stretch; }
+  .due-row button { width: 100%; }
+  .progress-panel { margin: var(--space-2) var(--space-2) 0; }
+}
+@media (min-width: 640px) {
+  .due-row, .skill-row { flex-wrap: nowrap; }
+}
+@media (min-width: 1024px) {
+  .progress-tiles { grid-template-columns: repeat(4, 1fr); }
+}
+#bootError { max-width: 640px; margin: var(--space-16) auto; padding: var(--space-6); background: var(--panel); border: 1px solid var(--border); border-radius: 12px; display: grid; gap: var(--space-4); }
+#bootError p { margin: 0; }
+#bootError button { border-color: var(--accent); color: var(--accent); }
+.boot-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+#bootErrorDetail { color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+@media (min-width: 1024px) { main { gap: var(--space-6); } }
+/* ---------- Phase 3: drill families and the quiz (03-01) ---------- */
+.family-picker { display: flex; gap: var(--space-1); padding: var(--space-1); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; overflow-x: auto; }
+.family-picker [role=radio] { border: 0; background: transparent; border-radius: 8px; min-height: 44px; padding: var(--space-2) var(--space-4); font-size: 16px; font-weight: 400; white-space: nowrap; }
+.family-picker [role=radio][aria-checked="true"] { background: var(--accent); color: var(--accent-text); font-weight: 600; }
+.family-picker [role=radio]:disabled { opacity: .5; cursor: default; }
+.family-desc { margin: 0; }
+.quiz-prompt { display: grid; gap: var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-4); }
+.quiz-prompt-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.quiz-counter, .quiz-mode { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.quiz-prompt-text { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.quiz-prompt #quizPool { margin: 0; }
+.answer-chips { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+.answer-chip { min-height: 44px; background: var(--panel); border: 1px solid var(--border); border-radius: 8px; font-size: 16px; font-variant-numeric: tabular-nums; }
+.answer-chip.correct { background: var(--ok); color: var(--ok-text); border-color: var(--ok); font-weight: 600; }
+.quiz-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.quiz-outcome { margin: 0; font-size: 16px; font-weight: 600; }
+.pair-strip { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.pair-card { display: grid; gap: 4px; align-content: start; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; }
+.pair-card[aria-current="step"] { border: 2px solid var(--accent); }
+.pair-card[aria-current="step"] .pair-name { color: var(--accent); }
+.pair-name { font-size: 16px; font-weight: 600; line-height: 1.3; overflow-wrap: anywhere; }
+.pair-meta { font-size: 12px; line-height: 1.3; color: var(--muted); font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.pair-frets { letter-spacing: .08em; }
+.note.question { box-shadow: inset 0 0 0 3px var(--accent); }
+.by-string { display: grid; gap: var(--space-2); }
+.by-string-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-1); }
+.by-string-row { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-2); align-items: baseline; }
+.by-string-name { font-size: 16px; font-weight: 600; }
+.by-string-meta { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+@media (min-width: 640px) {
+  .answer-chips { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .pair-strip { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+}
+@media (max-width: 639px) {
+  /* A-53: five segments in a six-column grid — segments 1-3 span two columns (row one) and
+     segments 4-5 span three (row two). `flex-wrap` alone could produce four + one, and a
+     label is never truncated: it wraps to at most two lines at 16px/400. */
+  .family-picker { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow-x: visible; }
+  .family-picker [role=radio] { grid-column: span 2; padding: var(--space-2); white-space: normal; text-align: center; }
+  .family-picker [role=radio]:nth-child(4), .family-picker [role=radio]:nth-child(5) { grid-column: span 3; }
+  .quiz-actions { flex-direction: column; align-items: stretch; }
+  #nextQuestion { width: 100%; }
+  /* Whole cards wrap to the next row; a chord name never wraps by itself. */
+  .pair-strip { grid-template-columns: minmax(0, 1fr); }
+}
+/* ---------- Phase 3: the chord-pair plane (03-02) ---------- */
+/* Secondary, never a fill: the result's seed action is one step below Repeat drill, and
+   the accent lives in its border so the two CTAs cannot be confused at a glance. */
+#practiseWeakestPair { border-color: var(--accent); color: var(--accent); background: var(--panel); }
+/* ---------- Phase 3: the mic cluster and the calibration panel (03-03) ---------- */
+.mic-cluster { display: flex; gap: var(--space-2); align-items: center; }
+.mic-toggle { display: flex; gap: var(--space-2); align-items: center; background: var(--panel); white-space: nowrap; }
+/* The glyph carries the accent only while the mic is armed or listening (accent rule 16);
+   a denied or absent device stays muted and never red (D-51). */
+.mic-glyph { width: 10px; height: 10px; border-radius: 50% 50% 45% 45%; background: var(--muted); flex: none; }
+.mic-toggle[data-mic="accent"] .mic-glyph { background: var(--accent); }
+#micState { font-weight: 600; white-space: nowrap; }
+#headphonesLine { margin: 0; }
+.calibration-panel {
+  max-width: 1280px; margin: var(--space-4) auto 0;
+  display: grid; gap: var(--space-4);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-4);
+}
+.calibration-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.calibration-intro, .calibration-error { margin: 0; }
+.calibration-run { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; }
+#calibTap { min-height: 56px; width: 100%; max-width: 240px; font-weight: 600; transition: background-color .12s ease, color .12s ease; }
+#calibTap.tap-tick { background: var(--ok); color: var(--ok-text); border-color: var(--ok); }
+.calibration-count { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.calibration-done { display: grid; gap: var(--space-2); }
+.calibration-warning { margin: 0; font-size: 12px; line-height: 1.3; color: var(--text); }
+.calibration-actions, .calibration-foot { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+@media (max-width: 639px) {
+  /* Three rows below 640px: title and connection cluster, the three toggles, then the
+     mic cluster on its own row. The header grows instead of truncating a state word. */
+  .mic-cluster { order: 3; flex-basis: 100%; }
+  .mic-cluster > button { flex: 1 1 auto; white-space: nowrap; }
+  #calibTap { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) { #calibTap { transition: none; } }
+/* ---------- Daily session (Phase 5, 05-01) ---------- */
+.session-badge { margin-left: var(--space-2); padding: 0 var(--space-2); border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 12px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.session-total { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.session-plan { display: grid; gap: var(--space-3); }
+.session-blocks { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.session-block { display: grid; gap: var(--space-1); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-2) var(--space-3); }
+.session-block-name { font-size: 16px; font-weight: 600; }
+.session-block-min { font-size: 12px; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+.session-block-state { justify-self: start; font-size: 12px; font-weight: 600; border: 1px solid var(--border); border-radius: 8px; padding: 0 var(--space-2); }
+.session-block-reason { font-size: 12px; line-height: 1.3; color: var(--muted); }
+.session-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.session-summary { display: grid; gap: var(--space-3); }
+.session-next { font-size: 16px; line-height: 1.4; }
+/* Five tiles, never four plus an orphan: the 1024px `.result-grid` rule force-fits four columns,
+   so the session's own rule is declared after it in this same block and wins on source order. */
+.session-tiles { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.session-boundary { display: grid; gap: var(--space-2); }
+.session-boundary-token { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-variant-numeric: tabular-nums; }
+.session-boundary-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+@media (max-width: 639px) { .session-boundary-actions > button { flex: 1 1 100%; } }
+/* The Plan/Practise control keeps the family picker's contract and its 44px targets, but the
+   shared picker is a six-column grid at 640px: two segments there would leave a two-thirds row. */
+.family-picker.session-view { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.family-picker.session-view [role=radio] { grid-column: span 1; }
+/* The Practise view: five family rows, then the `Show` filter and its one visible list. No action
+   in this view is filled — the menu is a choice, not a recommendation (accent rule 3). */
+.session-practise { display: grid; gap: var(--space-3); }
+.practise-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.practise-row { display: grid; gap: var(--space-1); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-2) var(--space-3); }
+.practise-name { font-size: 16px; font-weight: 600; }
+.practise-item { font-size: 12px; line-height: 1.3; color: var(--muted); font-variant-numeric: tabular-nums; }
+.practise-start { justify-self: start; }
+/* The recommendation strip: one sentence and, at most, one secondary button. Never sticky, never
+   animated, never a second live region (05-UI-SPEC "Recommendation strip"). */
+.rep-suggestion { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; font-size: 16px; line-height: 1.4; }
+.rep-suggestion-text { flex: 1 1 240px; }
+@media (max-width: 639px) {
+  .practise-row { grid-template-columns: 1fr; }
+  .practise-start { justify-self: stretch; }
+}
+/* Accent rule 3: while the Session panel is open it owns the only filled action, so `Start
+   drill` renders neutral even though the shell still carries its `class="cta"`. */
+#appShell.session-open #startDrill { background: var(--panel); color: var(--text); border-color: var(--border); font-weight: 400; }
+@media (min-width: 640px) {
+  .session-block { grid-template-columns: 1fr auto; align-items: center; }
+  .session-block-min { justify-self: end; }
+  .session-block-state { grid-column: 2; grid-row: 2; justify-self: end; }
+  .session-block-reason { grid-column: 1; grid-row: 2; }
+}
+/* ---------- The micro-lesson (Phase 5, 05-02 Task 1, D-75) ---------- */
+/* `#familyDesc` and `Learn` share the existing `.stage-row` rule above, so the family row needs no
+   new layout object. The button is a 44px secondary and never filled: the lesson is reading
+   material, so it may not compete with `Start drill` (accent rule 3). */
+#familyLearn { min-height: 44px; background: var(--panel); border: 1px solid var(--border); color: var(--text); }
+/* Four blocks on `--bg`, label above its paragraph, no fill anywhere in the panel and no maximum
+   height: every paragraph wraps to as many lines as the width needs at 320px and 200% zoom. */
+.lesson-block { display: grid; gap: var(--space-2); background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: var(--space-3); }
+.lesson-block-label { font-size: 12px; font-weight: 600; line-height: 1.3; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+.lesson-block-text { margin: 0; font-size: 16px; line-height: 1.5; color: var(--text); overflow-wrap: anywhere; }
+.lesson-link-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: baseline; }
+.lesson-link { color: var(--text); text-decoration: underline; font-size: 16px; overflow-wrap: anywhere; }
+.lesson-link-glyph { text-decoration: none; }
+.lesson-link-note { font-size: 12px; color: var(--muted); }
+/* The guided half of the lesson: a real shape, four actions, then the background blocks. */
+.lesson-focus { margin: -4px 0 0; font-size: 14px; line-height: 1.45; color: var(--muted); }
+.lesson-prep { margin: -4px 0 0; }
+.lesson-guided { display: grid; gap: var(--space-3); background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-3); }
+.lesson-shape { display: grid; gap: var(--space-2); }
+.lesson-shape-title { font-size: 10px; font-weight: 600; line-height: 1.3; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.lesson-scale { display: grid; gap: 2px; overflow-x: auto; padding: 2px 0; }
+.lesson-scale-row { display: grid; grid-template-columns: 16px repeat(var(--cols), minmax(0, 1fr)); align-items: center; height: 30px; }
+.lesson-scale-string { font-size: 9px; font-weight: 600; color: var(--muted); text-align: center; }
+.lesson-scale-cell { position: relative; height: 100%; border-right: 1px solid var(--border); }
+.lesson-scale-note { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--note); color: var(--note-text); font-size: 9px; font-weight: 600; line-height: 1; }
+.lesson-scale-note.root { background: var(--accent); color: var(--accent-text); }
+.lesson-scale-note.blue { background: var(--panel); color: var(--text); border: 2px dashed var(--accent); }
+.lesson-scale-note i { position: absolute; right: -3px; bottom: -3px; width: 11px; height: 11px; border-radius: 50%; display: grid; place-items: center; background: var(--panel); border: 1px solid var(--border); color: var(--text); font-style: normal; font-size: 7px; font-weight: 600; }
+.lesson-scale-frets { display: grid; grid-template-columns: 16px repeat(var(--cols), minmax(0, 1fr)); }
+.lesson-scale-fret { font-size: 8px; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; }
+.lesson-basics { display: grid; gap: var(--space-2); }
+.lesson-demo-block { display: grid; gap: 6px; }
+.lesson-demo-video { display: block; width: 100%; aspect-ratio: 3 / 2; background: var(--wood); border: 1px solid var(--border); border-radius: 8px; }
+.lesson-basics-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+.lesson-basics-card { margin: 0; display: grid; gap: 4px; justify-items: center; padding: 8px 4px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+.lesson-basics-card svg { display: block; width: 100%; max-width: 88px; height: 38px; color: var(--muted); }
+.lesson-basics-card figcaption { font-size: 10px; line-height: 1.3; color: var(--muted); text-align: center; }
+.lesson-materials { display: grid; gap: var(--space-2); }
+.lesson-videos { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
+.lesson-video { display: grid; gap: 2px; padding: 8px 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+.lesson-video a { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; color: var(--text); font-size: 14px; font-weight: 600; }
+.lesson-video-source { font-size: 10px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; text-decoration: none; }
+.lesson-video-note { margin: 0; font-size: 12px; line-height: 1.4; color: var(--muted); }
+.lesson-video-play { justify-self: start; min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel); color: var(--text); font-size: 12px; }
+.lesson-video-frame { display: block; width: 100%; aspect-ratio: 16 / 9; border: 1px solid var(--border); border-radius: 8px; background: var(--wood); }
+.lesson-chords { display: flex; flex-wrap: wrap; gap: 10px; }
+.lesson-chord { display: grid; gap: 4px; justify-items: center; }
+.lesson-chord-name { font-size: 13px; font-weight: 600; }
+.lesson-chord-open { display: grid; grid-template-columns: repeat(6, 16px); font-size: 8px; line-height: 12px; color: var(--muted); text-align: center; }
+.lesson-chord-grid { display: grid; grid-template-columns: repeat(6, 16px); grid-template-rows: repeat(5, 15px); border-top: 2px solid var(--text); }
+.lesson-chord-cell { position: relative; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.lesson-chord-cell:nth-child(6n + 1) { border-left: 1px solid var(--border); }
+.lesson-chord-dot { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 11px; height: 11px; border-radius: 50%; display: grid; place-items: center; background: var(--note); color: var(--note-text); font-size: 7px; font-weight: 600; line-height: 1; }
+.lesson-chord-dot.root { background: var(--accent); color: var(--accent-text); }
+.lesson-chord-fret { font-size: 8px; color: var(--muted); }
+.lesson-steps { margin: 0; padding-left: 18px; display: grid; gap: var(--space-2); }
+.lesson-steps li { font-size: 13px; line-height: 1.45; color: var(--muted); }
+.lesson-steps b { display: block; font-size: 13px; color: var(--text); }
+.lesson-action { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.lesson-action .microcopy { flex: 1 1 160px; }
+.lesson-listen-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.lesson-listen-row .microcopy { flex: 1 1 160px; }
+.lesson-background { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.lesson-background > summary { cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.lesson-background[open] > summary { margin-bottom: var(--space-2); }
+.lesson-background .lesson-block { margin-top: var(--space-2); }
+.lesson-real { border-top: 1px solid var(--border); padding-top: var(--space-3); }
+.lesson-real > summary { cursor: pointer; font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.lesson-real[open] > summary { margin-bottom: var(--space-2); }
+.lesson-real-photo { margin: 0 0 var(--space-2); display: grid; gap: 4px; }
+.lesson-real-photo img { display: block; width: 100%; aspect-ratio: 3 / 2; object-fit: cover; border: 1px solid var(--border); border-radius: 8px; }
+.lesson-real-photo figcaption { font-size: 10px; line-height: 1.3; color: var(--muted); }
+.lesson-real .microcopy { margin: var(--space-2) 0 0; }
+.lesson-bars { display: flex; flex-wrap: wrap; gap: 4px; }
+.lesson-bar { display: flex; align-items: baseline; gap: 4px; padding: 3px 7px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; font-size: 12px; font-weight: 600; }
+.lesson-bar span { font-size: 9px; font-weight: 600; color: var(--muted); }
+.lesson-strings { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; }
+.lesson-string-card { display: grid; gap: 2px; justify-items: center; padding: 6px 2px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; }
+.lesson-string-card b { font-size: 14px; font-weight: 600; }
+.lesson-string-card span { font-size: 8px; color: var(--muted); }
+/* ---------- The capability preflight line and the wake note (Phase 5, 05-02 Task 2, D-76/D-77) ---------- */
+/* One 12px muted line each, in the flow: the capability line is the first row of `main`, so it can
+   never grow the sticky header on a 320px phone, and the wake note sits under the transport row
+   where the player is looking during a pass. Neither is focusable, live or coloured: a missing
+   capability and a denied lock are information, never an error (A-80, A-81, A-82). */
+#capabilities, #wakeNote { margin: 0; font-size: 12px; color: var(--muted); }
+/* ---------- Split studio (desktop) ---------- */
+.header-more { position: relative; }
+.more-toggle {
+  display: inline-flex; align-items: center; gap: 6px; min-height: 44px;
+  padding: 0 var(--space-3); list-style: none; cursor: pointer;
+  background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+  font-size: 16px; color: var(--text);
+}
+.more-toggle::-webkit-details-marker { display: none; }
+.more-toggle::marker { content: ""; }
+.more-menu {
+  position: absolute; right: 0; top: calc(100% + var(--space-2)); z-index: 40;
+  width: 260px; display: grid; gap: var(--space-2); padding: var(--space-3);
+  background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0,0,0,.18);
+}
+.more-menu > button { display: flex; align-items: center; gap: var(--space-2); width: 100%; min-height: 40px; text-align: left; }
+.more-menu .mic-cluster { flex-wrap: wrap; }
+.theme-field { display: grid; gap: 4px; padding: 0 var(--space-1); }
+.theme-field select { width: 100%; }
+/* ---------- The two-column Field Book shell (06) ---------- */
+.path-rail {
+  min-width: 0; padding: var(--space-3); background: var(--panel); border: 1px solid var(--border);
+  border-radius: 14px; display: grid; gap: var(--space-3); align-content: start;
+}
+.path-block { min-width: 0; }
+.path-head { display: flex; align-items: end; justify-content: space-between; gap: var(--space-2); }
+.path-title { margin: 3px 0 0; font-size: 24px; line-height: 1; }
+.path-count { font: 600 9px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); text-align: right; }
+.path-list { list-style: none; display: grid; gap: 2px; margin: 0; padding: 0; min-width: 0; max-width: 100%; }
+.path-list button {
+  width: 100%; display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; gap: 6px; align-items: center;
+  padding: 6px 7px; border: 0; border-radius: 7px; background: transparent;
+  color: var(--muted); text-align: left; font-size: 12px;
+}
+.path-list .path-num { font: 600 9px/1.2 var(--mono); color: var(--muted); }
+.path-list button b { font-weight: 500; color: var(--text); }
+.path-list button[aria-current="step"] {
+  background: var(--text); color: var(--panel); box-shadow: inset 3px 0 0 var(--accent);
+}
+.path-list button[aria-current="step"] b { color: var(--panel); font-weight: 600; }
+.path-list button[aria-current="step"] .path-num { color: #e7a26c; }
+.path-list button[aria-current="step"]::after { content: "now"; font: 600 8px/1 var(--mono); color: #e7a26c; }
+.path-next {
+  margin: 2px 0 0; padding: 7px 8px; border-left: 2px solid var(--accent);
+  border-radius: 0 6px 6px 0; background: var(--bg); color: var(--muted);
+  font-size: 10px; line-height: 1.4;
+}
+.path-label { font: 600 8px/1.2 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.path-today { min-width: 0; display: grid; gap: 2px; padding: var(--space-2) 10px; border: 1px solid var(--border); border-radius: 9px; background: var(--bg); }
+.path-today b { font: 600 22px/1 var(--serif); }
+.path-today p { margin: 0; font-size: 10px; line-height: 1.35; color: var(--muted); }
+.path-today button {
+  justify-self: start; min-height: 28px; margin-top: 3px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--panel);
+  color: var(--text); font-size: 10px;
+}
+.path-tuner { min-width: 0; display: grid; gap: 6px; }
+.path-tuner .tuner-toggle { width: 100%; text-align: left; }
+.path-tuner .tuner-card { background: var(--bg); }
+.path-youtube {
+  min-width: 0; max-width: 100%; width: 100%; display: grid; grid-template-columns: 54px minmax(0, 1fr) auto; gap: 7px;
+  align-items: center; padding: 7px; border: 1px solid var(--border); border-radius: 9px;
+  background: var(--bg); color: var(--text); text-align: left;
+}
+.path-youtube img { width: 54px; height: 44px; object-fit: cover; border-radius: 5px; display: block; }
+.path-youtube b { display: block; margin-top: 2px; font-size: 10px; line-height: 1.25; }
+.path-youtube small { display: block; margin-top: 2px; color: var(--muted); font: 500 8px/1.2 var(--mono); }
+.path-arrow { color: var(--accent); font-size: 14px; }
+
+.workspace-head { display: flex; align-items: start; justify-content: space-between; gap: var(--space-3); }
+.workspace-title { margin: 3px 0 2px; font-size: 30px; line-height: 1.04; letter-spacing: -.03em; }
+.workspace-sub { margin: 0; color: var(--muted); font-size: 12px; }
+.workspace-step {
+  padding: 4px 8px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--panel); color: var(--muted); font: 600 9px/1.2 var(--mono);
+  white-space: nowrap;
+}
+.workspace-setup { display: grid; gap: var(--space-2); min-width: 0; }
+.workspace-setup .controls { padding: var(--space-2) var(--space-3); }
+.workspace-media {
+  min-width: 0; display: grid; grid-template-columns: 132px minmax(0, 1fr) auto; gap: 10px;
+  align-items: center; padding: 7px; background: var(--panel);
+  border: 1px solid var(--border); border-radius: 10px;
+}
+.workspace-media img { width: 132px; height: 86px; object-fit: cover; border-radius: 7px; display: block; }
+.workspace-media div { display: grid; gap: 2px; min-width: 0; }
+.workspace-media b { font: 600 14px/1.15 var(--serif); }
+.workspace-media p { margin: 0; color: var(--muted); font-size: 10px; line-height: 1.35; }
+.workspace-watch {
+  min-height: 32px; padding: 0 10px; border: 1px solid var(--border); border-radius: 7px;
+  background: var(--bg); color: var(--text); font-size: 10px; font-weight: 600; white-space: nowrap;
+}
+.library-rail { display: grid; gap: var(--space-3); align-content: start; }
+.rail-title { margin: 0; padding: 0 var(--space-1); font-size: 12px; font-weight: 600; line-height: 1.3; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); }
+.library-rail .controls { flex-direction: column; align-items: stretch; }
+.library-rail .controls label, .library-rail .controls select { width: 100%; }
+.board-zone { display: grid; gap: var(--space-3); min-width: 0; align-content: start; }
+.board-zone .board-stage, .board-zone .board-wrap { min-width: 0; width: 100%; }
+.transport-bar { display: grid; gap: var(--space-2); }
+.transport-bar #transportRow {
+  background: var(--panel); border: 1px solid var(--border);
+  border-radius: 12px; padding: var(--space-2) var(--space-3);
+}
+@media (min-width: 1180px) {
+  #tabpanel {
+    grid-template-columns: 264px minmax(0, 1fr);
+    grid-template-rows: auto auto auto auto auto;
+    column-gap: var(--space-4); row-gap: var(--space-3);
+    align-items: start;
+  }
+  .library-rail { grid-column: 1; grid-row: 1 / span 4; position: sticky; top: 76px; max-height: calc(100vh - 92px); overflow-y: auto; }
+  .board-zone { grid-column: 2; grid-row: 1; }
+  #drillStage { grid-column: 2; grid-row: 2; position: static; max-height: none; overflow: visible; align-content: start; }
+  #passReview, #resultPanel { grid-column: 1 / -1; grid-row: 3; }
+  #chordDetail, #chart { grid-column: 2; grid-row: 4; }
+  #feedback { grid-column: 1 / -1; grid-row: 5; }
+  .drill-stage .backing-cluster { display: grid; }
+  #board { grid-template-columns: 30px repeat(19, minmax(0, 1fr)) !important; width: 100%; min-width: 0; }
+  #board .note { width: 26px; height: 26px; font-size: 11px; }
+  .drill-stage .hint-row { flex-wrap: wrap; }
+  .drill-stage .hint-row .hint-level { flex-basis: 100%; }
+  .drill-stage .hint-sep { display: none; }
+  .drill-stage .hint-name { flex-basis: 100%; }
+  .drill-stage .pass-counter { flex-basis: 100%; margin-left: 0; }
+  #familyPicker { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); overflow-x: visible; }
+  #familyPicker [role=radio] { grid-column: span 2; min-height: 44px; padding: var(--space-1); font-size: 12px; white-space: normal; text-align: center; }
+  #familyPicker [role=radio]:nth-child(4), #familyPicker [role=radio]:nth-child(5) { grid-column: span 3; }
+  .progress-panel, .calibration-panel {
+    position: fixed; top: 76px; right: 20px; width: 420px;
+    max-width: calc(100vw - 40px); max-height: calc(100vh - 96px);
+    margin: 0; overflow-y: auto; z-index: 30;
+    box-shadow: 0 24px 60px rgba(0,0,0,.2);
+  }
+}
+@media (max-width: 1179px) {
+  .library-rail {
+    display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-3); position: static; max-height: none; overflow: visible;
+  }
+  .path-block { min-width: 0; grid-column: 1 / -1; }
+  .path-list { display: flex; gap: 2px; overflow-x: auto; }
+  .path-list li { flex: 1 0 118px; }
+  .path-list button { min-height: 40px; }
+  .board-zone { display: grid; gap: var(--space-3); }
+  .transport-bar #transportRow { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: var(--space-2) var(--space-3); }
+}
+@media (max-width: 639px) {
+  .library-rail { grid-template-columns: 1fr; }
+  .path-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); overflow: visible; }
+  .path-list li { min-width: 0; }
+  .path-list button { grid-template-columns: 18px minmax(0, 1fr) auto; gap: 4px; padding: 6px 5px; font-size: 10px; }
+  .path-list button b { font-size: 10px; line-height: 1.2; }
+  .path-list button[aria-current="step"]::after { display: none; }
+  .workspace-head { gap: var(--space-2); }
+  .workspace-title { font-size: 26px; }
+  .workspace-step { display: none; }
+  .workspace-media { grid-template-columns: 1fr; }
+  .workspace-media img { width: 100%; height: 154px; }
+  .workspace-watch { justify-self: start; }
+  .workspace-setup .controls { align-items: stretch; }
+}
+/* Practice stays first; supporting media and the path follow the task on small screens. */
+.workspace-setup > summary, .reference-details > summary { cursor: pointer; padding: 10px; font-size: 14px; font-weight: 600; }
+.board-help { margin: 0 0 6px; font-size: 13px; color: var(--muted); }
+.resource-mark { font-size: 24px; }
+.reference-details .workspace-media { display: block; }
+.reference-details .workspace-media img { width: 100%; height: 120px; object-fit: cover; }
+@media (max-width: 1179px) {
+  .board-zone { grid-row: 1; }
+  .drill-stage { grid-row: 2; }
+  .library-rail { grid-row: 6; }
+  .workspace-setup { order: 5; }
+  .workspace-head { order: 0; }
+  .transport-bar { order: 1; position: sticky; top: 0; z-index: 12; }
+  .board-stage { order: 2; }
+  .progress { order: 3; }
+  .pause-banner { order: 0; }
+  .path-list button, .path-list button b { font-size: 13px; }
+  .workspace-media p, .workspace-watch { font-size: 13px; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <section id="bootError" aria-labelledby="bootErrorTitle">
+    <h2 id="bootErrorTitle">Guitar Coach could not load</h2>
+    <p>Check that all app files were served, then reload.</p>
+    <p id="bootErrorDetail" hidden></p>
+    <div class="boot-actions">
+      <form action="" method="get"><button type="submit">Reload</button></form>
+      <button type="button" id="recoverApp">Clear cache &amp; reload</button>
+    </div>
+  </section>
+
+  <div id="appShell" hidden>
+    <header>
+      <h1>Guitar Coach</h1>
+      <div class="header-actions">
+        <div class="conn" id="conn">
+          <span class="dot" aria-hidden="true"></span>
+          <span id="status">Guitar not connected</span>
+          <button type="button" id="connectBtn">Connect guitar</button>
+        </div>
+        <button type="button" id="sessionBtn" aria-expanded="false" aria-controls="sessionPanel">Session <span class="session-badge" id="sessionBadge" aria-hidden="true">0</span></button>
+        <details class="header-more" id="headerMore">
+          <summary class="more-toggle" aria-label="More controls">More <span aria-hidden="true">⋯</span></summary>
+          <div class="more-menu">
+            <button type="button" id="progressBtn" aria-expanded="false" aria-controls="progressPanel">Progress</button>
+            <button type="button" class="stage-toggle" id="stageBtn" aria-pressed="false">
+              <span class="stage-glyph" aria-hidden="true"></span>
+              <span>Stage mode</span>
+              <span id="stageState">Off</span>
+            </button>
+            <button type="button" class="lights-toggle" id="lightsBtn" aria-pressed="true">
+              <span class="led-glyph" aria-hidden="true"></span>
+              <span>Guitar lights</span>
+              <span id="lightsState">On</span>
+            </button>
+            <label class="theme-field">Theme
+              <select id="theme">
+                <option value="system">System</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <div class="mic-cluster" id="micCluster">
+              <button type="button" class="mic-toggle" id="micToggle" aria-pressed="false" aria-describedby="micState" aria-label="Microphone">
+                <span class="mic-glyph" aria-hidden="true"></span>
+                <span>Mic</span>
+                <span id="micState">Off</span>
+              </button>
+              <button type="button" id="micCalibrate">Calibrate</button>
+            </div>
+          </div>
+        </details>
+      </div>
+    </header>
+
+    <section class="progress-panel" id="sessionPanel" aria-labelledby="sessionTitle" hidden>
+      <div class="progress-head">
+        <h2 id="sessionTitle" tabindex="-1">Session</h2>
+        <button type="button" id="hideSession">Hide session</button>
+        <span class="session-total" id="sessionTotal">13 min</span>
+      </div>
+      <div class="family-picker session-view" id="sessionView" role="radiogroup" aria-label="Session view">
+        <button type="button" role="radio" id="viewPlan" aria-checked="true" tabindex="0">Plan</button>
+        <button type="button" role="radio" id="viewPractise" aria-checked="false" tabindex="-1">Practise</button>
+      </div>
+      <div class="session-plan" id="sessionPlan">
+        <p class="microcopy" id="sessionPlanNote" hidden>No history yet — the session starts with the curated defaults.</p>
+        <p class="microcopy session-intro">A 13-minute session in five blocks, each with the reason it was chosen.</p>
+        <ol class="session-blocks" id="sessionBlocks"></ol>
+        <div class="session-actions">
+          <button type="button" class="cta" id="startSession">Start session</button>
+        </div>
+      </div>
+      <div class="session-practise" id="sessionPractise" hidden>
+        <p class="microcopy" id="practiseHelper">Start loads that drill into the stage; press Start drill to play.</p>
+        <div class="progress-section">
+          <div class="stat-label" id="practiseFamiliesLabel">Families</div>
+          <ul class="practise-list" id="practiseFamilies" aria-labelledby="practiseFamiliesLabel"></ul>
+        </div>
+        <div class="progress-section">
+          <div class="stat-label">Due and weakest</div>
+          <label>Show <select id="practiseFilter">
+            <option value="due">Due skills</option>
+            <option value="pairs">Weakest pairs</option>
+          </select></label>
+          <ul class="skill-list all-skills-list" id="practiseDueList"></ul>
+          <ul class="skill-list all-skills-list" id="practisePairsList" hidden></ul>
+        </div>
+      </div>
+      <div class="session-actions" id="sessionPanelActions" hidden>
+        <button type="button" id="panelNextBlock">Next block</button>
+        <button type="button" id="panelSkip">Skip</button>
+        <button type="button" id="panelRepeat">Repeat</button>
+        <button type="button" id="panelEnd">End session</button>
+      </div>
+      <div class="session-summary" id="sessionSummary" hidden>
+        <div class="result-grid session-tiles" id="sessionTiles">
+          <div><div class="stat-label">Minutes</div><div class="stat-value" id="sessMinutes">0 min</div><div class="stat-sub" id="sessMinutesSub">This session.</div></div>
+          <div><div class="stat-label">Unguided</div><div class="stat-value" id="sessUnguided">0 min</div><div class="stat-sub" id="sessUnguidedSub">No lights only.</div></div>
+          <div><div class="stat-label">Streak</div><div class="stat-value" id="sessStreak">0 days</div><div class="stat-sub" id="sessStreakSub">Consecutive practice days.</div></div>
+          <div><div class="stat-label">Blocks</div><div class="stat-value" id="sessBlocks">0 of 5</div><div class="stat-sub" id="sessBlocksSub">All five done.</div></div>
+          <div><div class="stat-label">Skills</div><div class="stat-value" id="sessSkills">0</div><div class="stat-sub" id="sessSkillsSub">Touched this session.</div></div>
+        </div>
+        <p class="session-next" id="sessionNext"></p>
+        <div class="session-actions">
+          <button type="button" class="cta" id="sessionDone">Done</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="progress-panel" id="progressPanel" aria-labelledby="progressTitle" hidden>
+      <div class="progress-head">
+        <h2 id="progressTitle" tabindex="-1">Progress</h2>
+        <button type="button" id="hideProgress">Hide progress</button>
+      </div>
+      <p class="microcopy">Everything stays in this browser.</p>
+
+      <div class="result-grid progress-tiles" id="progressTiles">
+        <div><div class="stat-label">Streak</div><div class="stat-value" id="progStreak">0 days</div><div class="stat-sub">Consecutive practice days.</div></div>
+        <div><div class="stat-label">Practised</div><div class="stat-value" id="progPractised">0 s</div><div class="stat-sub" id="progPractisedSub">Across 0 sessions.</div></div>
+        <div><div class="stat-label">Unguided</div><div class="stat-value" id="progUnguided">0 s</div><div class="stat-sub">No-light passes only.</div></div>
+        <div><div class="stat-label">Due now</div><div class="stat-value" id="progDue">0 skills</div><div class="stat-sub">Ready for review.</div></div>
+      </div>
+
+      <div class="progress-section" id="historySection">
+        <div class="stat-label">Last 20 sessions</div>
+        <div class="history" id="historyBars" aria-hidden="true"></div>
+        <ol class="sr-only" id="historyList"></ol>
+        <div class="history-legend">
+          <span class="legend-swatch guided" aria-hidden="true"></span><span>Guided</span>
+          <span class="legend-swatch unguided" aria-hidden="true"></span><span>Unguided</span>
+        </div>
+        <p class="microcopy">Bars show minutes; the accent is time without lights.</p>
+      </div>
+
+      <div class="progress-section" id="dueSection">
+        <div class="stat-label">Due for review</div>
+        <ul class="due-list" id="dueList"></ul>
+      </div>
+
+      <div class="progress-section" id="skillsSection">
+        <div class="stat-label">Skills</div>
+        <ul class="skill-list" id="skillList"></ul>
+        <details class="all-skills" id="allSkills">
+          <summary id="allSkillsSummary">All skills (0)</summary>
+          <ul class="skill-list all-skills-list" id="allSkillsList"></ul>
+        </details>
+      </div>
+
+      <div class="progress-empty" id="progressEmpty" hidden>
+        <h3>Nothing recorded yet</h3>
+        <p>Finish a drill and your minutes, streak and mastery appear here. Everything stays in this browser.</p>
+      </div>
+
+      <div class="progress-section" id="chordPairSection">
+        <div class="stat-label" id="chordPairLabel">Chord pairs</div>
+        <ul class="skill-list" id="chordPairList"></ul>
+        <details class="all-pairs" id="allPairs">
+          <summary id="allPairsSummary">All pairs (0)</summary>
+          <ul class="skill-list all-skills-list" id="allPairsList"></ul>
+        </details>
+      </div>
+
+      <div class="progress-section" id="backupSection">
+        <div class="stat-label">Backup</div>
+        <div class="backup-actions">
+          <button type="button" id="exportBtn">Export JSON</button>
+          <button type="button" id="importBtn">Import JSON</button>
+          <input type="file" id="importFile" class="sr-only" accept="application/json,.json">
+        </div>
+        <p class="microcopy">One file with your settings, progress and sessions.</p>
+        <p class="backup-status" id="backupStatus"></p>
+        <div class="import-confirm" id="importConfirm" hidden>
+          <h3>Replace everything?</h3>
+          <p>Importing overwrites your current settings, progress and sessions.</p>
+          <div class="import-actions">
+            <button type="button" id="importReplace" class="danger-fill">Replace data</button>
+            <button type="button" id="importKeep">Keep my data</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="calibration-panel" id="calibrationPanel" aria-labelledby="calibrationTitle" hidden>
+      <div class="calibration-head">
+        <h2 id="calibrationTitle" tabindex="-1">Calibrate timing</h2>
+        <button type="button" id="closeCalibration">Close</button>
+      </div>
+      <p class="calibration-intro">Wired headphones recommended. You will hear eight clicks; tap in time with each one.</p>
+      <div class="calibration-run" id="calibrationRun">
+        <button type="button" id="calibTap">Tap</button>
+        <span class="calibration-count" id="calibCount">Click 3 of 8</span>
+        <span class="microcopy" id="calibTaps">3 taps heard</span>
+      </div>
+      <div class="calibration-done" id="calibrationDoneBlock" hidden>
+        <p id="calibResult">Offset 24 ms · Saved for this device.</p>
+        <p class="calibration-warning" id="calibWarning" hidden>That offset is unusually large. Check that your headphones are wired, then calibrate again.</p>
+        <div class="calibration-actions">
+          <button type="button" id="calibAgain">Calibrate again</button>
+          <button type="button" id="calibDone" class="cta">Done</button>
+        </div>
+      </div>
+      <p class="calibration-error" id="calibErrorDenied" hidden>The microphone is blocked. Allow it in your browser's site settings, then press Try again.</p>
+      <p class="calibration-error" id="calibErrorNone" hidden>No taps heard. Tap along with the clicks, then try again.</p>
+      <p class="calibration-error" id="calibErrorTooFew" hidden>Too few taps. Tap at least three clicks, then try again.</p>
+      <p class="calibration-error" id="calibErrorUnavailable" hidden>Microphone is not available in this browser. Calibration needs it; every drill still runs unscored.</p>
+      <div class="calibration-foot">
+        <button type="button" id="calibSkip">Skip for now</button>
+        <p class="microcopy">Timing uses a tolerant default until you calibrate.</p>
+      </div>
+    </section>
+
+    <section class="progress-panel" id="lessonPanel" aria-labelledby="lessonTitle" hidden>
+      <div class="progress-head">
+        <h2 id="lessonTitle" tabindex="-1">Scale run</h2>
+        <button type="button" id="lessonClose">Close</button>
+      </div>
+      <p class="lesson-focus" id="lessonFocus" hidden></p>
+      <p class="microcopy lesson-prep" id="lessonPrep">Before you play: tune E A D G B E, then sit with the neck angled up and your thumb behind it.</p>
+      <section class="lesson-guided" id="lessonGuided" aria-label="Guided lesson" hidden>
+        <div class="lesson-shape" id="lessonShape"></div>
+        <ol class="lesson-steps" id="lessonSteps"></ol>
+        <div class="lesson-action" id="lessonActionRow" hidden>
+          <button type="button" id="lessonStart" class="cta">Start at 50 BPM</button>
+          <span class="microcopy" id="lessonActionNote"></span>
+        </div>
+        <div class="lesson-listen-row" id="lessonListenRow" hidden>
+          <button type="button" id="lessonListen">Hear it</button>
+          <span class="microcopy" id="lessonListenNote">The shape, softly, before you play.</span>
+        </div>
+      </section>
+      <section class="lesson-demo-block" id="lessonDemoWrap" aria-label="Visual demo" hidden>
+        <div class="lesson-block-label" id="lessonDemoLabel">Visual demo</div>
+        <video class="lesson-demo-video" id="lessonDemoVideo" controls playsinline muted preload="metadata"></video>
+        <p class="microcopy" id="lessonDemoCaption">Silent, 8 seconds. Press play; the drill adds the click.</p>
+      </section>
+      <section class="lesson-basics" aria-label="Visual guide">
+        <div class="lesson-block-label">How to read this</div>
+        <div class="lesson-basics-grid">
+          <figure class="lesson-basics-card">
+            <svg viewBox="0 0 72 44" role="img" aria-label="Four fingers numbered 1 to 4" focusable="false">
+              <g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                <path d="M12 38V24a4 4 0 0 1 8 0v14"/>
+                <path d="M22 38V18a4 4 0 0 1 8 0v20"/>
+                <path d="M32 38V14a4 4 0 0 1 8 0v24"/>
+                <path d="M42 38V20a4 4 0 0 1 8 0v18"/>
+              </g>
+              <g fill="currentColor" font-size="8" font-weight="600" text-anchor="middle">
+                <text x="16" y="10">1</text><text x="26" y="10">2</text><text x="36" y="10">3</text><text x="46" y="10">4</text>
+              </g>
+            </svg>
+            <figcaption>Fingers 1–4</figcaption>
+          </figure>
+          <figure class="lesson-basics-card">
+            <svg viewBox="0 0 72 44" role="img" aria-label="Thumb behind the neck, fingers arched" focusable="false">
+              <path d="M6 27h60" stroke="currentColor" stroke-width="5" stroke-linecap="round" opacity=".25"/>
+              <path d="M22 32c-5-5-5-15 2-20 5-3 11 0 12 6v14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M36 18v-5M40 20v-5M44 22v-5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <circle cx="26" cy="34" r="3" fill="currentColor" opacity=".5"/>
+            </svg>
+            <figcaption>Thumb behind, fingers arched</figcaption>
+          </figure>
+          <figure class="lesson-basics-card">
+            <svg viewBox="0 0 72 44" role="img" aria-label="Orange root note with a small finger number" focusable="false">
+              <circle cx="26" cy="19" r="9" fill="var(--accent)"/>
+              <text x="26" y="22" fill="var(--accent-text)" font-size="8" font-weight="600" text-anchor="middle">A</text>
+              <circle cx="37" cy="26" r="5" fill="var(--panel)" stroke="var(--border)"/>
+              <text x="37" y="28.5" fill="var(--text)" font-size="6" font-weight="600" text-anchor="middle">2</text>
+              <circle cx="48" cy="19" r="5" fill="var(--note)"/>
+              <text x="48" y="21.5" fill="var(--note-text)" font-size="5" font-weight="600" text-anchor="middle">C</text>
+            </svg>
+            <figcaption>Orange root · number = finger</figcaption>
+          </figure>
+        </div>
+      </section>
+      <section class="lesson-materials" id="lessonMaterials" aria-label="Watch and read" hidden>
+        <div class="lesson-block-label">Watch &amp; read</div>
+        <ul class="lesson-videos" id="lessonVideos"></ul>
+        <p class="microcopy">External videos need internet. Play here loads YouTube on request; local demos work offline.</p>
+      </section>
+      <details class="lesson-real" id="lessonReal">
+        <summary>Real reference · photo &amp; 6s hand footage</summary>
+        <figure class="lesson-real-photo">
+          <img src="./assets/videos/real-fretboard.jpg" alt="Close-up of a hand fretting a guitar" loading="lazy" width="900" height="600">
+          <figcaption>Hand and fretboard · Photo: cottonbro studio / Pexels</figcaption>
+        </figure>
+        <video class="lesson-demo-video" id="lessonRealVideo" controls playsinline muted preload="metadata" poster="./assets/videos/real-hand.png" src="./assets/videos/real-hand.mp4" aria-label="Real footage of a hand playing guitar"></video>
+        <p class="microcopy">Real motion reference — the exact shape for your drill is in the diagram above. Video: Alejandro JV / Pexels. Both assets are under the Pexels license.</p>
+      </details>
+      <details class="lesson-background" id="lessonBackground">
+        <summary>Background · why, mistakes, practice</summary>
+      <div class="lesson-block">
+        <div class="lesson-block-label">Why it matters</div>
+        <p class="lesson-block-text" id="lessonWhy">Not written yet.</p>
+      </div>
+      <div class="lesson-block">
+        <div class="lesson-block-label">Common mistake</div>
+        <p class="lesson-block-text" id="lessonMistake">Not written yet.</p>
+      </div>
+      <div class="lesson-block">
+        <div class="lesson-block-label">Try this without the app</div>
+        <p class="lesson-block-text" id="lessonPractice">Not written yet.</p>
+      </div>
+      <div class="lesson-block">
+        <div class="lesson-block-label">Lesson</div>
+        <div class="lesson-link-row" id="lessonLinkRow" hidden>
+          <a class="lesson-link" id="lessonLink" target="_blank" rel="noopener noreferrer"></a>
+          <span class="lesson-link-note" id="lessonLinkNote">Opens in a new tab.</span>
+        </div>
+        <p class="lesson-block-text" id="lessonLinkEmpty">Not written yet.</p>
+      </div>
+      </details>
+    </section>
+
+    <main>
+      <div class="sr-only" id="announcer" aria-live="polite"></div>
+
+      <p id="capabilities">All capabilities ready.</p>
+
+      <div role="tablist" aria-label="Content browser" class="tabs" id="tabs">
+        <button type="button" role="tab" id="tab-scales" aria-controls="tabpanel" aria-selected="true" tabindex="0">Scales</button>
+        <button type="button" role="tab" id="tab-chords" aria-controls="tabpanel" aria-selected="false" tabindex="-1">Chords</button>
+        <button type="button" role="tab" id="tab-progressions" aria-controls="tabpanel" aria-selected="false" tabindex="-1">Progressions</button>
+        <button type="button" role="tab" id="tab-songs" aria-controls="tabpanel" aria-selected="false" tabindex="-1">Songs</button>
+      </div>
+
+      <section id="tabpanel" role="tabpanel" aria-labelledby="tab-scales" tabindex="0">
+
+
+        <section class="board-zone" aria-label="Fretboard and transport">
+
+        <div class="workspace-head">
+          <div>
+            <p class="rail-title">Current lesson</p>
+            <h2 class="workspace-title" id="workspaceTitle">A minor pentatonic</h2>
+            <p class="workspace-sub" id="workspaceSub">Position 1 · 50 BPM · scale run</p>
+          </div>
+          <span class="workspace-step" id="workspaceStep">Path 03 · First shape</span>
+        </div>
+
+        <details class="workspace-setup" id="workspaceSetup" open>
+          <summary>Change key, shape and labels</summary>
+          <div class="controls" id="controls-scales">
+          <label>Key <select id="key"></select></label>
+          <label>Scale <select id="scale"></select></label>
+          <label>Position <select id="position"></select></label>
+          <label>Labels
+            <select id="labels">
+              <option value="notes">Note names</option>
+              <option value="degrees">Degrees</option>
+              <option value="intervals">Intervals</option>
+              <option value="fingers">Finger numbers</option>
+              <option value="none">None</option>
+            </select>
+          </label>
+        </div>
+
+        <div class="controls" id="controls-chords" hidden>
+          <label>Chord <select id="chord"></select></label>
+          <label>Voicing <select id="voicing"></select></label>
+          <button type="button" id="powerChordLearn" aria-expanded="false" aria-controls="lessonPanel">Power chords</button>
+        </div>
+
+        <div class="controls" id="controls-progressions" hidden>
+          <label>Progression <select id="progression"></select></label>
+          <label>Key <select id="progressionKey"></select></label>
+          <button type="button" id="playProgression">Play</button>
+        </div>
+
+        <div class="controls" id="controls-songs" hidden>
+          <label>Song <select id="song"></select></label>
+          <label>Key <select id="songKey"></select></label>
+          <button type="button" id="playSong">Play</button>
+        </div>
+
+        <p class="microcopy" id="microcopy">Press Start drill to practise this position with a count-in and metronome.</p>
+
+        <div class="chips" id="scaleChips"></div>
+        </details>
+
+
+        <div class="pause-banner" id="pauseBanner" hidden>
+          <p class="pause-reason" id="pauseReason"></p>
+          <p class="microcopy" id="pauseHelper"></p>
+          <p class="microcopy" id="pauseReconnect" hidden>Reconnect to restore the lights.</p>
+          <p class="microcopy" id="pauseAudio" hidden>Audio could not start. Tap Resume to try again.</p>
+          <div class="pause-actions">
+            <button type="button" id="pauseResume">Resume</button>
+            <button type="button" id="pauseStop">Stop</button>
+          </div>
+        </div>
+
+        <div class="transport-bar" id="transportBar" hidden>
+          <div class="stage-row" id="transportRow">
+            <div class="beat-dots" id="beatDots" aria-hidden="true">
+              <span class="beat-dot"></span>
+              <span class="beat-dot"></span>
+              <span class="beat-dot"></span>
+              <span class="beat-dot"></span>
+            </div>
+            <span class="sr-only" id="beatText">Beat 1 of 4</span>
+            <div class="now-playing" id="nowPlaying"></div>
+            <div class="step-count" id="stepCount">0 / 0</div>
+            <div class="transport" id="transport">
+              <button type="button" id="startDrill" class="cta">Start drill</button>
+              <button type="button" id="checkRecall" title="One independent attempt, with no lights or reference melody">Check recall</button>
+              <button type="button" id="pauseDrill" class="cta" hidden>Pause</button>
+              <button type="button" id="resumeDrill" class="cta" hidden>Resume</button>
+              <button type="button" id="restartDrill" hidden>Restart</button>
+              <button type="button" id="stopDrill" hidden>Stop</button>
+              <button type="button" id="showHint" hidden>Show hint</button>
+              <button type="button" id="blinkPattern" hidden>Blink pattern</button>
+              <button type="button" id="markChange" hidden>Mark change</button>
+              <button type="button" id="markHit" hidden>Mark hit</button>
+            </div>
+          </div>
+          <p id="wakeNote" hidden>Screen wake is unavailable — keep the phone awake during a pass.</p>
+          <div class="hint-confirm" id="hintConfirm" hidden>
+            <h3 id="hintConfirmHeading">Restart one hint lower?</h3>
+            <p id="hintConfirmBody"></p>
+            <div class="hint-confirm-actions">
+              <button type="button" id="restartLower" class="cta">Restart at Full pattern</button>
+              <button type="button" id="keepPlaying">Keep playing</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="board-stage">
+          <p class="board-help">Scroll the neck sideways · keyboard: arrows to move, Enter to play.</p>
+          <div class="board-wrap"><div id="board" role="group" aria-label="Guitar fretboard"></div></div>
+          <div class="count-in-overlay" id="countInOverlay" aria-hidden="true" hidden>
+            <div class="count-numeral" id="countNumeral">1</div>
+            <div class="count-label" id="countLabel">Count-in · 1 of 4</div>
+            <div class="count-go" id="countGo" hidden>Go</div>
+          </div>
+        </div>
+
+        <div class="progress" id="progressWrap" role="progressbar" aria-label="Drill progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" hidden>
+          <div id="progressFill"></div>
+        </div>
+
+
+        </section>
+
+
+        <section class="drill-stage" id="drillStage" aria-label="Scale drill" hidden>
+          <div class="coach-tools">
+            <button type="button" class="start-here" id="startHere" aria-expanded="false" aria-controls="lessonPanel">New? Start here</button>
+          </div>
+          <div class="family-picker" id="familyPicker" role="radiogroup" aria-label="Drill family">
+            <button type="button" role="radio" id="familyScaleRun" data-family="scaleRun" aria-checked="true" tabindex="0">Scale run</button>
+            <button type="button" role="radio" id="familyFindNote" data-family="findNote" aria-checked="false" tabindex="-1">Find the note</button>
+            <button type="button" role="radio" id="familyChordChanges" data-family="chordChanges" aria-checked="false" tabindex="-1">Chord changes</button>
+            <button type="button" role="radio" id="familyProgression" data-family="progression" aria-checked="false" tabindex="-1">Progression</button>
+            <button type="button" role="radio" id="familySong" data-family="song" aria-checked="false" tabindex="-1">Song</button>
+          </div>
+          <div class="stage-row">
+            <p class="microcopy family-desc" id="familyDesc">Count-in, metronome, and a fade to no lights.</p>
+            <button type="button" id="familyLearn" aria-expanded="false" aria-controls="lessonPanel">Learn this drill</button>
+          </div>
+          <p class="microcopy" id="headphonesLine" hidden>Headphones recommended — speaker output leaks into the mic.</p>
+          <div class="hint-strip" id="hintStrip">
+            <div class="hint-row">
+              <span class="stat-label">Hints</span>
+              <span class="hint-pips" id="hintPips" aria-hidden="true">
+                <span class="hint-pip"></span>
+                <span class="hint-pip"></span>
+                <span class="hint-pip"></span>
+                <span class="hint-pip"></span>
+              </span>
+              <span class="hint-level" id="hintLevelText">Level 1 of 4</span>
+              <span class="hint-sep" aria-hidden="true">·</span>
+              <span class="hint-name" id="hintLevelName">Full pattern</span>
+              <span class="pass-counter" id="passCounter" hidden>Pass 1 of 4</span>
+            </div>
+            <p class="hint-criteria" id="hintCriteria"></p>
+            <p class="hint-reason" id="hintReason" hidden></p>
+          </div>
+          <section class="quiz-prompt" id="quizPrompt" role="region" aria-label="Question" hidden>
+            <div class="quiz-prompt-row">
+              <span class="quiz-counter" id="quizCounter">Question 1 of 12</span>
+              <span class="quiz-mode" id="quizModeToken">Find it</span>
+            </div>
+            <h3 class="quiz-prompt-text" id="quizPromptText">Find A on string 3</h3>
+            <p class="microcopy" id="quizPool"></p>
+            <div class="answer-chips" id="answerChips" role="group" aria-label="Answers"></div>
+            <div class="quiz-actions" id="quizActions">
+              <button type="button" id="revealAnswer">Reveal answer</button>
+              <span class="microcopy" id="revealHelper">Reveal shows the answer and counts this question as revealed.</span>
+            </div>
+            <p class="quiz-outcome" id="quizOutcome" hidden></p>
+            <button type="button" id="nextQuestion" class="cta" hidden>Next question</button>
+          </section>
+          <ol class="pair-strip" id="pairStrip" hidden></ol>
+          <section class="play-chart" id="stageChart" role="region" aria-label="Chart" hidden>
+            <div class="play-chart-head">
+              <h3 id="stageChartTitle"></h3>
+              <span class="play-chart-mode" id="stageChartMode"></span>
+            </div>
+            <ol class="play-chart-bars" id="stageChartBars"></ol>
+            <p class="play-chart-strum" id="strumHint" hidden></p>
+            <p class="play-chart-error" id="stageChartError" hidden></p>
+          </section>
+          <section class="backing-cluster" id="backingCluster" role="group" aria-label="Backing" hidden>
+            <label id="intensityField">Intensity
+              <select id="intensity">
+                <option value="click">Click only</option>
+                <option value="drumsBass">Drums + bass</option>
+                <option value="full">Full band</option>
+              </select>
+            </label>
+            <div role="group" aria-label="Stems" class="stem-group" id="stems">
+              <label class="inline"><input type="checkbox" id="stemClick"> Click</label>
+              <label class="inline"><input type="checkbox" id="stemDrums"> Drums</label>
+              <label class="inline"><input type="checkbox" id="stemBass"> Bass</label>
+              <label class="inline"><input type="checkbox" id="stemPad"> Pad</label>
+            </div>
+            <label id="loopField">Loop
+              <select id="loop">
+                <option value="0">Whole</option>
+                <option value="4">4 bars</option>
+                <option value="8">8 bars</option>
+              </select>
+            </label>
+            <!-- D-66: a song loops a section, not a bar window, so this toggle takes `Loop`'s
+                 place rather than sitting beside it. The state word is the visible half of the
+                 control and the input's description; the accessible name stays `Section loop`. -->
+            <label class="inline" id="sectionLoopField" hidden>Section loop
+              <input type="checkbox" id="sectionLoop" aria-label="Section loop" aria-pressed="false" aria-describedby="sectionLoopState">
+              <span id="sectionLoopState">Off</span>
+            </label>
+            <p class="microcopy" id="backingDuckLine" hidden>Backing ducks to the click while the mic is listening.</p>
+          </section>
+          <div class="stage-row">
+            <label id="sectionField" hidden>Section
+              <select id="section"></select>
+            </label>
+            <label id="playKeyField" hidden>Key
+              <select id="playKey"></select>
+            </label>
+            <label id="directionField">Direction
+              <select id="direction">
+                <option value="up">Up</option>
+                <option value="down">Down</option>
+                <option value="updown">Up &amp; down</option>
+              </select>
+            </label>
+            <label id="changesField" hidden>Changes
+              <select id="changes"></select>
+            </label>
+            <label id="askForField" hidden>Ask for
+              <select id="askFor"></select>
+            </label>
+            <label id="quizModeField" hidden>Mode
+              <select id="quizMode">
+                <option value="find">Find it</option>
+                <option value="name">Name it (LED)</option>
+              </select>
+            </label>
+            <div class="field" id="tempoField"><span>Tempo</span>
+              <div class="tempo-cluster">
+                <button type="button" id="bpmDown5" aria-label="Decrease tempo by 5">−5</button>
+                <button type="button" id="bpmDown1" aria-label="Decrease tempo by 1">−1</button>
+                <input type="number" id="bpm" min="30" max="240" step="1" inputmode="numeric" aria-label="Tempo in beats per minute">
+                <button type="button" id="bpmUp1" aria-label="Increase tempo by 1">+1</button>
+                <button type="button" id="bpmUp5" aria-label="Increase tempo by 5">+5</button>
+                <button type="button" id="bpmTap">Tap</button>
+                <span class="tap-preview" id="tapPreview"></span>
+              </div>
+            </div>
+            <label class="inline"><input type="checkbox" id="sound"> Sound</label>
+            <label class="inline" id="droneField"><input type="checkbox" id="drone"> Root drone</label>
+          </div>
+          <p class="microcopy" id="lockedHelper" hidden>Tempo and selection apply on the next run.</p>
+        </section>
+
+        <section class="pass-review" id="passReview" role="region" aria-label="Pass review" hidden>
+          <h2 id="passReviewHeading">Pass 1 of 4 complete</h2>
+          <p class="pass-review-summary" id="passReviewSummary"></p>
+          <p class="decision" id="passReviewDecision"></p>
+          <p class="tempo-line" id="tempoLine" hidden></p>
+          <div class="self-report" id="selfReport" role="radiogroup" aria-label="How did that pass go?">
+            <span class="stat-label">How did that pass go?</span>
+            <div class="report-options">
+              <button type="button" id="reportClean" role="radio" class="report-option" aria-checked="false" data-report="clean">Clean</button>
+              <button type="button" id="reportShaky" role="radio" class="report-option" aria-checked="false" data-report="shaky">Shaky</button>
+            </div>
+            <p class="microcopy">Clean means you kept the tempo and made no obvious mistakes.</p>
+            <p class="microcopy" id="passEvidence"></p>
+            <button type="button" id="reportCorrection" hidden>Correct missed mic reading: I played cleanly</button>
+          </div>
+          <div class="rep-suggestion" id="passSuggestion" hidden>
+            <span class="rep-suggestion-text" id="passSuggestionText"></span>
+            <button type="button" id="passNextDrill" hidden>Next drill</button>
+          </div>
+          <div class="pass-actions">
+            <button type="button" id="nextPass" class="cta">Next pass</button>
+            <button type="button" id="endDrill">End drill</button>
+          </div>
+        </section>
+
+        <section class="result-panel" id="resultPanel" role="region" aria-label="Drill result" hidden>
+          <div class="result-head">
+            <h2 id="resultHeading">Drill complete</h2>
+            <div class="result-verdict" id="resultVerdict">—</div>
+            <p class="result-hero-sub" id="resultHeroSub"></p>
+          </div>
+          <div class="pass-report" id="passReport">
+            <div class="pass-card">
+              <div class="stat-label">With hints</div>
+              <div class="stat-value" id="withHintsValue"></div>
+              <div class="stat-sub" id="withHintsSub"></div>
+            </div>
+            <div class="pass-card">
+              <div class="stat-label">No lights</div>
+              <div class="stat-value" id="noLightsValue"></div>
+              <div class="stat-sub" id="noLightsSub"></div>
+            </div>
+          </div>
+          <div class="result-grid">
+            <div><div class="stat-label" id="resultNotesLabel">Notes</div><div class="stat-value" id="resultNotes"></div><div class="stat-sub" id="resultNotesSub"></div></div>
+            <div><div class="stat-label" id="resultAccuracyLabel">Accuracy</div><div class="stat-value" id="resultAccuracy">Not scored</div><div class="stat-sub" id="resultAccuracySub">Turn the mic on to score pitch.</div></div>
+            <div><div class="stat-label" id="resultTimingLabel">Timing</div><div class="stat-value" id="resultTiming">Not measured</div><div class="stat-sub" id="resultTimingSub">Turn the mic on to measure timing.</div></div>
+            <div><div class="stat-label" id="resultUnguidedLabel">Unguided</div><div class="stat-value" id="resultUnguided">0 s</div><div class="stat-sub" id="resultUnguidedSub">Added to your unguided total.</div></div>
+          </div>
+          <p class="result-mic" id="resultMicLine" hidden></p>
+          <section class="by-string" id="byString" hidden>
+            <div class="stat-label" id="byStringLabel">By string</div>
+            <ul class="by-string-list" id="byStringList"></ul>
+          </section>
+          <p class="microcopy" id="resultMeta"></p>
+          <div class="self-report" id="recallSelfReport" role="radiogroup" aria-label="How did the no-light pass go?" hidden>
+            <span class="stat-label">How did the no-light pass go?</span>
+            <div class="report-options">
+              <button type="button" id="recallClean" role="radio" class="report-option" aria-checked="false" data-report="clean">Clean</button>
+              <button type="button" id="recallShaky" role="radio" class="report-option" aria-checked="false" data-report="shaky">Shaky</button>
+            </div>
+            <p class="microcopy">Clean means you kept the tempo and made no obvious mistakes.</p>
+            <p class="microcopy" id="recallEvidence"></p>
+            <button type="button" id="recallCorrection" hidden>Correct missed mic reading: I played cleanly</button>
+          </div>
+          <div class="rep-suggestion" id="resultSuggestion" hidden>
+            <span class="rep-suggestion-text" id="resultSuggestionText"></span>
+            <button type="button" id="resultNextDrill" hidden>Next drill</button>
+          </div>
+          <div class="session-boundary" id="sessionBoundary" hidden>
+            <span class="session-boundary-token" id="sessionBoundaryToken"></span>
+            <div class="session-boundary-actions">
+              <button type="button" id="nextBlock">Next block</button>
+              <button type="button" id="skipBlock">Skip</button>
+              <button type="button" id="repeatBlock">Repeat</button>
+              <button type="button" id="endSession">End session</button>
+            </div>
+          </div>
+          <div class="result-actions">
+            <button type="button" id="repeatRun" class="cta">Repeat drill</button>
+            <button type="button" id="practiseWeakestPair" hidden>Practise weakest pair</button>
+            <button type="button" id="backToBrowse">Back to browse</button>
+          </div>
+        </section>
+
+        <div class="chord-detail" id="chordDetail" hidden></div>
+        <div class="chart" id="chart" hidden></div>
+        <div class="feedback" id="feedback"></div>
+        <aside class="library-rail path-rail" aria-label="Learning path">
+          <section class="path-block" aria-labelledby="pathTitle">
+            <div class="path-head">
+              <p class="rail-title">Learning path</p>
+              <span class="path-count">6 steps</span>
+            </div>
+            <h2 class="path-title" id="pathTitle">Field Book</h2>
+            <ol class="path-list" id="learningPath"></ol>
+            <p class="path-next" id="pathNext">A guided route from tuning to changes.</p>
+          </section>
+
+          <section class="path-today" aria-label="Today's session">
+            <span class="path-label">Today</span>
+            <b id="pathTodayTotal">13 min</b>
+            <p id="pathTodaySub">5 blocks · curated plan</p>
+            <button type="button" id="pathSession" aria-expanded="false" aria-controls="sessionPanel">Open session</button>
+          </section>
+
+          <section class="path-tuner" aria-label="Tuner">
+            <button type="button" class="tuner-toggle" id="tunerBtn" aria-expanded="false" aria-controls="tunerCard">Tuner</button>
+            <section class="tuner-card" id="tunerCard" aria-label="Tuner" hidden>
+              <div class="tuner-head">
+                <span class="stat-label">Tuner</span>
+                <button type="button" id="tunerClose">Stop</button>
+              </div>
+              <div class="tuner-note" id="tunerNote">—</div>
+              <p class="tuner-cents" id="tunerCents">Play one string and let it ring.</p>
+            </section>
+          </section>
+
+          <button type="button" class="path-youtube" id="pathMaterials" aria-expanded="false" aria-controls="lessonPanel">
+            <span class="resource-mark" aria-hidden="true">↗</span>
+            <span><span class="path-label">Watch &amp; read</span><b>Minor pentatonic</b><small>Lesson videos &amp; links</small></span>
+            <span class="path-arrow" aria-hidden="true">→</span>
+          </button>
+          <details class="reference-details"><summary>General hand-position reference</summary>
+          <div class="workspace-media">
+          <img src="./assets/videos/real-fretboard.jpg" alt="Close-up of a hand fretting a guitar">
+          <div>
+            <span class="path-label">Real reference</span>
+            <b>General hand-position reference.</b>
+            <p>Stock photo and clip; use the lesson diagram for your exact shape.</p>
+          </div>
+          <button type="button" class="workspace-watch" id="workspaceWatch" aria-expanded="false" aria-controls="lessonPanel">Watch the clip</button>
+        </div>
+          </details>
+        </aside>
+      </section>
+    </main>
+  </div>
+</div>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
