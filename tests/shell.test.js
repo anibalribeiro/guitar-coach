@@ -1015,6 +1015,8 @@ test('LOOK-03 contrast: every text pair the UI uses meets 4.5:1', () => {
     ['surface', 'cobalt'], ['cobalt', 'surface'], ['cobalt', 'sky'], ['cobalt', 'cobalt-soft'], ['surface', 'rasp'],
     ['ink', 'marigold'], ['mint', 'surface'], ['mint-ink', 'mint-soft'], ['surface', 'danger'], ['danger', 'surface'],
     ['#b9c6da', 'ink'],
+    // 08-03: the dimmer readout sits on --sky (numbers ink, passes-left and the where line ink-2).
+    ['ink', 'sky'], ['ink-2', 'sky'],
   ];
   for (const [fg, bg] of TEXT) {
     assert.ok(hex(fg) && hex(bg), `${fg} and ${bg} are declared`);
@@ -1028,6 +1030,8 @@ test('LOOK-03 contrast: every non-text pair meets 3:1 (board marks on wood, fiel
   const NON_TEXT = [
     ['marigold-edge', 'wood'], ['muted', 'wood'], ['cobalt', 'wood'], ['rasp', 'wood'],
     ['muted', 'surface'], ['muted', 'sky'],
+    // 08-03: the lit lamp's stroke carries the 3:1 edge that marigold alone (1.81:1) cannot.
+    ['marigold-edge', 'surface'],
   ];
   for (const [fg, bg] of NON_TEXT) {
     const ratio = contrast(t[fg], t[bg]);
@@ -1052,8 +1056,96 @@ test('LOOK-03 contrast: the forbidden pairs never appear in a rule', () => {
   }
 });
 
-test('KEEP-04: the offline release is v27, bumped once after the final shell change', () => {
+test('KEEP-04: the offline release is v29, bumped once after the Phase 8 review fixes', () => {
   const sw = fs.readFileSync(fileURLToPath(new URL('../app/sw.js', import.meta.url)), 'utf8');
-  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v27';/);
+  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v29';/);
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v28'"), 'the v28 release is gone');
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v27'"), 'the v27 release is gone');
   assert.ok(!sw.includes("CACHE_PREFIX + 'v26'"), 'the v26 release is gone');
+});
+
+// ---------- 08-03: thumb row styling (FADE-07/10) ----------
+const THUMB_BANNER = '/* ---------- Thumb row (08-03) ---------- */';
+const thumbBlock = () => {
+  const css = style();
+  const at = css.indexOf(THUMB_BANNER);
+  assert.ok(at >= 0, 'the Thumb row (08-03) block exists');
+  const end = css.indexOf('/* ----------', at + THUMB_BANNER.length);
+  return end > at ? css.slice(at, end) : css.slice(at);
+};
+// The one rule for a selector inside the block (IN-03 merged the 08-02 layout into the 08-03 look).
+const blockRule = (block, selector) => {
+  const at = block.lastIndexOf(`\n${selector} {`);
+  assert.ok(at >= 0, `08-03 rule ${selector} exists`);
+  return block.slice(at, block.indexOf('}', at) + 1);
+};
+
+test('IN-03: every thumb-row selector is declared once, layout and look in one rule', () => {
+  const css = style();
+  for (const selector of ['.thumb-row', '.thumb', '.thumb > *', '.dimmer-caption', '.dimmer-lamps', '.dimmer-lamp',
+    '.dimmer-readout', '.dimbtn', '.dimbtn.dark', '.dimbtn[aria-disabled="true"]', '.start-ring']) {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const rules = css.match(new RegExp(`\\n${escaped} \\{`, 'g')) || [];
+    assert.equal(rules.length, 1, `${selector} has ${rules.length} top-level rules`);
+  }
+  const lamp = blockRule(thumbBlock(), '.dimmer-lamp');
+  assert.match(lamp, /display: grid;[^}]*flex: 0 1 62px;/, 'layout and look share the rule');
+});
+
+test('FADE-07 thumb row: Brighter and Darker are push buttons at least 44px tall', () => {
+  const dimbtn = blockRule(thumbBlock(), '.dimbtn');
+  const height = dimbtn.match(/min-height: (\d+)px/);
+  assert.ok(height, '.dimbtn declares a px min-height');
+  assert.ok(Number(height[1]) >= 44, `.dimbtn min-height ${height[1]}px is below the 44px target`);
+  assert.match(dimbtn, /border-radius: 24px;/);
+  assert.match(blockRule(thumbBlock(), '.dimbtn.dark'), /background: var\(--ink\); color: var\(--surface\);/);
+  assert.match(blockRule(thumbBlock(), '.dimbtn[aria-disabled="true"]'), /opacity: \.45;/);
+});
+
+test('FADE-07 thumb row: the Start ring is a square whose buttons are circles, below session-open', () => {
+  const block = thumbBlock();
+  const ring = blockRule(block, '.start-ring');
+  const width = ring.match(/width: (\d+)px/); const height = ring.match(/height: (\d+)px/);
+  assert.ok(width && height && width[1] === height[1], '.start-ring width equals height');
+  // Every resized ring (media rules in the block) stays square too.
+  for (const m of block.matchAll(/\.start-ring \{ width: (\d+)px; height: (\d+)px;/g)) assert.equal(m[1], m[2]);
+  const buttons = blockRule(block, '.start-ring > button');
+  assert.match(buttons, /border-radius: 50%;/);
+  assert.match(buttons, /width: 100%; height: 100%;/);
+  // (0,1,1) never outranks the accent-rule-3 neutral Start at (2,1,0).
+  assert.match(style(), /#appShell\.session-open #startDrill \{ background: var\(--surface\);/);
+});
+
+test('FADE-07 thumb row: spacing is token-only and radii stay on the 8/16/24/50% scale', () => {
+  const block = thumbBlock().replace(/\/\*[^]*?\*\//g, '');
+  const spacing = [...block.matchAll(/(?:^|[ ;{])((?:gap|margin|padding)(?:-[a-z]+)?): ([^;}]+)/g)];
+  assert.ok(spacing.length >= 5, 'the block sets its own spacing');
+  for (const [, prop, value] of spacing) {
+    for (const part of value.trim().split(/\s+/)) {
+      assert.ok(/^var\(--space-\d+\)$/.test(part) || part === '0', `${prop}: ${value} uses a raw value`);
+    }
+  }
+  const radii = [...block.matchAll(/border-radius: ([^;}]+)/g)].map(m => m[1].trim());
+  assert.ok(radii.length >= 3);
+  for (const radius of radii) assert.ok(['8px', '16px', '24px', '50%'].includes(radius), `border-radius ${radius} is off the scale`);
+  assert.ok(!html().includes('overflow-x: hidden'), 'no horizontal clipping on html or body');
+});
+
+test('FADE-07 lamps: unlit outlined --muted, lit marigold with a --marigold-edge stroke, current named in ink', () => {
+  const block = thumbBlock();
+  assert.match(block, /\n\.lamp-glow \{ fill: none; \} \.lamp-bulb \{ fill: var\(--surface\); stroke: var\(--muted\);/);
+  assert.match(block, /\.dimmer-lamp\.lit \.lamp-bulb \{ fill: var\(--marigold\); stroke: var\(--marigold-edge\);/);
+  assert.match(blockRule(block, '.dimmer-lamp.current .dimmer-lamp-name'), /font-size: 12px; font-weight: 700; color: var\(--ink\);/);
+  assert.ok(!/stroke: var\(--ink\)/.test(block.match(/\.dimmer-lamp\.lit \.lamp-bulb \{[^}]*\}/)[0]), 'the 08-02 ink stroke is replaced');
+});
+
+test('FADE-10 readout: 40px ink numbers, 12px muted labels, 16px passes left, never marigold-edge text', () => {
+  const block = thumbBlock();
+  const num = blockRule(block, '.dimmer-num');
+  assert.match(num, /font-size: 40px; font-weight: 700;/);
+  assert.match(num, /color: var\(--ink\);/);
+  assert.match(blockRule(block, '.dimmer-unit'), /font-size: 12px; font-weight: 700;[^}]*color: var\(--muted\);/);
+  assert.match(blockRule(block, '#passesLeft'), /font-size: 16px;[^}]*color: var\(--ink-2\);/);
+  assert.match(blockRule(block, '.dimmer-readout'), /background: var\(--sky\);/);
+  assert.ok(!/(^|[ ;])color: var\(--marigold-edge\)/.test(block), 'marigold-edge is 4.44:1 on white, so never text');
 });

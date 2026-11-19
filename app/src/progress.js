@@ -187,10 +187,17 @@ const passMs = pass => (Number.isFinite(pass && pass.activeMs)
   ? Math.max(0, pass.activeMs)
   : passActiveMs(pass.completedSteps, pass.bpm));
 
+// FADE-09: a brightened (guided) pass never earns unguided minutes, even when a crafted
+// import gives it level 3 and a clean report. validateSession re-derives each imported
+// session's unguidedMs through this rule; the progress totals stay imported verbatim.
 const passUnguidedMs = pass => (
-  pass.hintLevel === RECALL_LEVEL && passComplete(pass) && passIsClean(pass)
+  pass.hintLevel === RECALL_LEVEL && !pass.brightened && passComplete(pass) && passIsClean(pass)
     ? passMs(pass)
     : 0
+);
+const lastPassBrightened = passes => (
+  Array.isArray(passes) && passes.length > 0 && !!passes[passes.length - 1]
+  && passes[passes.length - 1].brightened === true
 );
 
 // Every session field is derived from the pass records: a pause, count-in or wall
@@ -218,7 +225,9 @@ function sessionOf(result, skillId) {
     stoppedEarly: !!result.stoppedEarly,
     // Persist the recall report explicitly: a long drill truncates the pass list, and
     // inferring the report from a missing recall pass re-applied mastery (CR-05).
-    recallReport: result.recall && (result.recall.selfReport === 'clean' || result.recall.selfReport === 'shaky')
+    // A guided (brightened) recall has no report (FADE-09, defence in depth).
+    recallReport: !lastPassBrightened(passes) && result.recall
+      && (result.recall.selfReport === 'clean' || result.recall.selfReport === 'shaky')
       ? result.recall.selfReport
       : null,
   };
@@ -227,7 +236,7 @@ function sessionOf(result, skillId) {
 function lastRecallPass(session) {
   const passes = (session && session.passes) || [];
   for (let i = passes.length - 1; i >= 0; i--) {
-    if (passes[i].hintLevel === RECALL_LEVEL && passComplete(passes[i])) return passes[i];
+    if (passes[i].hintLevel === RECALL_LEVEL && !passes[i].brightened && passComplete(passes[i])) return passes[i];
   }
   return null;
 }
@@ -266,6 +275,9 @@ function scheduleRecall(skill, pass, now) {
 
 function applyPass(skill, pass, now) {
   if (!passComplete(pass)) return;
+  // FADE-09: a guided (brightened) pass never counts as a clean pass, a best level or a
+  // recall, and it is never a lapse either.
+  if (pass.brightened === true) return;
   if (passIsClean(pass)) {
     skill.cleanPasses += 1;
     skill.bestBpm = Math.max(skill.bestBpm, pass.bpm || 0);
@@ -293,7 +305,8 @@ function applyPass(skill, pass, now) {
 // counts, bests and session totals are never added twice (D-30, T-02-07).
 function applyRecallDelta(skill, oldSession, newSession, now) {
   const oldReport = recallReportOf(oldSession);
-  const newPass = lastRecallPass(newSession);
+  // A session whose last pass is brightened ended as a guided recall: it reports nothing.
+  const newPass = lastPassBrightened(newSession && newSession.passes) ? null : lastRecallPass(newSession);
   const newReport = newPass ? (passIsClean(newPass) ? 'clean' : (newPass.selfReport === 'clean' ? 'shaky' : newPass.selfReport || null)) : null;
   if (oldReport === newReport) return;
   if (oldReport === 'clean') {
@@ -667,7 +680,29 @@ function validateAssessment(raw) {
 
 export function validateSession(raw) {
   if (!isObject(raw)) return null;
-  const passes = Array.isArray(own(raw, 'passes')) ? own(raw, 'passes') : [];
+  const rawPasses = Array.isArray(own(raw, 'passes')) ? own(raw, 'passes') : [];
+  const passes = rawPasses.filter(isObject).slice(-MAX_PASSES).map(pass => {
+    // FADE-09: a pass with a Brighter press is guided. Absent (every pre-Phase-8 record)
+    // reads as false; anything but a strict true is false.
+    const brightened = own(pass, 'brightened') === true;
+    return {
+      index: pickInt(own(pass, 'index')),
+      hintLevel: pickLevel(own(pass, 'hintLevel')),
+      bpm: pickNumber(own(pass, 'bpm')),
+      completedSteps: pickInt(own(pass, 'completedSteps')),
+      plannedSteps: pickInt(own(pass, 'plannedSteps')),
+      selfReport: pickReport(own(pass, 'selfReport')),
+      assessment: validateAssessment(own(pass, 'assessment')),
+      // A guided pass never carries unguided time, whatever the import says (WR-05).
+      unguidedMs: brightened ? 0 : pickInt(own(pass, 'unguidedMs')),
+      // A pass keeps the practice time it earned at close; an older record stays null and
+      // reads through the beat-derived fallback (WR-02).
+      activeMs: pickDuration(own(pass, 'activeMs')),
+      aborted: own(pass, 'aborted') === true,
+      brightened,
+      reasonKey: pickText(own(pass, 'reasonKey')),
+    };
+  });
   return {
     sessionId: pickId(own(raw, 'sessionId')),
     skillId: pickId(own(raw, 'skillId')),
@@ -679,26 +714,15 @@ export function validateSession(raw) {
     startedWallAt: pickTime(own(raw, 'startedWallAt')),
     endedWallAt: pickTime(own(raw, 'endedWallAt')),
     durationMs: pickInt(own(raw, 'durationMs')),
-    unguidedMs: pickInt(own(raw, 'unguidedMs')),
+    // Unguided minutes are re-derived from the validated passes exactly as sessionOf derives
+    // them, so a crafted import cannot keep minutes for a brightened pass (WR-05). Only the
+    // drill's closing recall pass can earn them, and the truncation keeps the last passes.
+    unguidedMs: passes.reduce((sum, pass) => sum + passUnguidedMs(pass), 0),
     completedPasses: pickInt(own(raw, 'completedPasses')),
     bpm: pickNumber(own(raw, 'bpm')),
     startLevel: pickLevel(own(raw, 'startLevel')),
     finalLevel: pickLevel(own(raw, 'finalLevel')),
-    passes: passes.filter(isObject).slice(-MAX_PASSES).map(pass => ({
-      index: pickInt(own(pass, 'index')),
-      hintLevel: pickLevel(own(pass, 'hintLevel')),
-      bpm: pickNumber(own(pass, 'bpm')),
-      completedSteps: pickInt(own(pass, 'completedSteps')),
-      plannedSteps: pickInt(own(pass, 'plannedSteps')),
-      selfReport: pickReport(own(pass, 'selfReport')),
-      assessment: validateAssessment(own(pass, 'assessment')),
-      unguidedMs: pickInt(own(pass, 'unguidedMs')),
-      // A pass keeps the practice time it earned at close; an older record stays null and
-      // reads through the beat-derived fallback (WR-02).
-      activeMs: pickDuration(own(pass, 'activeMs')),
-      aborted: own(pass, 'aborted') === true,
-      reasonKey: pickText(own(pass, 'reasonKey')),
-    })),
+    passes,
     completed: own(raw, 'completed') === true,
     stoppedEarly: own(raw, 'stoppedEarly') === true,
     recallReport: pickReport(own(raw, 'recallReport')),

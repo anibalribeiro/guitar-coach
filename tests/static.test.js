@@ -10,7 +10,7 @@ import {
   TEMPO_LINE,
   barCounterText, boardInteractiveFor, byStringRows, calibrationCountText, calibrationResultText,
   calibrationTapsText, chartCardTokens, chordPairLabelText, chordPairRowText, chordPassAnnouncement, familyTiles,
-  hintActionFor, hintAnnouncementText, hintAskedText, hintDecisionText, hintSummaryText, micEvidenceText,
+  hintActionFor, hintAnnouncementText, hintDecisionText, hintSummaryText, micEvidenceText,
   micLineText, micView, microcopyFor, msText, nextReviewText, passSummaryText, percentText, playCounterText,
   playAlongPassAnnouncement, playAlongStartAnnouncement, strumHintLines, createPanels,
   quizOutcomeText, questionCounterText, recalledText, resultMetaText, skillLabelText, skillRowText, spotGate,
@@ -20,12 +20,13 @@ import {
   todayTabLabel, sessionReasonText,
   LESSON_LABELS, NOT_WRITTEN, lessonBlocksText, lessonLinkView,
   lessonGuideView, chordPlacementText, lessonFinger, lessonVideosView, lessonDemoView,
-  CAPABILITIES_READY, CAPABILITY_ITEMS, capabilityLineText,
+  CAPABILITIES_READY, CAPABILITY_ITEMS, capabilityLineText, DIMMER_COPY, dimmerView,
+  GUIDED_LINE, guidedResultView, withHintsSubText, passReviewView,
 } from '../app/src/panels.js';
 import { WAKE_STATES } from '../app/src/wakelock.js';
 import { emptySession, nextSuggestionOf, sessionSummaryOf } from '../app/src/session.js';
 import { LESSONS, lessonFor, progressionById, songById } from '../app/src/content.js';
-import { buildPlayAlongChart } from '../app/src/drills.js';
+import { buildPlayAlongChart, buildScaleRunChart, createRun, reduce, summarizeDrill } from '../app/src/drills.js';
 import { expandProgression } from '../app/src/theory.js';
 import { classNameFor, labelFor } from '../app/src/fretboard.js';
 import { buildQuestions, chipsFor, promptText, questionMode } from '../app/src/quiz.js';
@@ -883,67 +884,64 @@ test('renderResult owns only the recall self-report and never the pass-review ra
   assert.ok(!/\$\('reportClean'\)|\$\('reportShaky'\)/.test(result), 'the pass-review radios stay with setPassReview');
 });
 
-// ---------- Phase 2: Show hint, Blink pattern and the one-beat flash (02-02) ----------
-test('the transport carries exactly one hint action: Show hint or Blink pattern', () => {
+// ---------- Phase 2: Blink pattern and the one-beat flash (02-02; Show hint retired 08-04) ----------
+test('the transport carries exactly one hint action: Blink pattern at Hint on demand', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const start = html.indexOf('id="transport"');
   const transport = html.slice(start, html.indexOf('</div>', start));
-  assert.match(transport, /id="showHint" hidden>Show hint</);
   assert.match(transport, /id="blinkPattern" hidden>Blink pattern</);
+  assert.ok(!/showHint/.test(transport), 'Show hint is retired; Brighter replaces it');
   assert.equal(hintActionFor(0), null);
-  assert.equal(hintActionFor(1), 'show');
+  assert.equal(hintActionFor(1), null);
   assert.equal(hintActionFor(2), 'blink');
-  assert.equal(hintActionFor(3), 'show');
+  assert.equal(hintActionFor(3), null);
+  assert.equal(hintActionFor(-1), null);
   const panels = read('panels.js');
-  assert.match(panels, /\$\('showHint'\)\.hidden = action !== 'show'/);
-  assert.match(panels, /\$\('blinkPattern'\)\.hidden = action !== 'blink'/);
+  const action = panels.slice(panels.indexOf('function setHintAction('), panels.indexOf('function setPassReview('));
+  assert.match(action, /\$\('blinkPattern'\)\.hidden = action !== 'blink'/);
+  assert.match(action, /\$\('blinkPattern'\)\.textContent = blinkActionLabel\(currentFamily\)/);
+  assert.match(panels, /\$\('blinkPattern'\)\.addEventListener\('click', \(\) => onHint\(\)\)/);
 });
 
-test('the show-hint confirm replaces the transport row with the fixed copy', () => {
+test('08-04: the v1 Show hint and its restart-lower confirm are gone from markup, CSS and panels', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  for (const id of ['hintConfirm', 'hintConfirmHeading', 'hintConfirmBody', 'restartLower', 'keepPlaying']) {
-    assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
+  for (const id of ['showHint', 'hintConfirm', 'hintConfirmHeading', 'hintConfirmBody', 'restartLower', 'keepPlaying']) {
+    assert.ok(!new RegExp(`id="${id}"`).test(html), `#${id} is retired`);
   }
-  assert.match(html, /id="hintConfirmHeading">Restart one hint lower\?</);
-  assert.match(html, /id="restartLower" class="cta">Restart at Full pattern</);
-  assert.match(html, /id="keepPlaying">Keep playing</);
+  assert.ok(!/hint-confirm/.test(html), 'no .hint-confirm CSS or markup');
+  assert.ok(!/Restart one hint lower/.test(html));
   const panels = read('panels.js');
-  assert.match(panels, /'Restart one hint lower\?'/);
-  assert.match(panels, /'This ends the recall attempt and restarts at Hint on demand\.'/);
-  assert.match(panels, /This pass ends now and restarts at \$\{HINT_LEVEL_NAMES\[to\]/);
-  assert.match(panels, /Restart at \$\{HINT_LEVEL_NAMES\[to\]/);
-  assert.match(panels, /'Keep playing'/);
-  assert.match(html, /\.hint-confirm \{ display: grid; gap: var\(--space-2\); background: var\(--bg\); border: 1px solid var\(--line\);/);
+  for (const name of ['showHint', 'openHintConfirm', 'closeHintConfirm', 'setHintBusy', 'focusHint',
+    'onHintConfirm', 'onHintCancel', 'restartLower', 'keepPlaying', 'hintConfirm', 'Restart one hint lower']) {
+    assert.ok(!panels.includes(name), `panels.js still mentions ${name}`);
+  }
 });
 
-test('the pass-asked announcement names the lower level exactly', () => {
-  assert.equal(hintAskedText({ level: 1 }), 'Hint level 2 of 4, Anchors. One hint lower.');
-  assert.equal(hintAskedText({ level: 2 }), 'Hint level 3 of 4, Hint on demand. One hint lower.');
-  assert.equal(hintAskedText({ level: 3 }), 'Hint level 4 of 4, No lights. One hint lower.');
+test('IN-01: the retired Show-hint chain is gone: ABORT_PASS, pass-asked, hintAskedText and focusPause', () => {
   const main = read('main.js');
-  assert.match(main, /'pass-asked': \(\) => hintAskedText\(/);
+  assert.ok(!main.includes('pass-asked'), 'no pass-asked announcement');
+  assert.ok(!main.includes('hintAskedText'));
   assert.match(main, /typeof entry === 'function' \? entry\(\) : entry/);
+  const panels = read('panels.js');
+  assert.ok(!panels.includes('hintAskedText'));
+  assert.ok(!panels.includes('focusPause'));
+  assert.ok(!read('drills.js').includes('ABORT_PASS'), 'the reducer has no ABORT_PASS case');
 });
 
-test('the confirm never dispatches before confirmation and focus lands on Pause', () => {
+test('onHint only flashes the pattern at Hint on demand and never aborts the pass', () => {
   const main = read('main.js');
-  const onHint = main.slice(main.indexOf('function onHint'), main.indexOf('function confirmHint'));
-  const confirmBranch = onHint.slice(onHint.indexOf("run.hintLevel === 1 || run.hintLevel === 3"));
-  assert.match(confirmBranch, /openHintConfirm/);
-  assert.ok(!/dispatch\(/.test(confirmBranch), 'opening the confirm must not change the pass');
+  const onHint = functionBody(main, 'onHint');
+  assert.match(onHint, /if \(!run \|\| \(run\.phase !== 'countIn' && run\.phase !== 'active'\)\) return;/);
+  assert.match(onHint, /if \(run\.hintLevel !== 2\) return;/);
+  assert.match(onHint, /dispatch\(\{ type: 'FLASH', beat: transport\.position\(\)\.beat \}\)/);
   assert.match(onHint, /'Full pattern shown once — back to anchors\.'/);
-
-  const confirm = main.slice(main.indexOf('function confirmHint'), main.indexOf('function cancelHint'));
-  assert.match(confirm, /dispatch\(\{ type: 'ABORT_PASS'/);
-  assert.match(confirm, /panels\.closeHintConfirm\(\)/);
-  assert.match(confirm, /panels\.setHintBusy\(true\)/);
-  assert.match(confirm, /panels\.setHintBusy\(false\)/);
-  assert.match(confirm, /panels\.focusPause\(\)/);
-  assert.ok(confirm.indexOf('ABORT_PASS') < confirm.indexOf('focusPause'), 'focus moves after the abort re-render');
-
-  const cancel = main.slice(main.indexOf('function cancelHint'), main.indexOf('function onTempo'));
-  assert.match(cancel, /panels\.closeHintConfirm\(\)/);
-  assert.match(cancel, /panels\.focusHint\(/);
+  assert.ok(!/ABORT_PASS/.test(onHint));
+  // 08-04: Brighter is the only way to ask for more light; the confirm path is gone and
+  // nothing dispatches the retired ABORT_PASS event (IN-01 removed the reducer case).
+  assert.ok(!/type: 'ABORT_PASS'/.test(main));
+  for (const name of ['confirmHint', 'cancelHint', 'HintConfirm', 'openHintConfirm', 'closeHintConfirm', 'setHintBusy', 'focusHint']) {
+    assert.ok(!main.includes(name), `main.js still mentions ${name}`);
+  }
 });
 
 test('the flash reaches the LED scene as one full-pattern set and reconnect uses zero at a boundary', () => {
@@ -966,7 +964,9 @@ test('the result keeps the two pass planes separate and formats unguided time on
   const panels = read('panels.js');
   assert.match(panels, /withHintCount === 1 \? '1 pass' : `\$\{withHintCount\} passes`/);
   assert.match(panels, /recall\.completed \? '1 pass' : '0 passes'/);
-  assert.match(panels, /`\$\{withHints\.clean\} clean · ended at \$\{HINT_LEVEL_NAMES\[withHints\.endedAtLevel\]/);
+  // 08-04: the with-hints line moved into withHintsSubText (same copy, plus a guided count).
+  assert.match(panels, /`\$\{clean\} clean · ended at \$\{levelNames\[endedAtLevel\] \|\| levelNames\[0\]\}`/);
+  assert.equal(withHintsSubText({ clean: 1, endedAtLevel: 2 }), '1 clean · ended at Hint on demand');
   assert.match(panels, /\$\('resultUnguided'\)\.textContent = tiles\[3\]\.value/);
   assert.match(panels, /value: unguidedText\(summary\.unguidedMs\)/);
   assert.match(panels, /'Added to your unguided total\.'/);
@@ -2623,7 +2623,7 @@ test('the question announcement is the single question key in ANNOUNCE', () => {
   const block = source.slice(start, end);
   const keys = [...block.matchAll(/^ {2}(?:'([\w-]+)'|([\w-]+)):/gm)].map(match => match[1] || match[2]);
   assert.deepEqual(keys.sort(), [
-    'idle', 'pass-asked', 'pass-review', 'pass-start', 'paused-audio', 'paused-ble',
+    'idle', 'level-manual', 'pass-review', 'pass-start', 'paused-audio', 'paused-ble',
     'paused-hidden', 'paused-user', 'question', 'result-complete', 'result-stopped',
   ]);
   assert.equal(keys.filter(key => key === 'question').length, 1);
@@ -3041,7 +3041,9 @@ test('main routes the chord family: the chart, the count, the pair and the bar p
   assert.match(main, /\(barIndex \+ beatInBar \/ beatsPerBar\) \/ bars/);
   // The frame's own dot language is passed straight to the board for this family — and for
   // every change family, so a play-along board reads in the Chord tab's own notation.
-  assert.match(main, /const chordFamily = !!\(run && run\.chart && CHART_CHANGES\.has\(run\.chart\.family\)\)/);
+  // 08-02: the run is the default `source`; the idle dimmer preview passes its unstarted run.
+  assert.match(main, /function boardNotesFromFrame\(frame, mode = null, lightsAvailable = true, source = run\)/);
+  assert.match(main, /const chordFamily = !!\(source && source\.chart && CHART_CHANGES\.has\(source\.chart\.family\)\)/);
   assert.match(main, /chordFamily\s*\?\s*\(n\.text \|\| ''\)/);
   // The stage hands the pair, the chords and the change record to panels.
   assert.match(main, /pair: chordSource \? chordSource\.pair \|\| null : null/);
@@ -3862,7 +3864,9 @@ test('the backing cluster carries the Section loop toggle with its state word', 
   const panels = read('panels.js');
   const main = read('main.js');
   const start = html.indexOf('id="backingCluster"');
-  const cluster = html.slice(start, html.indexOf('id="hintConfirm"', start));
+  // The old end anchor (#hintConfirm) preceded the cluster, so this always read to the end
+  // of the document; 08-04 retired that id and keeps the same span explicitly.
+  const cluster = html.slice(start);
   assert.match(cluster, /<label class="inline" id="sectionLoopField" hidden>Section loop/);
   assert.match(cluster, /<input type="checkbox" id="sectionLoop" aria-label="Section loop" aria-pressed="false" aria-describedby="sectionLoopState">/);
   assert.match(cluster, /<span id="sectionLoopState">Off<\/span>/);
@@ -4045,7 +4049,7 @@ test('the song announcements word the section and the bar count', () => {
   assert.equal(playAlongPassAnnouncement({ bars: 8, scored: false }), 'Eight bars. Not scored.');
   // Both arms of the one announcement table ask the chart which section it is playing.
   const main = read('main.js');
-  const announce = main.slice(main.indexOf('const ANNOUNCE = {'), main.indexOf("  'pass-asked'"));
+  const announce = main.slice(main.indexOf('const ANNOUNCE = {'), main.indexOf("  'level-manual'"));
   assert.equal((announce.match(/sectionName: chartSectionName\(run\.chart\),/g) || []).length, 2, 'both arms name the section');
   assert.match(read('panels.js'), /const withSection = \(sectionName, sentence\) => \(/);
   assert.match(read('panels.js'), /const barWords = bars => NUMBER_WORDS\[bars\] \|\| String\(bars\);/);
@@ -5116,10 +5120,10 @@ test('the wake note sits inside the transport bar, below the transport row', () 
   const bar = html.indexOf('id="transportBar"', boardZone);
   const transport = html.indexOf('id="transportRow"', bar);
   const note = html.indexOf('id="wakeNote"', transport);
-  const hint = html.indexOf('id="hintConfirm"', note);
   const stage = html.indexOf('id="drillStage"', note);
-  assert.ok(boardZone >= 0 && bar > boardZone && transport > bar && note > transport && note < hint && note < stage,
-    'the wake note is in the control area, between the transport row and the hint confirm');
+  // 08-04: the hint confirm that used to follow the note is retired.
+  assert.ok(boardZone >= 0 && bar > boardZone && transport > bar && note > transport && note < stage,
+    'the wake note is in the control area, between the transport row and the drill stage');
   assert.ok(stage > bar, 'the transport bar is outside the coach rail');
   assert.match(html, /<p id="wakeNote" hidden>Screen wake is unavailable — keep the phone awake during a pass\.<\/p>/);
   // Shown, never announced: one hidden flag and nothing else — no dismiss control, no colour.
@@ -5436,4 +5440,299 @@ test('WR-06: the NECK-01 probe check fails on rows under 44px and on a missing c
   assert.match(neck, /const coarseRows = Math\.round\(rowHeight\) >= \$\{NECK_MIN_ROW\};/);
   assert.match(neck, /const ok = wrapDiff <= 0 && fret12Visible && coarseRows;/, 'the row height is part of diff');
   assert.match(neck, /diff: ok \? 0 : 1/);
+});
+
+// ---------- 08-02: thumb row dimmer (FADE-07/08/10) ----------
+test('FADE-10 dimmerView: level name, readout, passes left and the announcement', () => {
+  const view = dimmerView({ level: 1, lit: 7, dark: 5, cleanCount: 1, needed: 3, phase: 'active' });
+  assert.equal(view.levelName, 'Anchors');
+  assert.equal(view.readout, '7 lit / 5 dark');
+  assert.equal(view.passesText, '2 more clean passes to dim');
+  assert.equal(view.canBrighter, true);
+  assert.equal(view.canDarker, true);
+  assert.equal(view.brighterReason, '');
+  assert.equal(view.announcement, 'Anchors — 7 lit, 5 dark.');
+  assert.equal(dimmerView({ level: 1, cleanCount: 2, needed: 3, phase: 'active' }).passesText, '1 more clean pass to dim');
+  const none = dimmerView({ level: 3, lit: 0, dark: 12, phase: 'active' });
+  assert.equal(none.passesText, 'No lights — playing from memory');
+  assert.equal(none.canDarker, false);
+  assert.equal(none.darkerReason, 'Already at No lights.');
+  assert.equal(none.canBrighter, true);
+  const full = dimmerView({ level: 0, lit: 12, dark: 0, phase: 'countIn' });
+  assert.equal(full.canBrighter, false);
+  assert.equal(full.brighterReason, 'Already at Full pattern.');
+  assert.equal(full.canDarker, true);
+});
+
+test('FADE-07 dimmerView: paused, pass review and the result disable both buttons with a reason', () => {
+  const paused = dimmerView({ level: 1, phase: 'paused' });
+  assert.deepEqual([paused.canBrighter, paused.canDarker], [false, false]);
+  assert.equal(paused.brighterReason, 'Resume to change the light.');
+  assert.equal(paused.darkerReason, 'Resume to change the light.');
+  for (const phase of ['passReview', 'result']) {
+    const view = dimmerView({ level: 1, phase });
+    assert.deepEqual([view.canBrighter, view.canDarker], [false, false], phase);
+    assert.equal(view.brighterReason, 'Finish the review to change the light.');
+    assert.equal(view.darkerReason, 'Finish the review to change the light.');
+  }
+  for (const phase of ['idle', 'countIn', 'active']) {
+    const view = dimmerView({ level: 1, phase });
+    assert.deepEqual([view.canBrighter, view.canDarker], [true, true], phase);
+  }
+  assert.equal(DIMMER_COPY.noLights, 'No lights — playing from memory');
+});
+
+test('FADE-07 markup: the thumb row sits in #transportRow before #wakeNote with Start in the ring', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const row = html.indexOf('id="transportRow"');
+  const thumbRow = html.indexOf('id="thumbRow"');
+  const wake = html.indexOf('id="wakeNote"');
+  assert.ok(row >= 0 && row < thumbRow && thumbRow < wake, '#thumbRow inside #transportRow, before #wakeNote');
+  const block = html.slice(thumbRow, html.indexOf('id="transport"', thumbRow));
+  assert.match(block, /<button type="button" id="brighterBtn" class="dimbtn" aria-label="Brighter \(more light\)" aria-describedby="brighterReason"[^>]*>(?:<svg[^]*?<\/svg>)Brighter<\/button>/);
+  assert.match(block, /<button type="button" id="darkerBtn" class="dimbtn dark" aria-label="Darker \(less light\)" aria-describedby="darkerReason"[^>]*>(?:<svg[^]*?<\/svg>)Darker<\/button>/);
+  assert.ok(!/id="(?:brighterBtn|darkerBtn)"[^>]*\sdisabled/.test(block), 'aria-disabled, never disabled');
+  const ring = block.slice(block.indexOf('class="start-ring"'), block.indexOf('id="darkerBtn"'));
+  assert.match(ring, /<button type="button" id="startDrill" class="cta">Start drill<\/button>/);
+  assert.match(ring, /<button type="button" id="pauseDrill" class="cta" hidden>Pause<\/button>/);
+  assert.match(ring, /<button type="button" id="resumeDrill" class="cta" hidden>Resume<\/button>/);
+  assert.ok(block.indexOf('id="brighterBtn"') < block.indexOf('class="start-ring"'));
+  const lamps = block.slice(block.indexOf('id="dimmerLamps"'), block.indexOf('</ol>'));
+  assert.match(block, /<ol class="dimmer-lamps" id="dimmerLamps" aria-label="Light level">/);
+  assert.equal((lamps.match(/class="dimmer-lamp"/g) || []).length, 4);
+  assert.ok(!/<button/.test(lamps), 'the lamps are status only, never buttons');
+  ['Full pattern', 'Anchors', 'Hint on demand', 'No lights'].forEach((name, level) => {
+    assert.match(lamps, new RegExp(`data-level="${level}"><svg[^]*?aria-hidden="true"[^]*?<span class="dimmer-lamp-name">${name}</span>`));
+  });
+  assert.ok(!/fill="#/.test(lamps), 'lamp colour comes from CSS classes');
+  for (const id of ['litCount', 'darkCount', 'passesLeft', 'brighterReason', 'darkerReason']) assert.match(block, new RegExp(`id="${id}"`));
+  assert.match(block, /<span class="sr-only" id="brighterReason"><\/span>/);
+  assert.match(block, /<span class="sr-only" id="darkerReason"><\/span>/);
+  assert.ok(block.indexOf('class="thumb"') < block.indexOf('id="checkRecall"'), 'Check recall follows the thumb grid');
+  const transport = html.slice(html.indexOf('id="transport"'), html.indexOf('</div>', html.indexOf('id="transport"')));
+  assert.ok(!/<div/.test(transport), '#transport holds no nested div');
+  for (const id of ['startDrill', 'pauseDrill', 'resumeDrill', 'checkRecall']) assert.ok(!transport.includes(`id="${id}"`), `${id} left #transport`);
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  assert.match(css, /\.thumb \{ display: grid; grid-template-columns: 1fr auto 1fr; gap: var\(--space-2\); align-items: center; margin-top: var\(--space-2\); \}/);
+});
+
+test('FADE-08 wiring: panels calls onDimmer(-1/+1), main dispatches DIMMER and counts with ledCounts', () => {
+  const panels = read('panels.js');
+  assert.match(panels, /onDimmer = \(\) => \{\}/);
+  assert.match(panels, /\$\('brighterBtn'\)\.addEventListener\('click', \(\) => \{\n\s+if \(\$\('brighterBtn'\)\.getAttribute\('aria-disabled'\) === 'true'\) return;\n\s+onDimmer\(-1\);/);
+  assert.match(panels, /\$\('darkerBtn'\)\.addEventListener\('click', \(\) => \{\n\s+if \(\$\('darkerBtn'\)\.getAttribute\('aria-disabled'\) === 'true'\) return;\n\s+onDimmer\(1\);/);
+  assert.ok(!/\$\('(?:brighterBtn|darkerBtn)'\)\.disabled/.test(panels), 'never the disabled property');
+  assert.match(panels, /renderStageChart, setDimmer,/);
+  for (const banned of ['./leds.js', './drills.js']) assert.ok(!specifiers(panels).includes(banned), `panels must not import ${banned}`);
+  const main = read('main.js');
+  assert.match(main, /ledCounts\(frame\.led, chart\.shape\)/);
+  assert.match(main, /'level-manual': \(\) => dimmerModel\(\)\.announcement/);
+  assert.match(main, /dispatch\(\{ type: 'DIMMER', delta \}\)/);
+  assert.match(main, /dimmerCounts\(readoutFrame\(run, position\), run\.chart\)/);
+  assert.match(main, /panels\.setDimmer\(dimmerModel\(position\)\);/);
+  assert.match(main, /panels\.setDimmer\(dimmerModel\(\)\);/);
+  assert.match(main, /onDimmer,\n/);
+  const drills = read('drills.js');
+  assert.match(drills, /export function readoutFrame\(state, position = \{\}\)/);
+});
+
+test('CONTEXT Idle: one session-only idleDimmer, read by chartFor and cleared by Start and seedBlock', () => {
+  const main = stripComments(read('main.js'));
+  assert.equal((main.match(/let idleDimmer = null;/g) || []).length, 1);
+  assert.ok(!read('settings.js').includes('idleDimmer'), 'never in the settings store');
+  assert.ok(!/save\([^)]*idleDimmer/.test(main) && !/store\.\w+\([^)]*idleDimmer/.test(main), 'never persisted');
+  const chartFor = functionBody(main, 'chartFor');
+  assert.match(chartFor, /if \(!recall && idleDimmer && idleDimmer\.id === built\.id\) built\.startLevel = idleDimmer\.level;/);
+  const startDrill = main.slice(main.indexOf('async function startDrill'), main.indexOf('async function resumeDrill'));
+  assert.equal((startDrill.match(/buildChart\(\{ recall \}\);\s*idleDimmer = null;/g) || []).length, 2, 'cleared next to each chart build');
+  // The existing adjacency pin: nothing sits between the feedback clear and START.
+  assert.match(startDrill, /panels\.setFeedback\(''\);\s*dispatch\(\{ type: 'START'/);
+  // IN-05: every settings write drops a preview whose item is no longer the current one.
+  assert.match(functionBody(main, 'save'), /settings = store\.set\(patch\);\s*if \(idleDimmer && idleDimmer\.id !== previewSkillId\(\)\) idleDimmer = null;/);
+  const seed = functionBody(main, 'seedBlock');
+  assert.ok(seed.indexOf('idleDimmer = null;') >= 0 && seed.indexOf('idleDimmer = null;') < seed.indexOf('save(target);'));
+});
+
+test('CONTEXT Idle: idleScene is the one idle scene source for painting and for counting', () => {
+  const main = stripComments(read('main.js'));
+  assert.equal((main.match(/function idleScene\(/g) || []).length, 1);
+  const renderAll = functionBody(main, 'renderAll');
+  assert.match(renderAll, /const scene = drillLive\(\) \? null : idleScene\(\);/);
+  assert.match(renderAll, /board\.render\(scene && scene\.kind === 'preview' \? scene\.notes : view\.notes\);/);
+  const pushScene = functionBody(main, 'pushScene');
+  assert.match(pushScene, /const scene = drillLive\(\) \? null : idleScene\(\);/);
+  assert.match(pushScene, /sink\.tick\(sceneFromNotes\(scene\.led, \{ target: scene\.target \}\), 0, settings\.bpm\);/);
+  const model = functionBody(main, 'dimmerModel');
+  assert.match(model, /const scene = idleScene\(\);\s*const counts = ledCounts\(scene\.led, scene\.shape\);/);
+  assert.match(model, /level: idleLevelNow\(\)/);
+  const scene = functionBody(main, 'idleScene');
+  assert.match(scene, /playAlongIdleFrame\(source, idleLevelNow\(\)\)/);
+  assert.match(scene, /readoutFrame\(preview\)/);
+  assert.match(scene, /createRun\(\{ \.\.\.source, startLevel: idleDimmer\.level \}\)/);
+  // WR-03: a wait chart (Find the note) never previews a random question; it keeps the browse scene.
+  assert.match(scene, /if \(idleDimmer && idleDimmer\.id === source\.id && source\.timed !== false\) \{/);
+  assert.match(scene, /source\.timed !== false\) \{[\s\S]*\n  \}\n  return browse;\n\}/, 'everything else falls through to the browse scene');
+  assert.match(functionBody(main, 'idleLevelNow'), /idleDimmer && idleDimmer\.id === id/);
+});
+
+test('CONTEXT Idle: the idle onDimmer branch repaints through renderAll and renderDrillState and announces', () => {
+  const main = stripComments(read('main.js'));
+  const body = functionBody(main, 'onDimmer');
+  assert.match(body, /dispatch\(\{ type: 'DIMMER', delta \}\);\s*return;/);
+  assert.match(body, /if \(run && run\.phase !== 'idle'\) return;/, 'paused, pass review and result are ignored');
+  assert.match(body, /const level = clampLevel\(from \+ delta\);/);
+  assert.match(body, /idleDimmer = \{ id: previewSkillId\(\), level \};\s*renderAll\(\{ forceScene: true \}\);\s*renderDrillState\(\);\s*panels\.announce\(dimmerModel\(\)\.announcement\);/);
+  assert.ok(!/board\.render|sink\.tick/.test(body), 'no paint of its own');
+  const state = functionBody(main, 'renderDrillState');
+  assert.match(state, /const idleLevel = idleLevelNow\(\);/);
+  assert.match(state, /playAlongIdleFrame\(chordSource, idleLevel\)/);
+  assert.match(main, /import \{ FADE, HINT_LEVELS, clampLevel \} from '\.\/fade\.js';/);
+});
+
+test('08-02 idle labels: the lamps read "Start level" and the readout "on the guitar now" while idle', () => {
+  assert.equal(DIMMER_COPY.lampsIdle, 'Start level');
+  assert.equal(DIMMER_COPY.readoutIdle, 'on the guitar now');
+  const idle = dimmerView({ level: 1, lit: 12, dark: 0, phase: 'idle' });
+  assert.equal(idle.lampsLabel, 'Start level');
+  assert.equal(idle.readoutLabel, 'on the guitar now');
+  const live = dimmerView({ level: 1, lit: 7, dark: 5, phase: 'active' });
+  assert.equal(live.lampsLabel, 'Light level');
+  assert.equal(live.readoutLabel, 'on the guitar');
+  const panels = read('panels.js');
+  assert.match(panels, /\$\('lampsCaption'\)\.textContent = view\.lampsLabel/);
+  assert.match(panels, /\$\('readoutLabel'\)\.textContent = view\.readoutLabel/);
+  // IN-04: both are static markup inside #thumbRow, which setDimmer already requires.
+  assert.ok(!/if \(\$\('(?:readoutLabel|lampsCaption)'\)\)/.test(panels), 'no impossible-state guards');
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  assert.match(html, /<p class="dimmer-caption" id="lampsCaption">Light level<\/p>/);
+  // The shell boots with no guitar connected, so the static label is the "would light" one (WR-04).
+  assert.match(html, /<span class="dimmer-where" id="readoutLabel">would light on the guitar<\/span>/);
+});
+
+test('WR-04: with no guitar or Lights off the readout says "would light on the guitar"; the numbers stay', () => {
+  assert.equal(DIMMER_COPY.readoutOff, 'would light on the guitar');
+  for (const phase of ['idle', 'countIn', 'active', 'paused', 'passReview', 'result']) {
+    const on = dimmerView({ level: 1, lit: 7, dark: 5, phase, lightsLive: true });
+    const off = dimmerView({ level: 1, lit: 7, dark: 5, phase, lightsLive: false });
+    assert.equal(off.readoutLabel, 'would light on the guitar', phase);
+    assert.notEqual(on.readoutLabel, off.readoutLabel, phase);
+    assert.equal(off.readout, on.readout, `${phase}: the numbers are unchanged`);
+    assert.equal(off.announcement, on.announcement, phase);
+  }
+  assert.equal(dimmerView({ level: 1, phase: 'active' }).readoutLabel, 'on the guitar', 'live by default');
+  const main = stripComments(read('main.js'));
+  assert.match(functionBody(main, 'lightsLive'), /return !!connected && !!settings\.lightsOn;/);
+  const model = functionBody(main, 'dimmerModel');
+  assert.equal((model.match(/lightsLive: lightsLive\(\)/g) || []).length, 2, 'both the live and the idle model');
+  assert.match(main, /panels\.setLights\(settings\.lightsOn\);\s*panels\.setDimmer\(dimmerModel\(\)\);/, 'the Lights switch repaints the label');
+});
+
+test('FADE-07 dimmerView clamps idle and on the Check recall pass', () => {
+  assert.equal(dimmerView({ level: 0, phase: 'idle' }).canBrighter, false);
+  assert.equal(dimmerView({ level: 3, phase: 'idle' }).canDarker, false);
+  const recall = dimmerView({ level: 3, lit: 0, dark: 12, phase: 'active' });
+  assert.equal(recall.canDarker, false);
+  assert.equal(recall.canBrighter, true);
+});
+
+test('FADE-07 setDimmer paints only on change and every setDrill paint is followed by it', () => {
+  const panels = read('panels.js');
+  const body = panels.slice(panels.indexOf('function setDimmer('), panels.indexOf('function setDrill('));
+  assert.match(body, /if \(dimmerLast && DIMMER_KEYS\.every\(key => dimmerLast\[key\] === view\[key\]\)\) return;/);
+  assert.match(body, /setAttribute\('aria-current', 'true'\)/);
+  assert.ok(!/innerHTML/.test(body), 'textContent only');
+  const state = functionBody(stripComments(read('main.js')), 'renderDrillState');
+  assert.ok(state.indexOf('panels.setDrill({') < state.indexOf('panels.setDimmer(dimmerModel());'));
+});
+
+// ---------- 08-04: guided copy (FADE-09) ----------
+const guidedChart = startLevel => ({
+  ...buildScaleRunChart({ scaleId: 'minPent', keyPc: 9, positionId: 's6f0', direction: 'up', bpm: 80 }),
+  startLevel,
+});
+const guidedStep = (state, event) => reduce(state, event).state;
+const guidedActive = state => guidedStep(state, { type: 'TICK', beat: state.chart.countInBeats });
+
+test('FADE-09 tracer: Check recall + Brighter reads Guided on the result, never Recalled', () => {
+  assert.equal(GUIDED_LINE, 'Guided — you asked for more light');
+  let state = guidedStep(createRun({ ...guidedChart(3), coldRecall: true }), { type: 'START', at: 1000, wallAt: 1700000000000 });
+  state = guidedStep(state, { type: 'DIMMER', delta: -1 });
+  state = guidedStep(guidedActive(state), { type: 'FINISH', at: 5000, wallAt: 1700000004000 });
+  assert.equal(state.phase, 'result');
+  const summary = summarizeDrill(state);
+  assert.equal(summary.recall.guided, true);
+  const view = guidedResultView(summary);
+  assert.ok(view, 'a guided recall gets the guided copy');
+  assert.equal(view.verdict, 'Not yet');
+  assert.ok(view.heroSub.startsWith(GUIDED_LINE));
+  assert.ok(!/Recalled/.test(view.heroSub));
+  assert.equal(view.noLightsValue, '0 passes');
+  assert.equal(view.noLightsSub, GUIDED_LINE);
+});
+
+test('FADE-09 an unguided clean recall keeps the recall copy (guidedResultView is null)', () => {
+  let state = guidedStep(createRun(guidedChart(3)), { type: 'START', at: 1000 });
+  state = guidedStep(guidedActive(state), { type: 'FINISH', at: 9000 });
+  state = guidedStep(state, { type: 'SELF_REPORT', clean: true });
+  const summary = summarizeDrill(state);
+  assert.equal(summary.recall.completed, true);
+  assert.equal(guidedResultView(summary), null);
+});
+
+test('FADE-09 a brightened earlier pass never hides a real recall that followed it', () => {
+  let state = guidedStep(createRun(guidedChart(2)), { type: 'START', at: 1000 });
+  state = guidedActive(state);
+  state = guidedStep(state, { type: 'DIMMER', delta: -1 });
+  state = guidedStep(state, { type: 'DIMMER', delta: 1 });
+  state = guidedStep(state, { type: 'DIMMER', delta: 1 });
+  assert.equal(state.hintLevel, 3);
+  state = guidedStep(state, { type: 'FINISH', at: 9000 });
+  assert.equal(state.phase, 'passReview');
+  assert.equal(state.passes[0].brightened, true);
+  state = guidedStep(state, { type: 'SELF_REPORT', clean: true });
+  state = guidedStep(state, { type: 'NEXT_PASS' });
+  assert.equal(state.hintLevel, 3);
+  state = guidedStep(guidedActive(state), { type: 'FINISH', at: 20000 });
+  assert.equal(state.phase, 'result');
+  state = guidedStep(state, { type: 'SELF_REPORT', clean: true });
+  const summary = summarizeDrill(state);
+  assert.equal(summary.guided, true);
+  assert.equal(summary.mastered, true);
+  assert.equal(guidedResultView(summary), null, 'keyed on recall.guided, never on summary.guided');
+  assert.equal(summary.withHints.guided, 1);
+  assert.ok(withHintsSubText(summary.withHints).endsWith(' · 1 guided'));
+});
+
+test('FADE-09 withHintsSubText appends the guided count only when there is one', () => {
+  assert.equal(withHintsSubText({ clean: 2, endedAtLevel: 1, guided: 0 }), '2 clean · ended at Anchors');
+  assert.equal(withHintsSubText({ clean: 2, endedAtLevel: 1 }), '2 clean · ended at Anchors');
+  assert.equal(withHintsSubText({ clean: 0, endedAtLevel: 2, guided: 3 }), '0 clean · ended at Hint on demand · 3 guided');
+});
+
+test('FADE-09 passReviewView names the credited level and flags a brightened pass', () => {
+  const brightened = passReviewView({ last: { hintLevel: 1, brightened: true }, levelChange: { fromLevel: 2, toLevel: 2 }, hintLevel: 2 });
+  assert.equal(brightened.fromLevel, 1, 'the credited (brightest) level, not the level it ended on');
+  assert.equal(brightened.levelName, 'Anchors');
+  assert.equal(brightened.guided, true);
+  const plain = passReviewView({ last: { hintLevel: 2, brightened: false }, levelChange: null, hintLevel: 2 });
+  assert.equal(plain.levelName, 'Hint on demand');
+  assert.equal(plain.guided, false);
+  assert.equal(passReviewView({ last: null, levelChange: { fromLevel: 1 }, hintLevel: 0 }).fromLevel, 1);
+  assert.equal(passReviewView({ last: null, levelChange: null, hintLevel: 2 }).fromLevel, 2);
+});
+
+test('FADE-09 #passGuided follows the decision line and is written with textContent', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  assert.match(html, /<p class="decision" id="passReviewDecision"><\/p>\s*<p class="decision" id="passGuided" hidden><\/p>/);
+  const panels = read('panels.js');
+  const body = panels.slice(panels.indexOf('function setPassReview('), panels.indexOf('function setTempoSuggestion('));
+  assert.match(body, /\$\('passGuided'\)\.hidden = !guided;/);
+  assert.match(body, /\$\('passGuided'\)\.textContent = guided \? GUIDED_LINE : '';/);
+  assert.ok(!/innerHTML/.test(body));
+  const drill = panels.slice(panels.indexOf('if (passReview) {'), panels.indexOf("if (phase === 'paused') {"));
+  assert.match(drill, /passReviewView\(\{ last, levelChange, hintLevel \}\)/);
+  const result = panels.slice(panels.indexOf('function renderResult('), panels.indexOf('function setSelfReport('));
+  assert.match(result, /guidedResultView\(summary\)/);
+  assert.match(result, /\$\('withHintsSub'\)\.textContent = withHintsSubText\(withHints\);/);
+  assert.equal((panels.match(/Guided — you asked for more light/g) || []).length, 1);
 });

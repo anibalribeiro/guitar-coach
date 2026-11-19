@@ -572,7 +572,7 @@ test('validateProgress caps the session history at 20 and rebuilds each pass', (
   assert.equal(plane.sessions[MAX_SESSIONS - 1].sessionId, 's24');
   const pass = plane.sessions[0].passes[0];
   assert.deepEqual(Object.keys(pass).sort(), [
-    'aborted', 'activeMs', 'assessment', 'bpm', 'completedSteps', 'hintLevel', 'index', 'plannedSteps', 'reasonKey', 'selfReport', 'unguidedMs',
+    'aborted', 'activeMs', 'assessment', 'bpm', 'brightened', 'completedSteps', 'hintLevel', 'index', 'plannedSteps', 'reasonKey', 'selfReport', 'unguidedMs',
   ]);
   assert.equal(pass.completedSteps, 16, 'counts are truncated to whole steps');
   assert.equal(pass.hintLevel, 3, 'the level clamps to the four-level ladder');
@@ -1163,4 +1163,92 @@ test('a v2 backup carries no pair table and a v4 file is refused as newer', () =
   const v3 = { ...v2, schemaVersion: 3 };
   assert.equal(validateBackup(v3, { validateSettings }).ok, true, 'a v3 file is accepted');
   assert.equal(validateBackup({ ...v2, schemaVersion: 4 }, { validateSettings }).reason, 'newer');
+});
+
+test('validateSession keeps brightened as a strict boolean (FADE-09)', () => {
+  const pass = value => validateSession({ passes: [{ hintLevel: 2, brightened: value }] }).passes[0].brightened;
+  assert.equal(pass(true), true);
+  assert.equal(validateSession({ passes: [{ hintLevel: 2 }] }).passes[0].brightened, false, 'absent reads as false');
+  assert.equal(pass('true'), false);
+});
+
+// ---------- 08-01: guided passes never credit (FADE-09) ----------
+const BRIGHTENED_RECALL = Object.freeze({ ...CLEAN_RESULT.passes[1], brightened: true });
+const guidedResult = (passes, report = null) => ({
+  ...CLEAN_RESULT,
+  sessionId: 'scaleRun:minPent:9:s6f0:guided',
+  passes,
+  recall: { attempted: true, completed: false, selfReport: report, bpm: 80 },
+});
+
+test('a brightened clean recall pass adds no minutes, counts, best level, mastery or schedule', () => {
+  const progress = apply(emptyProgress(), guidedResult([BRIGHTENED_RECALL]));
+  const skill = progress.skills[CLEAN_RESULT.skillId];
+  const session = progress.sessions[0];
+  assert.equal(progress.totals.unguidedMs, 0);
+  assert.equal(session.unguidedMs, 0);
+  assert.equal(session.passes[0].brightened, true);
+  assert.equal(skill.cleanPasses, 0);
+  assert.equal(skill.withoutLights.cleanPasses, 0);
+  assert.equal(skill.withLights.cleanPasses, 0);
+  assert.equal(skill.bestLevel, 0);
+  assert.equal(skill.masteredAt, null);
+  assert.equal(skill.dueAt, null);
+  assert.equal(skill.lapses, 0, 'a guided pass is never a lapse either');
+});
+
+test('a brightened clean pass with lights counts nothing; the same pass unbrightened does', () => {
+  const lit = { ...CLEAN_RESULT.passes[0], hintLevel: 1 };
+  const guided = apply(emptyProgress(), guidedResult([{ ...lit, brightened: true }])).skills[CLEAN_RESULT.skillId];
+  assert.equal(guided.cleanPasses, 0);
+  assert.equal(guided.withLights.cleanPasses, 0);
+  assert.equal(guided.bestLevel, 0);
+  const control = apply(emptyProgress(), guidedResult([{ ...lit, brightened: false }])).skills[CLEAN_RESULT.skillId];
+  assert.equal(control.cleanPasses, 1);
+  assert.equal(control.withLights.cleanPasses, 1);
+  assert.equal(control.bestLevel, 1);
+});
+
+test('a crafted brightened recall survives import but a later clean re-report mints nothing', () => {
+  const first = apply(emptyProgress(), guidedResult([BRIGHTENED_RECALL], 'clean'));
+  assert.equal(first.sessions[0].recallReport, null, 'a brightened recall never stores a clean report');
+  const doc = JSON.parse(JSON.stringify(exportDoc({ settings: {}, progress: first }, { now: FIXED_NOW })));
+  doc.sessions[0].passes = [{ index: 2, hintLevel: 3, bpm: 80, completedSteps: 16, plannedSteps: 16, selfReport: 'clean', brightened: true }];
+  const restored = validateBackup(doc, { validateSettings });
+  assert.equal(restored.ok, true);
+  assert.equal(restored.doc.progress.sessions[0].passes[0].brightened, true);
+  const again = apply(restored.doc.progress, guidedResult([BRIGHTENED_RECALL], 'clean'));
+  const skill = again.skills[CLEAN_RESULT.skillId];
+  assert.equal(skill.masteredAt, null);
+  assert.equal(skill.dueAt, null);
+  assert.equal(skill.withoutLights.cleanPasses, 0);
+  assert.equal(again.totals.unguidedMs, 0);
+});
+
+test('validateSession turns every non-true brightened value into false', () => {
+  for (const value of [1, 'true', {}, null]) {
+    assert.equal(validateSession({ passes: [{ hintLevel: 3, brightened: value }] }).passes[0].brightened, false, String(value));
+  }
+  assert.equal(validateSession({ passes: [{ hintLevel: 3, brightened: true }] }).passes[0].brightened, true);
+});
+
+test('WR-05: validateSession re-derives unguidedMs, so a crafted brightened pass keeps no guided minutes', () => {
+  const recall = { index: 2, hintLevel: 3, bpm: 80, completedSteps: 16, plannedSteps: 16, selfReport: 'clean', activeMs: 12000 };
+  const crafted = validateSession({ unguidedMs: 600000, passes: [{ ...recall, brightened: true, unguidedMs: 600000 }] });
+  assert.equal(crafted.unguidedMs, 0, 'the stored session minutes are not trusted');
+  assert.equal(crafted.passes[0].unguidedMs, 0, 'a brightened pass carries no unguided time');
+  const honest = validateSession({ unguidedMs: 600000, passes: [{ ...recall, unguidedMs: 12000 }] });
+  assert.equal(honest.unguidedMs, 12000, 'an unbrightened clean recall keeps exactly its own time');
+  assert.equal(validateSession({ unguidedMs: 600000, passes: [{ ...recall, hintLevel: 2 }] }).unguidedMs, 0, 'a lit pass earns none');
+
+  // A real session round-trips unchanged through export and import.
+  const progress = apply(emptyProgress(), withRecallReport(CLEAN_RESULT, 'clean'));
+  assert.ok(progress.sessions[0].unguidedMs > 0);
+  const doc = JSON.parse(JSON.stringify(exportDoc({ settings: {}, progress }, { now: FIXED_NOW })));
+  const restored = validateBackup(doc, { validateSettings });
+  assert.equal(restored.ok, true);
+  assert.equal(restored.doc.progress.sessions[0].unguidedMs, progress.sessions[0].unguidedMs);
+  // The same file with every pass marked brightened keeps no session minutes.
+  doc.sessions[0].passes = doc.sessions[0].passes.map(pass => ({ ...pass, brightened: true }));
+  assert.equal(validateBackup(doc, { validateSettings }).doc.progress.sessions[0].unguidedMs, 0);
 });

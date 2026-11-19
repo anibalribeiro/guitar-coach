@@ -5,12 +5,12 @@ import assert from 'node:assert/strict';
 import {
   buildScaleRunChart, buildNoteQuizChart, buildChordChangeChart, buildPlayAlongChart,
   createRun, reduce, frameAt, summarize, summarizeDrill, resumeFromBeat, stepIndexFor,
-  CHANGE_WINDOW, CHART_CHANGES, songSectionBars, sectionAtBar, playAlongIdleFrame,
+  CHANGE_WINDOW, CHART_CHANGES, songSectionBars, sectionAtBar, playAlongIdleFrame, readoutFrame,
 } from '../app/src/drills.js';
 import { CHORD_FAMILIES, CHORD_PAIRS, chordById, chordPairById, PROGRESSIONS, progressionById, SONGS, songById } from '../app/src/content.js';
 import { anchorNotes } from '../app/src/fade.js';
 import { expandChord, expandProgression, expandSongSection, voiceChord } from '../app/src/theory.js';
-import { applyResult, emptyProgress } from '../app/src/progress.js';
+import { BACKUP_SCHEMA_VERSION, applyResult, emptyProgress, exportDoc, validateBackup } from '../app/src/progress.js';
 import { sceneFromNotes, frameForScene, frameHex, ledCounts, ledFrame, lightable } from '../app/src/leds.js';
 
 const instance = {
@@ -352,6 +352,7 @@ test('FINISH closes the pass, records it and opens the pass review', () => {
     assessment: { source: 'selfReport', coldRecall: false, accuracy: null, medianTimingMs: null, meanAbsMs: null, passed: null, corrected: false },
     unguidedMs: 0,
     aborted: false,
+    brightened: false,
     reasonKey: null,
     activeMs: 9000,
   });
@@ -1037,7 +1038,7 @@ test('the canonical pass template carries unguidedMs and reasonKey, not derived 
   const review = finishPass(started(c), c, { clean: true });
   const keys = Object.keys(review.passes[0]).sort();
   assert.deepEqual(keys, [
-    'aborted', 'activeMs', 'assessment', 'bpm', 'completedSteps', 'hintLevel', 'index', 'plannedSteps',
+    'aborted', 'activeMs', 'assessment', 'bpm', 'brightened', 'completedSteps', 'hintLevel', 'index', 'plannedSteps',
     'reasonKey', 'selfReport', 'unguidedMs',
   ]);
   assert.equal(Object.hasOwn(review.passes[0], 'completed'), false);
@@ -1093,92 +1094,8 @@ test('every pass boundary clears the flash so a pause never re-opens it', () => 
     reduce({ ...flashed, phase: 'active' }, { type: 'FINISH' }).state,
     reduce({ ...flashed, phase: 'passReview' }, { type: 'NEXT_PASS' }).state,
     reduce({ ...flashed, phase: 'passReview' }, { type: 'END_DRILL' }).state,
-    reduce({ ...flashed, phase: 'active' }, { type: 'ABORT_PASS', beat: 4.2 }).state,
   ];
   for (const state of cases) assert.equal(state.flashUntilBeat, 0);
-});
-
-test('ABORT_PASS records an aborted pass, drops one level and restarts count-in', () => {
-  const c = chart();
-  const h2 = { ...started(c), hintLevel: 2, plan: { passIndex: 5, totalPasses: 6 } };
-  const result = reduce({ ...h2, phase: 'active', beat: 6.4 }, { type: 'ABORT_PASS', beat: 6.4 });
-  const state = result.state;
-  assert.equal(state.phase, 'countIn');
-  assert.equal(state.hintLevel, 1, 'exactly one level lower');
-  assert.equal(state.plan.passIndex, 6);
-  assert.equal(state.plan.totalPasses, state.plan.passIndex + (3 - state.hintLevel) * 3);
-  assert.deepEqual(state.levelChange, { direction: 'asked', fromLevel: 2, toLevel: 1, reasonKey: 'asked' });
-  assert.equal(state.cleanStreak, 0);
-  assert.equal(state.failStreak, 0);
-  assert.equal(state.beat, 0);
-  assert.equal(state.stepIndex, 0);
-  assert.equal(state.resumeFromBeat, c.countInBeats);
-  assert.equal(state.activeStartBeat, c.countInBeats);
-  assert.equal(state.flashUntilBeat, 0);
-  assert.deepEqual(state.passes[0], {
-    index: 5,
-    hintLevel: 2,
-    bpm: 80,
-    completedSteps: 2,
-    plannedSteps: c.steps.length,
-    selfReport: null,
-    unguidedMs: 0,
-    aborted: true,
-    reasonKey: 'asked',
-    activeMs: 1500,
-  });
-  assert.deepEqual(result.effects.map(e => e.type), ['stopTransport', 'startTransport', 'announce']);
-  assert.equal(result.effects[2].key, 'pass-asked');
-});
-
-test('ABORT_PASS on a wait-mode pass asks question one again with no transport (WR-01)', () => {
-  const c = quizChart();
-  let state = { ...reduce(createRun(c), { type: 'START', at: 1000 }).state, hintLevel: 1 };
-  state = reduce(state, { type: 'ANSWER', index: 0, correct: false, at: 2000 }).state;
-  state = reduce(state, { type: 'NEXT_QUESTION', at: 2100 }).state;
-  assert.equal(state.questionIndex, 1);
-
-  const aborted = reduce({ ...state, phase: 'active' }, { type: 'ABORT_PASS', at: 3000, beat: 0 });
-  assert.equal(aborted.state.phase, 'active', 'a wait chart has no count-in to enter');
-  assert.equal(aborted.state.hintLevel, 0);
-  assert.equal(aborted.state.questionIndex, 0, 'the abandoned pass never resumes mid-question');
-  assert.deepEqual(aborted.state.questionOutcomes, [], 'its outcomes never ride into the new pass');
-  assert.equal(aborted.state.beat, 0);
-  assert.equal(aborted.state.stepIndex, 0);
-  assert.deepEqual(aborted.effects.map(e => e.type), ['announce']);
-  assert.equal(aborted.effects[0].key, 'question', 'the new question is announced, not a count-in');
-  assert.equal(aborted.state.passes.length, 1);
-  assert.equal(aborted.state.passes[0].aborted, true);
-  assert.equal(aborted.state.passes[0].hintLevel, 1);
-});
-
-test('ABORT_PASS at Full pattern is ignored and a paused request uses the paused beat', () => {
-  const c = chart();
-  const atFullPattern = { ...started(c), hintLevel: 0 };
-  assert.equal(reduce(atFullPattern, { type: 'ABORT_PASS', beat: 6 }).state, atFullPattern);
-
-  const paused = { ...started(c), phase: 'paused', hintLevel: 1, pausedBeat: 6.9 };
-  const aborted = reduce(paused, { type: 'ABORT_PASS' }).state;
-  assert.equal(aborted.passes[0].completedSteps, 2);
-  assert.equal(aborted.hintLevel, 0);
-  assert.equal(aborted.phase, 'countIn');
-});
-
-test('a hint request from the recall keeps the attempt and clears completion', () => {
-  const c = chart();
-  const recall = {
-    ...started(c),
-    phase: 'active',
-    hintLevel: 3,
-    recall: { attempted: true, completed: false, selfReport: null, bpm: 80 },
-    beat: 6,
-  };
-  const state = reduce(recall, { type: 'ABORT_PASS', beat: 6 }).state;
-  assert.equal(state.hintLevel, 2);
-  assert.equal(state.recall.attempted, true);
-  assert.equal(state.recall.completed, false);
-  assert.equal(state.recall.selfReport, null);
-  assert.equal(state.passes[0].aborted, true);
 });
 
 // ---------- Phase 3: wait mode, stepIndexFor and the quiz chart (03-01) ----------
@@ -1296,7 +1213,7 @@ test('frameAt derives the count-in and active target from stepIndexFor', () => {
   assert.equal(activeFrame.totalSteps, 8);
 });
 
-test('STOP and ABORT_PASS record steps, not beats, on a one-step-per-bar chart', () => {
+test('STOP records steps, not beats, on a one-step-per-bar chart', () => {
   const c = barChart(8);
   let state = reduce(createRun(c), { type: 'START', at: 1000 }).state;
   state = reduce(state, { type: 'TICK', beat: 12 }).state;
@@ -1306,15 +1223,6 @@ test('STOP and ABORT_PASS record steps, not beats, on a one-step-per-bar chart',
   assert.equal(partial.completedSteps, 2, 'two bars played is two steps, never eight beats');
   assert.equal(partial.plannedSteps, 8);
   assert.equal(partial.aborted, false);
-
-  let asked = reduce(createRun({ ...c, startLevel: 1 }), { type: 'START', at: 1000 }).state;
-  assert.equal(asked.hintLevel, 1);
-  asked = reduce(asked, { type: 'TICK', beat: 12 }).state;
-  const aborted = reduce(asked, { type: 'ABORT_PASS', beat: 12 }).state;
-  assert.equal(aborted.phase, 'countIn');
-  assert.equal(aborted.passes[0].completedSteps, 2);
-  assert.equal(aborted.passes[0].plannedSteps, 8);
-  assert.equal(aborted.passes[0].aborted, true);
 });
 
 test('every chart carries its family identity and its clock flag', () => {
@@ -2126,7 +2034,7 @@ test('NEXT_PASS carries the boundary tempo and rebuilds the pass grid', () => {
   for (const event of [
     { type: 'START' }, { type: 'TICK', beat: 6 }, { type: 'FLASH', beat: 6 },
     { type: 'MARK_CHANGE', bar: 0 }, { type: 'PAUSE', beat: 6 }, { type: 'RESUME' },
-    { type: 'RESTART' }, { type: 'ABORT_PASS' }, { type: 'FINISH' }, { type: 'STOP' },
+    { type: 'RESTART' }, { type: 'FINISH' }, { type: 'STOP' },
     { type: 'REPEAT' },
   ]) {
     walk = reduce(walk, event).state;
@@ -2303,10 +2211,6 @@ test('a pass records the practice time it earned: bars for chords, wall time for
   const done = reduce(late, { type: 'FINISH', at: 40000, wallAt: 1700000000000 });
   assert.equal(done.state.passes[0].activeMs, 24000);
   assert.equal(summarizeDrill(done.state).activeMs, 24000);
-
-  // An aborted chord pass counts the bars it reached.
-  const asked = reduce({ ...chordStarted, phase: 'active', hintLevel: 1, beat: 12 }, { type: 'ABORT_PASS', beat: 12 });
-  assert.equal(asked.state.passes[0].activeMs, 6000);
 
   // The quiz has no tempo: the pass is the wall time from its first question to its last
   // answer (A5), never a 0 ms that would erase a twelve-question recall from the totals.
@@ -2546,21 +2450,6 @@ test('CHART_CHANGES is the one predicate behind the change record and its three 
   const next = reduce(finished, { type: 'NEXT_PASS', at: 6000 }).state;
   assert.equal(next.changes.planned, c.bars);
   assert.equal(next.changes.counted, 0);
-  // ABORT_PASS drops the abandoned pass's count too.
-  const hinted = buildPlayAlongChart({
-    family: 'progression', progressionId: 'I-IV-V', keyPc: 0, bpm: 80,
-    bars: expandProgression(progressionById['I-IV-V'], 0), startLevel: 2,
-  });
-  assert.equal(createRun(hinted).hintLevel, 2);
-  const hintedActive = reduce(
-    reduce(createRun(hinted), { type: 'START', at: 1000 }).state, { type: 'TICK', beat: 4 },
-  ).state;
-  const hintedCounted = reduce(hintedActive, { type: 'MARK_CHANGE', bar: 0 }).state;
-  assert.equal(hintedCounted.changes.counted, 1);
-  const aborted = reduce(hintedCounted, { type: 'ABORT_PASS', at: 3000, beat: 4 }).state;
-  assert.equal(aborted.phase, 'countIn');
-  assert.equal(aborted.changes.counted, 0);
-  assert.equal(aborted.changes.planned, hinted.bars);
 });
 
 // ---------- 04-02 Task 2: the next chord, the held scene and the chart's meter ----------
@@ -3175,4 +3064,356 @@ test('IN-05: every curated and movable voicing has a root as its bass', () => {
     }
   }
   assert.equal(checked, 24 + 36);
+});
+
+// ---------- 08-01: FADE-09 tracer ----------
+test('FADE-09 tracer: Check recall + Brighter ends as a guided recall that mints nothing and survives export/import', () => {
+  const c = { ...chart(), startLevel: 3, coldRecall: true };
+  let state = reduce(createRun(c), { type: 'START', at: 1000, wallAt: 1700000000000 }).state;
+  assert.equal(state.phase, 'countIn');
+  const dimmed = reduce(state, { type: 'DIMMER', delta: -1 });
+  state = dimmed.state;
+  assert.equal(state.hintLevel, 2);
+  assert.equal(state.cleanStreak, 0);
+  assert.equal(state.failStreak, 0);
+  assert.deepEqual(state.passDimmer, { startLevel: 3, brightest: 2, brightened: true });
+  assert.equal(state.phase, 'countIn', 'a level change never ends the pass');
+  assert.deepEqual(dimmed.effects, [{ type: 'announce', key: 'level-manual' }]);
+
+  state = reduce(state, { type: 'TICK', beat: c.countInBeats }).state;
+  assert.equal(state.phase, 'active');
+  const finished = reduce(state, { type: 'FINISH', at: 5000, wallAt: 1700000004000 });
+  state = finished.state;
+  assert.equal(state.phase, 'result', 'a pass that began at No lights closes the drill');
+  assert.equal(state.completed, true);
+  assert.deepEqual(state.recall, { attempted: true, completed: false, selfReport: null, bpm: 80 });
+  assert.equal(state.passes.length, 1);
+  assert.equal(state.passes[0].hintLevel, 2, 'credited at the brightest level used');
+  assert.equal(state.passes[0].brightened, true);
+  assert.deepEqual(finished.effects.map(e => e.type), ['stopTransport', 'zeroLeds', 'announce']);
+  assert.equal(finished.effects[2].key, 'result-complete');
+
+  const reported = reduce(state, { type: 'SELF_REPORT', clean: true });
+  assert.equal(reported.state, state, 'a guided recall takes no self-report');
+  assert.deepEqual(reported.effects, []);
+  assert.equal(reported.state.recall.completed, false);
+
+  const summary = summarizeDrill(state);
+  assert.equal(summary.unguidedMs, 0);
+  assert.equal(summary.mastered, false);
+  assert.equal(summary.guided, true);
+  assert.equal(summary.recall.guided, true);
+
+  const progress = applyResult(emptyProgress(), { ...summary, sessionId: 's-guided' }, { now: 1700000100000 });
+  const skill = progress.skills[summary.skillId];
+  assert.equal(progress.totals.unguidedMs, 0);
+  assert.equal(skill.masteredAt, null);
+  assert.equal(skill.withoutLights.cleanPasses, 0);
+  assert.equal(skill.dueAt, null);
+
+  assert.equal(BACKUP_SCHEMA_VERSION, 3);
+  const doc = JSON.parse(JSON.stringify(exportDoc({ settings: {}, progress }, { now: 1700000200000 })));
+  const restored = validateBackup(doc, { validateSettings: raw => raw || {} });
+  assert.equal(restored.ok, true);
+  const session = restored.doc.progress.sessions.find(s => s.sessionId === 's-guided');
+  assert.equal(session.passes[0].brightened, true, 'brightened survives export and import');
+});
+
+// ---------- 08-01: DIMMER (FADE-08/09) ----------
+const dimmerRun = (startLevel, c = chart()) => reduce(createRun({ ...c, startLevel }), { type: 'START', at: 1000 }).state;
+const dim = (state, delta) => reduce(state, { type: 'DIMMER', delta }).state;
+const toActive = (state, beat = 4) => reduce(state, { type: 'TICK', beat }).state;
+const finishNow = state => reduce(state, { type: 'FINISH', at: 9000 }).state;
+
+test('DIMMER clamps at Full pattern and No lights without effects', () => {
+  const full = dimmerRun(0);
+  const brighter = reduce(full, { type: 'DIMMER', delta: -1 });
+  assert.equal(brighter.state, full);
+  assert.deepEqual(brighter.effects, []);
+  const none = dimmerRun(3);
+  const darker = reduce(none, { type: 'DIMMER', delta: 1 });
+  assert.equal(darker.state, none);
+  assert.deepEqual(darker.effects, []);
+  const junk = reduce(dimmerRun(1), { type: 'DIMMER', delta: 5 });
+  assert.equal(junk.state.hintLevel, 1, 'a delta outside -1/+1 is ignored');
+  assert.deepEqual(junk.effects, []);
+});
+
+test('DIMMER is a no-op in idle, paused, passReview and result', () => {
+  const c = chart();
+  const idle = createRun({ ...c, startLevel: 1 });
+  const paused = reduce(toActive(dimmerRun(1, c)), { type: 'PAUSE', reason: 'hidden', beat: 5 }).state;
+  assert.equal(paused.phase, 'paused');
+  const review = finishNow(toActive(dimmerRun(1, c)));
+  assert.equal(review.phase, 'passReview');
+  const result = reduce(toActive(dimmerRun(1, c), 6), { type: 'STOP', at: 5000 }).state;
+  assert.equal(result.phase, 'result');
+  for (const state of [idle, paused, review, result]) {
+    for (const delta of [-1, 1]) {
+      const out = reduce(state, { type: 'DIMMER', delta });
+      assert.equal(out.state, state, `${state.phase} ignores DIMMER ${delta}`);
+      assert.deepEqual(out.effects, []);
+    }
+  }
+});
+
+test('a pass with any Brighter press is brightened and credited at its brightest level', () => {
+  // Darker then Brighter from Anchors.
+  let state = dim(reduce(dimmerRun(1), { type: 'DIMMER', delta: 1 }).state, -1);
+  assert.equal(state.hintLevel, 1);
+  let pass = finishNow(toActive(state)).passes[0];
+  assert.equal(pass.brightened, true);
+  assert.equal(pass.hintLevel, 1);
+  // Brighter then Darker from Hint on demand: Darker never raises credit.
+  state = dim(dim(dimmerRun(2), -1), 1);
+  assert.equal(state.hintLevel, 2);
+  assert.deepEqual(state.passDimmer, { startLevel: 2, brightest: 1, brightened: true });
+  pass = finishNow(toActive(state)).passes[0];
+  assert.equal(pass.brightened, true);
+  assert.equal(pass.hintLevel, 1);
+  // Darker only: not guided, still credited at the brightest level used (the start).
+  state = reduce(dimmerRun(1), { type: 'DIMMER', delta: 1 }).state;
+  pass = finishNow(toActive(state)).passes[0];
+  assert.equal(pass.brightened, false);
+  assert.equal(pass.hintLevel, 1);
+});
+
+test('Darker to No lights mid-pass goes to review; the next pass is the real recall', () => {
+  const c = chart();
+  let state = reduce(toActive(dimmerRun(2, c)), { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(state.hintLevel, 3);
+  state = finishNow(state);
+  assert.equal(state.phase, 'passReview', 'a pass that began lit is never the recall');
+  assert.equal(state.recall.completed, false);
+  assert.equal(state.passes[0].hintLevel, 2);
+  state = reduce(state, { type: 'SELF_REPORT', clean: true }).state;
+  state = reduce(state, { type: 'NEXT_PASS' }).state;
+  assert.equal(state.hintLevel, 3);
+  assert.equal(state.passDimmer, null);
+  assert.equal(state.recall.attempted, true);
+  state = finishNow(toActive(state));
+  assert.equal(state.phase, 'result');
+  assert.equal(state.recall.completed, true);
+  state = reduce(state, { type: 'SELF_REPORT', clean: true }).state;
+  const summary = summarizeDrill(state);
+  assert.equal(summary.mastered, true, 'an unaided pass reached by hand counts like an auto-reached one');
+  assert.ok(summary.unguidedMs > 0);
+  assert.equal(summary.guided, false);
+});
+
+test('Darker to No lights during the count-in is credited at the previous level', () => {
+  let state = reduce(dimmerRun(2), { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(state.phase, 'countIn');
+  assert.equal(state.hintLevel, 3);
+  assert.deepEqual(state.passDimmer, { startLevel: 2, brightest: 2, brightened: false });
+  state = finishNow(toActive(state));
+  assert.equal(state.phase, 'passReview');
+  assert.equal(state.passes[0].hintLevel, 2);
+  assert.equal(state.passes[0].brightened, false);
+  assert.equal(state.recall.completed, false);
+  state = reduce(reduce(state, { type: 'SELF_REPORT', clean: true }).state, { type: 'NEXT_PASS' }).state;
+  assert.equal(state.hintLevel, 3);
+  assert.equal(state.recall.attempted, true, 'the next pass begins at No lights and is the recall');
+  assert.equal(finishNow(toActive(state)).phase, 'result');
+});
+
+test('the automatic ladder still applies from the new level after a manual change', () => {
+  const c = chart();
+  let state = reduce(dimmerRun(0, c), { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(state.hintLevel, 1);
+  assert.equal(state.cleanStreak, 0);
+  for (let pass = 0; pass < 3; pass++) {
+    state = finishPass(state, c, { clean: true });
+    state = reduce(state, { type: 'NEXT_PASS' }).state;
+  }
+  assert.equal(state.hintLevel, 2, 'three clean passes go darker');
+
+  state = reduce({ ...dimmerRun(1, c), failStreak: 1, cleanStreak: 2 }, { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(state.hintLevel, 2);
+  assert.equal(state.failStreak, 0, 'a manual change resets both streaks');
+  assert.equal(state.cleanStreak, 0);
+  for (let pass = 0; pass < 2; pass++) {
+    state = finishPass(state, c, { clean: false });
+    state = reduce(state, { type: 'NEXT_PASS' }).state;
+  }
+  assert.equal(state.hintLevel, 1, 'two shaky passes go brighter');
+});
+
+test('STOP after a Brighter press records a brightened partial; a brightened recall stamps a failed attempt', () => {
+  let state = reduce(toActive(dimmerRun(2)), { type: 'DIMMER', delta: -1 }).state;
+  let stopped = reduce({ ...state, beat: 6 }, { type: 'STOP', at: 5000 }).state;
+  assert.equal(stopped.passes[0].brightened, true);
+  assert.equal(stopped.passes[0].hintLevel, 1);
+  assert.equal(stopped.recall.attempted, false);
+
+  state = reduce(toActive(dimmerRun(3)), { type: 'DIMMER', delta: -1 }).state;
+  stopped = reduce({ ...state, beat: 6 }, { type: 'STOP', at: 5000 }).state;
+  assert.equal(stopped.passes[0].brightened, true);
+  assert.equal(stopped.passes[0].hintLevel, 2);
+  assert.deepEqual(stopped.recall, { attempted: true, completed: false, selfReport: null, bpm: 80 });
+});
+
+test('IN-01: the retired ABORT_PASS event is ignored in every phase', () => {
+  const live = toActive(dimmerRun(2));
+  for (const state of [createRun(chart()), dimmerRun(2), live, reduce(live, { type: 'PAUSE', reason: 'user', beat: 6 }).state]) {
+    const out = reduce(state, { type: 'ABORT_PASS', beat: 6 });
+    assert.equal(out.state, state, `${state.phase} ignores ABORT_PASS`);
+    assert.deepEqual(out.effects, []);
+  }
+});
+
+test('passDimmer is null after START, NEXT_PASS and REPEAT; RESTART keeps it', () => {
+  const c = chart();
+  const seeded = { startLevel: 1, brightest: 0, brightened: true };
+  assert.equal(createRun(c).passDimmer, null);
+  assert.equal(reduce({ ...createRun(c), passDimmer: seeded }, { type: 'START', at: 1 }).state.passDimmer, null);
+  const dimmed = dim(toActive(dimmerRun(1, c)), -1);
+  assert.notEqual(dimmed.passDimmer, null);
+  assert.deepEqual(reduce(dimmed, { type: 'RESTART', at: 2 }).state.passDimmer, dimmed.passDimmer, 'a restart replays the same pass');
+  const review = reduce(finishNow(dimmed), { type: 'SELF_REPORT', clean: true }).state;
+  assert.equal(reduce(review, { type: 'NEXT_PASS' }).state.passDimmer, null);
+  const result = reduce({ ...dimmed, beat: 6 }, { type: 'STOP', at: 5000 }).state;
+  assert.equal(reduce(result, { type: 'REPEAT', at: 6000 }).state.passDimmer, null);
+});
+
+test('CR-01: Check recall + Brighter + Restart stays a guided recall and clean passes earn no credit', () => {
+  const c = { ...chart(), startLevel: 3, coldRecall: true };
+  let state = reduce(createRun(c), { type: 'START', at: 1000, wallAt: 1700000000000 }).state;
+  state = dim(state, -1);
+  state = reduce(state, { type: 'RESTART', at: 1500, wallAt: 1700000000500 }).state;
+  assert.equal(state.hintLevel, 2);
+  assert.deepEqual(state.passDimmer, { startLevel: 3, brightest: 2, brightened: true });
+  state = toActive(state, c.countInBeats);
+  state = reduce(state, { type: 'FINISH', at: 5000, wallAt: 1700000004000 }).state;
+  assert.equal(state.phase, 'result', 'the replayed recall still closes the drill');
+  assert.deepEqual(state.recall, { attempted: true, completed: false, selfReport: null, bpm: c.bpm });
+  assert.equal(state.passes.length, 1);
+  assert.equal(state.passes[0].brightened, true);
+  // The review's laundering path: clean reports and more passes are impossible from here.
+  assert.equal(reduce(state, { type: 'SELF_REPORT', clean: true }).state, state);
+  assert.equal(reduce(state, { type: 'NEXT_PASS' }).state, state);
+  const summary = summarizeDrill(state);
+  const skill = applyResult(emptyProgress(), { ...summary, sessionId: 's-cr01' }, { now: 1700000100000 }).skills[summary.skillId];
+  assert.equal(skill.withLights.cleanPasses, 0);
+  assert.equal(skill.withoutLights.cleanPasses, 0);
+  assert.equal(skill.bestLevel, 0);
+  assert.equal(skill.retainedAt, null);
+  assert.equal(skill.masteredAt, null);
+  assert.equal(skill.intervalIndex, 0);
+});
+
+test('CR-01: NEXT_PASS clears coldRecall so only the opening attempt is a cold recall', () => {
+  const c = { ...chart(), startLevel: 2, coldRecall: true };
+  let state = toActive(reduce(createRun(c), { type: 'START', at: 1000 }).state, c.countInBeats);
+  state = finishNow(state);
+  assert.equal(state.passes[0].assessment.coldRecall, true, 'the opening pass keeps the chart flag');
+  state = reduce(state, { type: 'SELF_REPORT', clean: true }).state;
+  state = reduce(state, { type: 'NEXT_PASS', at: 10000 }).state;
+  assert.equal(state.chart.coldRecall, false);
+  state = finishNow(toActive(state, state.chart.countInBeats));
+  assert.equal(state.passes[1].assessment.coldRecall, false);
+});
+
+test('DIMMER changes the frame at once (measured counts)', () => {
+  const c = buildScaleRunChart({ scaleId: 'minPent', keyPc: 9, positionId: 's6f5', direction: 'up', bpm: 80, startLevel: 1 });
+  const state = toActive(reduce(createRun(c), { type: 'START', at: 1000 }).state, c.countInBeats);
+  const at = { phase: 'active', beat: c.countInBeats };
+  assert.deepEqual(ledCounts(frameAt(state, at).led, c.shape), { lit: 7, dark: 5, open: 0 });
+  const brighter = dim(state, -1);
+  assert.equal(brighter.hintLevel, 0);
+  assert.deepEqual(ledCounts(frameAt(brighter, at).led, c.shape), { lit: 12, dark: 0, open: 0 });
+  assert.equal(brighter.levelChange.reasonKey, 'manual');
+  assert.equal(brighter.levelChange.direction, 'down');
+  assert.equal(dim(state, 1).levelChange.direction, 'up');
+});
+
+// ---------- 08-02: thumb row dimmer (FADE-07/08/10) ----------
+// The readout counts the step's own frame, never the live beat. Measured at 08-02: the first
+// active step of minPent A s6f5 at Anchors is 7/5 (its target is an anchor), the second 8/4;
+// the plan's 8/4 literal for the first step was re-measured and recorded here.
+const readoutChart = (level, positionId = 's6f5', keyPc = 9) => {
+  const c = buildScaleRunChart({ scaleId: 'minPent', keyPc, positionId, direction: 'up', bpm: 80 });
+  return { ...c, startLevel: level };
+};
+const readoutCount = (state, position) => ledCounts(readoutFrame(state, position).led, state.chart.shape);
+
+test('FADE-10: readoutFrame is the count-in frame at idle and in count-in, stable through each step', () => {
+  const c = readoutChart(1);
+  const idle = createRun(c);
+  assert.deepEqual(readoutCount(idle), { lit: 7, dark: 5, open: 0 });
+  const live = started(c);
+  assert.equal(live.phase, 'countIn');
+  for (const beat of [0, 1, 2.5, 3.9]) assert.deepEqual(readoutCount(live, { phase: 'countIn', beat }), { lit: 7, dark: 5, open: 0 });
+  const active = { ...live, phase: 'active' };
+  const [first, second] = c.steps;
+  for (const offset of [0, 0.25, 0.5, 0.99]) {
+    assert.deepEqual(readoutCount(active, { phase: 'active', beat: first.beat + offset }), { lit: 7, dark: 5, open: 0 });
+    assert.deepEqual(readoutCount(active, { phase: 'active', beat: second.beat + offset }), { lit: 8, dark: 4, open: 0 });
+  }
+});
+
+test('FADE-10: readoutFrame follows the level and excludes open strings', () => {
+  assert.deepEqual(readoutCount(createRun(readoutChart(0))), { lit: 12, dark: 0, open: 0 });
+  assert.deepEqual(readoutCount(createRun(readoutChart(3))), { lit: 0, dark: 12, open: 0 });
+  assert.deepEqual(readoutCount(createRun(readoutChart(0, 's6f0', 4))), { lit: 6, dark: 0, open: 6 });
+});
+
+test('WR-01: the readout says 0 lit at the pass review and the result, matching the zeroed guitar', () => {
+  const c = readoutChart(0);
+  const active = toActive(started(c), c.countInBeats);
+  assert.deepEqual(readoutCount(active), { lit: 12, dark: 0, open: 0 });
+  const review = finishNow(active);
+  assert.equal(review.phase, 'passReview');
+  assert.deepEqual(readoutCount(review), { lit: 0, dark: 12, open: 0 });
+  const stopped = reduce({ ...active, beat: c.steps[3].beat }, { type: 'STOP', at: 5000 }).state;
+  assert.equal(stopped.phase, 'result');
+  assert.deepEqual(readoutCount(stopped), { lit: 0, dark: 12, open: 0 });
+  const ended = reduce(review, { type: 'END_DRILL', at: 9500 }).state;
+  assert.equal(ended.phase, 'result');
+  assert.deepEqual(readoutCount(ended), { lit: 0, dark: 12, open: 0 });
+});
+
+test('WR-02: the count-in readout after Resume counts the bar the guitar previews', () => {
+  const c = { ...buildScaleRunChart({ scaleId: 'major', keyPc: 0, positionId: 's6f0', direction: 'up', bpm: 80 }), startLevel: 1 };
+  let state = toActive(started(c), c.countInBeats);
+  state = reduce(state, { type: 'TICK', beat: 13 }).state;
+  state = reduce(state, { type: 'PAUSE', reason: 'user', beat: 13 }).state;
+  state = reduce(state, { type: 'RESUME' }).state;
+  assert.equal(state.phase, 'countIn');
+  assert.ok(state.activeStartBeat > c.countInBeats, 'the resumed count-in leads into a later bar');
+  const position = { phase: 'countIn', beat: state.beat, activeStartBeat: state.activeStartBeat };
+  const guitar = frameAt(state, { ...position, beat: state.activeStartBeat - c.countInBeats });
+  assert.deepEqual(readoutFrame(state, position).led, guitar.led);
+  assert.deepEqual(readoutFrame(state, { phase: 'countIn', beat: state.beat }).led, guitar.led, 'the run anchor serves without a transport anchor');
+  assert.deepEqual(readoutCount(state, position), ledCounts(guitar.led, c.shape));
+  assert.notDeepEqual(readoutCount(state, position), readoutCount(createRun(c)), 'not the first step\'s count');
+});
+
+test('FADE-10: readoutFrame ignores a live Hint-on-demand flash', () => {
+  const c = readoutChart(2);
+  const live = { ...started(c), phase: 'active', beat: c.steps[0].beat };
+  const flashing = { ...live, flashUntilBeat: live.beat + 4 };
+  const at = { phase: 'active', beat: live.beat };
+  assert.equal(frameAt(flashing, at).flash, true, 'the live frame is flashing');
+  assert.deepEqual(readoutFrame(flashing, at).led, readoutFrame(live, at).led);
+  assert.equal(readoutFrame(flashing, at).flash, false);
+});
+
+test('FADE-10: a chord-changes readout is the same on and off the beat within one bar', () => {
+  const c = { ...buildChordChangeChart({ pairId: 'C-G', bpm: 80 }), startLevel: 2 };
+  const live = { ...started(c), phase: 'active' };
+  const bar = c.countInBeats;
+  const counts = [0, 1, 2.5, 3.5].map(offset => readoutCount(live, { phase: 'active', beat: bar + offset }));
+  for (const entry of counts) assert.deepEqual(entry, counts[0]);
+  assert.deepEqual(counts[0], { lit: 1, dark: 5, open: 4 });
+  // The raw frame does go dark off the beat at Hint on demand; the readout must not.
+  assert.equal(frameAt(live, { phase: 'active', beat: bar + 1 }).led.length, 0);
+});
+
+test('FADE-08: after DIMMER the readout follows the new level on the next frame', () => {
+  const live = started(readoutChart(1));
+  const brighter = reduce(live, { type: 'DIMMER', delta: -1 }).state;
+  assert.deepEqual(readoutCount(brighter, { phase: 'countIn', beat: 1 }), { lit: 12, dark: 0, open: 0 });
+  const darker = reduce(reduce(live, { type: 'DIMMER', delta: 1 }).state, { type: 'DIMMER', delta: 1 }).state;
+  assert.deepEqual(readoutCount(darker, { phase: 'countIn', beat: 1 }), { lit: 0, dark: 12, open: 0 });
 });

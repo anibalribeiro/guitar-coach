@@ -243,6 +243,61 @@ function fillTemplate(template, values) {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key]));
 }
 
+// ---------- Thumb-row dimmer copy (FADE-07/10, fixed, never data-derived) ----------
+export const DIMMER_COPY = {
+  atFull: 'Already at Full pattern.',
+  atNone: 'Already at No lights.',
+  paused: 'Resume to change the light.',
+  review: 'Finish the review to change the light.',
+  noLights: 'No lights — playing from memory',
+  passesMany: '{n} more clean passes to dim',
+  passesOne: '1 more clean pass to dim',
+  // Idle, the lamps mark the level Start will use while the numbers count what the guitar
+  // shows right now (the browse scene before a press), so the two measures are named apart.
+  lampsIdle: 'Start level',
+  lampsLive: 'Light level',
+  readoutIdle: 'on the guitar now',
+  readoutLive: 'on the guitar',
+  // No guitar connected, or Lights off: the numbers are what the guitar would show (WR-04).
+  readoutOff: 'would light on the guitar',
+  announce: '{name} — {lit} lit, {dark} dark.',
+};
+
+// The thumb row's one view model. Enabled while idle and while a pass plays (count-in
+// included); paused, the pass review and the result disable both buttons with a reason
+// (CONTEXT "When the dimmer is enabled"). The clamps add their own reason. `lightsLive` is
+// false when no guitar is connected or Lights is off: the counts stay, the label says "would".
+export function dimmerView({ level = 0, lit = 0, dark = 0, cleanCount = 0, needed = 3, phase = 'idle', lightsLive = true } = {}) {
+  const safeLevel = Number.isInteger(level) ? Math.max(0, Math.min(3, level)) : 0;
+  const levelName = HINT_LEVEL_NAMES[safeLevel];
+  const litN = Number.isFinite(lit) ? lit : 0;
+  const darkN = Number.isFinite(dark) ? dark : 0;
+  const left = Math.max(0, (Number.isFinite(needed) ? needed : 0) - (Number.isFinite(cleanCount) ? cleanCount : 0));
+  const passesText = safeLevel === 3
+    ? DIMMER_COPY.noLights
+    : left === 1 ? DIMMER_COPY.passesOne : fillTemplate(DIMMER_COPY.passesMany, { n: left });
+  const live = phase === 'idle' || phase === 'countIn' || phase === 'active';
+  const phaseReason = phase === 'paused' ? DIMMER_COPY.paused : DIMMER_COPY.review;
+  const canBrighter = live && safeLevel > 0;
+  const canDarker = live && safeLevel < 3;
+  const idle = phase === 'idle';
+  return {
+    level: safeLevel,
+    levelName,
+    lit: litN,
+    dark: darkN,
+    readout: `${litN} lit / ${darkN} dark`,
+    passesText,
+    canBrighter,
+    canDarker,
+    brighterReason: canBrighter ? '' : live ? DIMMER_COPY.atFull : phaseReason,
+    darkerReason: canDarker ? '' : live ? DIMMER_COPY.atNone : phaseReason,
+    lampsLabel: idle ? DIMMER_COPY.lampsIdle : DIMMER_COPY.lampsLive,
+    readoutLabel: !lightsLive ? DIMMER_COPY.readoutOff : idle ? DIMMER_COPY.readoutIdle : DIMMER_COPY.readoutLive,
+    announcement: fillTemplate(DIMMER_COPY.announce, { name: levelName, lit: litN, dark: darkN }),
+  };
+}
+
 export function hintSummaryText({ completedSteps = 0, plannedSteps = 0, bpm = 0, levelName = HINT_LEVEL_NAMES[0] } = {}) {
   return `${completedSteps} of ${plannedSteps} notes · ${bpm} BPM · Hints: ${levelName}`;
 }
@@ -693,6 +748,41 @@ export function hintDecisionText({ levelChange = {}, streaks = {}, levelNames = 
   return fillTemplate(PASS_DECISIONS[key], values);
 }
 
+// FADE-09: a pass with a Brighter press is guided. The label is locked copy (CONTEXT
+// "Honest credit") and is defined once here.
+export const GUIDED_LINE = 'Guided — you asked for more light';
+
+// The result's guided copy is keyed on the recall attempt alone: an earlier brightened
+// with-lights pass must never hide a real recall that followed it. Null keeps the
+// recall-based copy.
+export function guidedResultView(summary) {
+  if (!summary || !summary.recall || summary.recall.guided !== true) return null;
+  return {
+    verdict: 'Not yet',
+    heroSub: `${GUIDED_LINE}. A recall counts only with no lights all the way through.`,
+    noLightsValue: '0 passes',
+    noLightsSub: GUIDED_LINE,
+  };
+}
+
+export function withHintsSubText({ clean = 0, endedAtLevel = 0, guided = 0 } = {}, { levelNames = HINT_LEVEL_NAMES } = {}) {
+  const base = `${clean} clean · ended at ${levelNames[endedAtLevel] || levelNames[0]}`;
+  return Number.isInteger(guided) && guided > 0 ? `${base} · ${guided} guided` : base;
+}
+
+// The review names the pass by its credited level (the brightest level used, as the
+// engine recorded it), not the level the pass ended on after a mid-pass Darker.
+export function passReviewView({ last = null, levelChange = null, hintLevel = 0 } = {}) {
+  const fromLevel = last && Number.isInteger(last.hintLevel) ? last.hintLevel
+    : levelChange && Number.isInteger(levelChange.fromLevel) ? levelChange.fromLevel
+      : hintLevel;
+  return {
+    fromLevel,
+    levelName: HINT_LEVEL_NAMES[fromLevel] || HINT_LEVEL_NAMES[0],
+    guided: !!(last && last.brightened === true),
+  };
+}
+
 // One announcement per pass boundary, never per frame. The sentence names the level
 // the next pass starts at and the clean count needed to remove the next hint.
 export function hintAnnouncementText({ levelChange = {}, streaks = {}, levelNames = HINT_LEVEL_NAMES } = {}) {
@@ -742,18 +832,11 @@ export function resultMetaText(summary, { levelNames = HINT_LEVEL_NAMES } = {}) 
   return `${summary.bpm} BPM · ${direction} · ${keyName} ${scaleName} · ${positionLabel} · Hints: ${startName} → ${finalName}`;
 }
 
-// One transport slot, two labels: level 3 (UI numbering 3, index 2) blinks the
-// pattern; levels 2 and 4 ask to restart one hint lower (D-24).
+// Exactly one hint action: Blink pattern at Hint on demand (index 2) flashes the full
+// pattern once. Brighter covers every other request for more light (08-04 retired the
+// v1 Show hint and its restart-lower confirm).
 export function hintActionFor(level = 0) {
-  const index = Number.isInteger(level) ? level : 0;
-  if (index === 2) return 'blink';
-  if (index === 1 || index === 3) return 'show';
-  return null;
-}
-
-export function hintAskedText({ level = 0, levelNames = HINT_LEVEL_NAMES } = {}) {
-  const index = Number.isInteger(level) ? level : 0;
-  return `Hint level ${index + 1} of 4, ${levelNames[index] || levelNames[0]}. One hint lower.`;
+  return level === 2 ? 'blink' : null;
 }
 
 // Under 60 s reads in seconds; otherwise whole minutes, never below 1 min. One rule
@@ -1504,7 +1587,7 @@ export function capabilityLineText(caps = {}) {
 export function createPanels({
   onChange = () => {}, onTab = () => {}, onBar = () => {}, onTransport = () => {},
   onTempo = () => {}, onTap = () => {}, onSelfReport = () => {}, onBack = () => {},
-  onStageMode = () => {}, onHint = () => {}, onHintConfirm = () => {}, onHintCancel = () => {},
+  onStageMode = () => {}, onHint = () => {}, onDimmer = () => {},
   onRecallReport = () => {},
   onSession = () => {}, onSessionClose = () => {}, onSessionStart = () => {},
   onSessionNext = () => {}, onSessionSkip = () => {}, onSessionRepeat = () => {}, onSessionEnd = () => {},
@@ -2140,6 +2223,41 @@ export function createPanels({
 
   function focusNextQuestion() { $('nextQuestion').focus(); }
 
+  // ---------- Thumb-row dimmer (FADE-07/10) ----------
+  // Painted from main's dimmer view on every drill paint and every frame; one comparison
+  // keeps DOM writes to real changes, so the readout never flickers per beat. Text is
+  // textContent from numbers and fixed copy only (T-08-07). The buttons use aria-disabled,
+  // never `disabled`, so they stay focusable and their reason stays reachable.
+  let dimmerLast = null;
+  const DIMMER_KEYS = ['level', 'lit', 'dark', 'passesText', 'canBrighter', 'canDarker', 'brighterReason', 'darkerReason', 'lampsLabel', 'readoutLabel'];
+  function setDimmer(view) {
+    if (!view || !$('thumbRow')) return;
+    if (dimmerLast && DIMMER_KEYS.every(key => dimmerLast[key] === view[key])) return;
+    dimmerLast = { ...view };
+    $('litCount').textContent = String(view.lit);
+    $('darkCount').textContent = String(view.dark);
+    $('passesLeft').textContent = view.passesText;
+    $('readoutLabel').textContent = view.readoutLabel || '';
+    $('lampsCaption').textContent = view.lampsLabel || '';
+    $('dimmerLamps').setAttribute('aria-label', view.lampsLabel || 'Light level');
+    // The mock's bank: the first 4 - level lamps are lit, so Full pattern lights all four
+    // and No lights none; the current level is marked by weight and name, not colour alone.
+    $('dimmerLamps').querySelectorAll('.dimmer-lamp').forEach(item => {
+      const index = Number(item.dataset.level);
+      const current = index === view.level;
+      item.classList.toggle('lit', index < 4 - view.level);
+      item.classList.toggle('current', current);
+      if (current) item.setAttribute('aria-current', 'true');
+      else item.removeAttribute('aria-current');
+      const name = item.querySelector('.dimmer-lamp-name');
+      if (name) name.classList.toggle('sr-only', !current);
+    });
+    $('brighterBtn').setAttribute('aria-disabled', view.canBrighter ? 'false' : 'true');
+    $('darkerBtn').setAttribute('aria-disabled', view.canDarker ? 'false' : 'true');
+    $('brighterReason').textContent = view.brighterReason || '';
+    $('darkerReason').textContent = view.darkerReason || '';
+  }
+
   function setDrill({
     available = true, phase = 'idle', summary = null, pauseReason = null,
     pauseBar = 1, audioStartFailed = false, disconnected = false,
@@ -2215,9 +2333,6 @@ export function createPanels({
     $('countInOverlay').hidden = phase !== 'countIn' || quiz;
     $('progressWrap').hidden = !available || !playing;
     $('resultPanel').setAttribute('aria-label', 'Drill result');
-    // An open show-hint confirm only makes sense inside a live pass; a boundary or
-    // Stop closes it. A TICK during the same pass must leave it open.
-    if (phase !== 'countIn' && phase !== 'active') closeHintConfirm();
 
     setFamilyPicker(family, playing || passReview);
     // The per-family visibility contract: a control that cannot act is absent, never
@@ -2371,7 +2486,7 @@ export function createPanels({
 
     if (passReview) {
       const last = passes.length ? passes[passes.length - 1] : null;
-      const fromLevel = levelChange ? levelChange.fromLevel : (last ? last.hintLevel : hintLevel);
+      const review = passReviewView({ last, levelChange, hintLevel });
       setPassReview({
         passIndex: plan ? plan.passIndex : 1,
         totalPasses: plan ? plan.totalPasses : null,
@@ -2380,7 +2495,8 @@ export function createPanels({
         bpm: last ? last.bpm : 0,
         levelChange,
         streaks,
-        levelName: HINT_LEVEL_NAMES[fromLevel] || HINT_LEVEL_NAMES[0],
+        levelName: review.levelName,
+        guided: review.guided,
         family,
         // The chord family's finalised pass record and the engine's tempo suggestion.
         // Both are the run's own numbers; nothing here hard-codes a bar count.
@@ -2457,50 +2573,13 @@ export function createPanels({
     $('hintReason').textContent = asked ? HINT_REASONS.asked : '';
   }
 
-  // Exactly one hint action is ever rendered: none at Full pattern, Blink pattern at
-  // Hint on demand, Show hint at Anchors and No lights. The play-alongs blink a **chord**,
-  // so the label follows the family the picker last painted (WR-04).
+  // Exactly one hint action is ever rendered: Blink pattern at Hint on demand, nothing at
+  // any other level (Brighter asks for more light there). The play-alongs blink a
+  // **chord**, so the label follows the family the picker last painted (WR-04).
   function setHintAction(hintLevel) {
     const action = hintActionFor(hintLevel);
-    $('showHint').hidden = action !== 'show';
     $('blinkPattern').hidden = action !== 'blink';
     $('blinkPattern').textContent = blinkActionLabel(currentFamily);
-  }
-
-  // The confirm replaces the transport row while the running pass stays frozen.
-  function openHintConfirm({ fromLevel = 0, toLevel = 0 } = {}) {
-    const from = Number.isInteger(fromLevel) ? fromLevel : 0;
-    const to = Number.isInteger(toLevel) ? toLevel : Math.max(0, from - 1);
-    $('hintConfirmHeading').textContent = 'Restart one hint lower?';
-    $('hintConfirmBody').textContent = from >= 3
-      ? 'This ends the recall attempt and restarts at Hint on demand.'
-      : `This pass ends now and restarts at ${HINT_LEVEL_NAMES[to] || HINT_LEVEL_NAMES[0]}. The drill continues from there.`;
-    $('restartLower').textContent = `Restart at ${HINT_LEVEL_NAMES[to] || HINT_LEVEL_NAMES[0]}`;
-    $('keepPlaying').textContent = 'Keep playing';
-    $('transportRow').hidden = true;
-    $('hintConfirm').hidden = false;
-    $('restartLower').focus();
-  }
-
-  function closeHintConfirm() {
-    $('hintConfirm').hidden = true;
-    $('transportRow').hidden = false;
-  }
-
-  function focusHint(hintLevel) {
-    const action = hintActionFor(hintLevel);
-    if (action === 'blink') $('blinkPattern').focus();
-    else if (action === 'show') $('showHint').focus();
-  }
-
-  function focusPause() { $('pauseDrill').focus(); }
-
-  function setHintBusy(on) {
-    const busy = !!on;
-    $('showHint').disabled = busy;
-    $('blinkPattern').disabled = busy;
-    $('restartLower').disabled = busy;
-    $('keepPlaying').disabled = busy;
   }
 
   // Owns the pass-review radios. The result panel never touches them.
@@ -2508,7 +2587,7 @@ export function createPanels({
     passIndex = 1, totalPasses = null, completedSteps = 0, plannedSteps = 0,
     bpm = 0, levelChange = null, streaks = null, levelName = '',
     family = 'scaleRun', correct = 0, revealed = 0, changes = null, tempo = null,
-    micScored = false, content = null,
+    micScored = false, content = null, guided = false,
   } = {}) {
     $('passReviewHeading').textContent = totalPasses === null || totalPasses === undefined
       ? `Pass ${passIndex} complete`
@@ -2546,6 +2625,9 @@ export function createPanels({
       repeats: songSection ? (songSection.repeats || 1) : 1,
     });
     $('passReviewDecision').textContent = hintDecisionText({ levelChange, streaks });
+    // FADE-09: a brightened pass says so, in fixed copy.
+    $('passGuided').hidden = !guided;
+    $('passGuided').textContent = guided ? GUIDED_LINE : '';
     // The tempo line belongs to the chord family alone: the input is pre-filled with the
     // engine's suggestion and the line says why, until the player edits it (A-38).
     $('tempoLine').hidden = !chord;
@@ -2607,7 +2689,7 @@ export function createPanels({
 
     const withHintCount = withHints.passes.length;
     $('withHintsValue').textContent = withHintCount === 1 ? '1 pass' : `${withHintCount} passes`;
-    $('withHintsSub').textContent = `${withHints.clean} clean · ended at ${HINT_LEVEL_NAMES[withHints.endedAtLevel] || HINT_LEVEL_NAMES[0]}`;
+    $('withHintsSub').textContent = withHintsSubText(withHints);
     $('noLightsValue').textContent = recall.completed ? '1 pass' : '0 passes';
     $('noLightsSub').textContent = !recall.completed
       ? 'Not reached'
@@ -2616,6 +2698,16 @@ export function createPanels({
         : recall.selfReport === 'shaky'
           ? `Shaky · ${summary.bpm} BPM`
           : 'Not reached';
+
+    // FADE-09: a recall attempt that asked for more light is guided, never Recalled and
+    // never Not reached. recallSelfReport stays hidden below (recall.completed is false).
+    const guided = guidedResultView(summary);
+    if (guided) {
+      $('resultVerdict').textContent = guided.verdict;
+      $('resultHeroSub').textContent = guided.heroSub;
+      $('noLightsValue').textContent = guided.noLightsValue;
+      $('noLightsSub').textContent = guided.noLightsSub;
+    }
 
     // A-46: four family-specific tiles. The labels, values and subs all come from the
     // one pure table so the geometry stays fixed and no family inherits a metric it
@@ -3972,15 +4064,16 @@ export function createPanels({
     if ($('checkRecall')) $('checkRecall').addEventListener('click', () => onTransport('recall'));
     if ($('reportCorrection')) $('reportCorrection').addEventListener('click', () => onSelfReport('corrected'));
     if ($('recallCorrection')) $('recallCorrection').addEventListener('click', () => onRecallReport('corrected'));
-    $('showHint').addEventListener('click', () => onHint());
-    $('blinkPattern').addEventListener('click', () => onHint());
-    $('restartLower').addEventListener('click', () => onHintConfirm());
-    $('keepPlaying').addEventListener('click', () => onHintCancel());
-    $('hintConfirm').addEventListener('keydown', e => {
-      if (e.key !== 'Escape') return;
-      e.preventDefault();
-      onHintCancel();
+    // FADE-08: Brighter is -1, Darker +1. An aria-disabled button stays focusable but inert.
+    $('brighterBtn').addEventListener('click', () => {
+      if ($('brighterBtn').getAttribute('aria-disabled') === 'true') return;
+      onDimmer(-1);
     });
+    $('darkerBtn').addEventListener('click', () => {
+      if ($('darkerBtn').getAttribute('aria-disabled') === 'true') return;
+      onDimmer(1);
+    });
+    $('blinkPattern').addEventListener('click', () => onHint());
     $('stageBtn').addEventListener('click', () => onStageMode($('stageBtn').getAttribute('aria-pressed') !== 'true'));
     $('backToBrowse').addEventListener('click', () => onBack());
 
@@ -4217,9 +4310,9 @@ export function createPanels({
   return {
     render, setStatus, setConnection, openConnMenu, closeConnMenu, isConnMenuOpen, setFeedback, announce, setLights, select, revealLessonSection,
     setDrill, renderBeat, resetBeat, setNowPlaying, setProgress, setTempoValue,
-    renderStageChart,
+    renderStageChart, setDimmer,
     setTapPreview, setSelfReport, setHint, setPassReview, setStageMode,
-    setHintAction, openHintConfirm, closeHintConfirm, setHintBusy, focusPause, focusHint,
+    setHintAction,
     setView,
     setNavLocked,
     openMore, closeMore, isMoreOpen,

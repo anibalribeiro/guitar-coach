@@ -13,16 +13,16 @@ import {
 import {
   buildScaleRunChart, buildNoteQuizChart, buildChordChangeChart, buildPlayAlongChart, createRun,
   reduce, frameAt, stepIndexFor, summarizeDrill, PLAY_FAMILIES, CHART_CHANGES, songSectionBars,
-  sectionAtBar, playAlongIdleFrame,
+  sectionAtBar, playAlongIdleFrame, readoutFrame,
 } from './drills.js';
 import { buildQuestions, chipsFor, judge, poolLabel, promptText, questionMode, quizKindsFor } from './quiz.js';
-import { FADE, HINT_LEVELS } from './fade.js';
+import { FADE, HINT_LEVELS, clampLevel } from './fade.js';
 import {
   applyResult, chordPairRows, dayKey, dueRows, emptyProgress, exportDoc, skillRows, startLevelFor,
   validateBackup, weakestPair,
 } from './progress.js';
 import { buildSegment, tapTempo, createTransport, LEAD_SEC } from './transport.js';
-import { createLedSink, sceneFromNotes } from './leds.js';
+import { createLedSink, ledCounts, sceneFromNotes } from './leds.js';
 import { createGuitar, bluetoothSupported } from './guitar.js';
 import { createAudio } from './audio.js';
 import { createMic, micWindowStep, tunerReading } from './mic.js';
@@ -33,10 +33,10 @@ import {
 import { createSettingsStore, validateSettings, DRILL_FAMILIES, INTENSITY_STEMS, STEM_KEYS, LOOP_BARS, VIEWS } from './settings.js';
 import { createFretboard, labelFor } from './fretboard.js';
 import {
-  createPanels, boardInteractiveFor, hintAnnouncementText, hintAskedText, barCounterText, countText,
+  createPanels, boardInteractiveFor, hintAnnouncementText, barCounterText, countText,
   playCounterText, playAlongPassAnnouncement, playAlongStartAnnouncement, quizOutcomeText,
   chordPassAnnouncement, spotGate, openStringCue, EXPORT_FAILED, IMPORT_MESSAGE,
-  STORAGE_MESSAGE, MIC_FEEDBACK, MIC_ANNOUNCE, CALIBRATION, skillLabelText, practiseItemText,
+  STORAGE_MESSAGE, MIC_FEEDBACK, MIC_ANNOUNCE, CALIBRATION, skillLabelText, practiseItemText, dimmerView,
 } from './panels.js';
 import {
   FAMILY_ORDER, SESSION_BLOCKS, buildSessionPlan, emptySession, sessionReduce, sessionSummaryOf, suggestionFor,
@@ -119,10 +119,8 @@ const ANNOUNCE = {
       sectionName: chartSectionName(run.chart),
     });
   },
-  'pass-asked': () => hintAskedText({
-    level: run ? run.hintLevel : 0,
-    levelNames: HINT_LEVELS.map(level => level.name),
-  }),
+  // A manual Brighter/Darker press, once: `Anchors — 7 lit, 5 dark.` (CONTEXT "Thumb row").
+  'level-manual': () => dimmerModel().announcement,
   // The one question announcement. It reads the post-dispatch run, so the prompt is
   // always the effective-mode sentence the card is showing.
   question: () => {
@@ -150,6 +148,9 @@ let battery = null;
 let capabilities = null;
 let chart = null;
 let run = null;
+// { id, level } — session-only preview level for the next Start, never saved. An item
+// change clears it in save(), so going back to the item never revives it (IN-05).
+let idleDimmer = null;
 // The daily session lives here and is never persisted: a reload abandons it and the plan is
 // rebuilt from the progress plane (05-UI-SPEC "Session lifecycle").
 let session = emptySession();
@@ -1045,21 +1046,33 @@ function buildView() {
   return buildScaleView();
 }
 
+// While no drill runs, an idle dimmer preview (idleScene case 'preview') is what the board
+// and the guitar show, so every idle redraw repaints it instead of the browse scene; the
+// browse and play-along cases keep today's paint (play-alongs paint in renderDrillState).
 function renderAll({ forceScene = false } = {}) {
   view = buildView();
   panels.render(settings, view);
-  board.render(view.notes);
+  const scene = drillLive() ? null : idleScene();
+  board.render(scene && scene.kind === 'preview' ? scene.notes : view.notes);
   pushScene(forceScene);
 }
 
 function pushScene(force = false) {
   if (!sink) return;
   if (force) sink.reset();
+  const scene = drillLive() ? null : idleScene();
+  if (scene && scene.kind === 'preview') {
+    sink.tick(sceneFromNotes(scene.led, { target: scene.target }), 0, settings.bpm);
+    return;
+  }
   sink.tick(sceneFromNotes(view.notes), 0, settings.bpm);
 }
 
 function save(patch) {
   settings = store.set(patch);
+  // The idle preview belongs to one item: a change of item clears it, so returning to the
+  // item later starts from its stored level again instead of reviving the preview (IN-05).
+  if (idleDimmer && idleDimmer.id !== previewSkillId()) idleDimmer = null;
   // Turning the mic off is a stop path: the stream never outlives the setting, and the
   // toggle that writes it arrives with the header cluster (03-03 Task 2).
   if (patch && Object.hasOwn(patch, 'micOn') && !settings.micOn) stopMic();
@@ -1187,6 +1200,8 @@ function chartFor({ recall = false } = {}) {
   // D-36: start one level easier than the best clean level, never on the recall.
   // The persisted plane is the single source, so a reload preserves the ramp.
   built.startLevel = recall ? FADE.recallLevel : startLevelFor(store.getProgress(), built.id);
+  // An idle Brighter/Darker preview for this very item is the level Start uses (session only).
+  if (!recall && idleDimmer && idleDimmer.id === built.id) built.startLevel = idleDimmer.level;
   built.coldRecall = recall;
   return built;
 }
@@ -1215,18 +1230,20 @@ function drillNames() {
   return spellScale(content.keyPc, scaleDef);
 }
 
-function boardNotesFromFrame(frame, mode = null, lightsAvailable = true) {
+// `source` is the run the frame came from; the idle dimmer preview passes its own
+// unstarted run so the labels fade with the preview level, not level 0.
+function boardNotesFromFrame(frame, mode = null, lightsAvailable = true, source = run) {
   // The chord family's frame carries the Chord tab's own dot language (finger numbers,
   // `0`, `×`), so its text is passed through untouched; every other family labels from
   // the Labels select and the hint level.
-  const chordFamily = !!(run && run.chart && CHART_CHANGES.has(run.chart.family));
+  const chordFamily = !!(source && source.chart && CHART_CHANGES.has(source.chart.family));
   const names = chordFamily ? null : drillNames();
-  const content = run && run.chart && run.chart.content
-    ? run.chart.content
+  const content = source && source.chart && source.chart.content
+    ? source.chart.content
     : { scaleId: settings.scaleId, keyPc: settings.keyPc, positionId: settings.positionId };
   const scaleDef = SCALE_BY_ID[content.scaleId] || SCALE_BY_ID.major;
   const position = chordFamily ? null : boardPosition(scaleDef, content.positionId, content.keyPc);
-  const level = run ? run.hintLevel : 0;
+  const level = source ? source.hintLevel : 0;
   // The Name-mode question is a question, not a hint: with the guitar dark the screen
   // stands in for the lit LED with an accent ring on the target cell and no label.
   const question = mode === 'name' && !lightsAvailable ? openQuestion() : null;
@@ -1311,6 +1328,104 @@ function streaksFor(state) {
   };
 }
 
+// ---------- Thumb-row dimmer (FADE-07/08/10) ----------
+// The honest readout: ledCounts over the frame's lit set against the chart's shape, so
+// open strings are in neither number (FADE-12). Only main may combine drills and leds.
+function dimmerCounts(frame, chart) {
+  if (!frame || !chart) return { lit: 0, dark: 0, open: 0 };
+  return ledCounts(frame.led, chart.shape);
+}
+
+function drillLive() {
+  return !!(run && run.phase !== 'idle');
+}
+
+// The transport position the readout reads while a pass plays; a wait-mode chart has no
+// segment, so it always reads beat 0 of its active phase.
+function livePosition() {
+  if (!run || (run.phase !== 'countIn' && run.phase !== 'active')) return {};
+  return run.chart.timed === false ? { beat: 0, phase: 'active' } : transport.position();
+}
+
+// The level the next Start uses: the session preview while it still names the current
+// item, else the persisted start level (D-36).
+function idleLevelNow() {
+  const id = previewSkillId();
+  if (idleDimmer && idleDimmer.id === id) return idleDimmer.level;
+  return startLevelFor(store.getProgress(), id);
+}
+
+// The one idle scene source: renderAll/pushScene paint it and the idle readout counts it,
+// so the idle numbers are always ledCounts of the scene the board and the guitar show.
+// 'playAlong' is the play-along idle frame renderDrillState paints; 'preview' is the
+// count-in frame of a run built at the idle dimmer's level (previewChart caches by
+// settings only, so its startLevel is never trusted); 'browse' is the browse scene. A wait
+// chart (Find the note) keeps the browse scene: its first frame is question 1 of a random
+// plan that Start rebuilds, so previewing it would light a target Start never asks (WR-03).
+function idleScene() {
+  const browse = { kind: 'browse', notes: view.notes, led: view.notes, target: null, shape: view.notes };
+  if (settings.tab !== 'scales') return browse;
+  const source = previewChart();
+  if (isPlayAlong(source)) {
+    const frame = playAlongIdleFrame(source, idleLevelNow());
+    return { kind: 'playAlong', notes: frame.notes, led: frame.led, target: frame.target, shape: source.shape || frame.notes };
+  }
+  if (idleDimmer && idleDimmer.id === source.id && source.timed !== false) {
+    const preview = createRun({ ...source, startLevel: idleDimmer.level });
+    const frame = readoutFrame(preview);
+    return {
+      kind: 'preview',
+      notes: boardNotesFromFrame(frame, null, !!connected && settings.lightsOn, preview),
+      led: frame.led,
+      target: frame.target,
+      shape: source.shape,
+    };
+  }
+  return browse;
+}
+
+// The readout says "on the guitar" only when the guitar really shows the frame (WR-04).
+function lightsLive() {
+  return !!connected && !!settings.lightsOn;
+}
+
+function dimmerModel(position = livePosition()) {
+  if (drillLive()) {
+    const counts = dimmerCounts(readoutFrame(run, position), run.chart);
+    const clean = streaksFor(run).clean;
+    return dimmerView({
+      level: run.hintLevel, lit: counts.lit, dark: counts.dark,
+      cleanCount: clean.count, needed: clean.needed, phase: run.phase, lightsLive: lightsLive(),
+    });
+  }
+  // Before any press this honestly counts the browse scene; the lamps say "Start level".
+  const scene = idleScene();
+  const counts = ledCounts(scene.led, scene.shape);
+  return dimmerView({
+    level: idleLevelNow(), lit: counts.lit, dark: counts.dark,
+    cleanCount: 0, needed: FADE.cleanPassesToAdvance, phase: 'idle', lightsLive: lightsLive(),
+  });
+}
+
+// Brighter is -1, Darker +1. A live pass dispatches the one DIMMER event; the reducer
+// clamps and phase-guards it, and the next frame repaints screen and guitar together.
+// Idle, the press sets the session preview and repaints through the normal idle paths
+// (one forced scene per press, T-08-05). Paused, pass review and the result ignore it.
+function onDimmer(delta) {
+  if (run && (run.phase === 'countIn' || run.phase === 'active')) {
+    dispatch({ type: 'DIMMER', delta });
+    return;
+  }
+  if (run && run.phase !== 'idle') return;
+  const from = idleLevelNow();
+  const level = clampLevel(from + delta);
+  if (level === from) return;
+  idleDimmer = { id: previewSkillId(), level };
+  renderAll({ forceScene: true });
+  renderDrillState();
+  panels.announce(dimmerModel().announcement);
+}
+
 // The quiz asks in Find form on the recall pass, so the frame and the prompt card read
 // the same effective mode (A-45).
 function drillQuestionMode() {
@@ -1374,6 +1489,7 @@ function renderDrillFrame(position) {
   if (!run) return;
   const { frame, scene } = drillSceneAt(position);
   board.render(boardNotesFromFrame(frame, drillQuestionMode(), !!connected && settings.lightsOn));
+  panels.setDimmer(dimmerModel(position));
   const target = frame.target;
   const level = run.hintLevel;
   const chord = run.chart.family === 'chordChanges';
@@ -1442,7 +1558,7 @@ function renderDrillState() {
   }
   const idleId = previewSkillId();
   const persisted = store.getProgress();
-  const idleLevel = startLevelFor(persisted, idleId);
+  const idleLevel = idleLevelNow();
   const outcomes = run && Array.isArray(run.questionOutcomes) ? run.questionOutcomes : [];
   // The change families' stage view: the pair strip and the bar counter for a chord drill,
   // the stage chart and the bar counter for a play-along. An idle stage previews the chart
@@ -1529,6 +1645,8 @@ function renderDrillState() {
     // the drill view and the boundary hides itself while it is open.
     sessionOpen: panels.isSessionOpen(),
   });
+  // The dimmer follows every drill paint, so its disabled state tracks the phase.
+  panels.setDimmer(dimmerModel());
   if (run && phase === 'passReview') panels.setSelfReport(run.selfReport);
   // The header's Session chip and its accessible name follow the due count, not the panel: the
   // count is the store's own queue, so a recorded pass moves it without opening anything. The
@@ -2961,6 +3079,8 @@ async function seedBlock(block) {
     return false;
   }
   pendingBlock = Number.isInteger(block.index) ? block.index : 0;
+  // A session block's start level belongs to the planner, never to an idle preview.
+  idleDimmer = null;
   save(target);
   renderAll({ forceScene: true });
   renderDrillState();
@@ -2979,6 +3099,7 @@ async function startDrill({ recall = false } = {}) {
     const ready = await startAudio();
     if (!ready) {
       buildChart({ recall });
+      idleDimmer = null;
       run = createRun(chart);
       dispatch({ type: 'START_FAILED', reason: 'audio', at: nowMs(), wallAt: Date.now() });
       panels.setFeedback(AUDIO_START_FAILED);
@@ -2991,6 +3112,8 @@ async function startDrill({ recall = false } = {}) {
     // and `armMicIfWanted` never throws (MIC-03, D-51).
     armMicIfWanted();
     buildChart({ recall });
+    // The preview has been consumed by the chart Start just built.
+    idleDimmer = null;
     run = createRun(chart);
     resultSkill = null;
     flashFeedbackUntilBeat = 0;
@@ -3146,35 +3269,14 @@ function nextPass() {
   }
 }
 
+// The one hint action left: Blink pattern at Hint on demand flashes the full pattern once.
+// Every other request for more light is Brighter (08-04 retired Show hint and its confirm).
 function onHint() {
   if (!run || (run.phase !== 'countIn' && run.phase !== 'active')) return;
-  if (run.hintLevel === 2) {
-    dispatch({ type: 'FLASH', beat: transport.position().beat });
-    flashFeedbackUntilBeat = run.flashUntilBeat;
-    panels.setFeedback('Full pattern shown once — back to anchors.');
-    return;
-  }
-  if (run.hintLevel === 1 || run.hintLevel === 3) {
-    // Nothing about the pass changes until the player confirms; no transport effect.
-    panels.openHintConfirm({ fromLevel: run.hintLevel, toLevel: Math.max(0, run.hintLevel - 1) });
-  }
-}
-
-function confirmHint() {
-  if (!run || (run.phase !== 'countIn' && run.phase !== 'active')) return;
-  const level = run.hintLevel;
-  panels.setHintBusy(true);
-  panels.closeHintConfirm();
-  panels.setFeedback('');
-  dispatch({ type: 'ABORT_PASS', at: nowMs(), beat: transport.position().beat });
-  panels.setHintBusy(false);
-  // The new pass starts in count-in: Pause is the next sensible action.
-  if (run && run.hintLevel < level) panels.focusPause();
-}
-
-function cancelHint() {
-  panels.closeHintConfirm();
-  panels.focusHint(run ? run.hintLevel : 0);
+  if (run.hintLevel !== 2) return;
+  dispatch({ type: 'FLASH', beat: transport.position().beat });
+  flashFeedbackUntilBeat = run.flashUntilBeat;
+  panels.setFeedback('Full pattern shown once — back to anchors.');
 }
 
 function endDrill() {
@@ -3578,8 +3680,7 @@ export function boot() {
     onBack: backToBrowse,
     onStageMode: value => applyChange('stageMode', value),
     onHint,
-    onHintConfirm: confirmHint,
-    onHintCancel: cancelHint,
+    onDimmer,
     onFamily,
     onAnswer: answer => commitAnswer('chip', answer),
     onReveal,
@@ -3676,6 +3777,8 @@ export function boot() {
     save({ lightsOn: !settings.lightsOn });
     sink.setEnabled(settings.lightsOn);
     panels.setLights(settings.lightsOn);
+    // The readout's "on the guitar" / "would light" label follows the Lights switch.
+    panels.setDimmer(dimmerModel());
   });
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden) return;

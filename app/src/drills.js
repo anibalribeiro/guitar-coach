@@ -6,7 +6,7 @@ import {
 } from './content.js';
 import { expandChord, expandSongSection, notesForPosition, sequenceFor, voiceChord } from './theory.js';
 import { backingEvents } from './backing.js';
-import { FADE, anchorNotes, clampLevel, nextLevel, totalPassesFor } from './fade.js';
+import { FADE, REASON, anchorNotes, clampLevel, nextLevel, totalPassesFor } from './fade.js';
 import { passActiveMs, passIsClean, CLEAN_THRESHOLDS } from './progress.js';
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
@@ -29,6 +29,13 @@ const levelChangeFor = (fromLevel, decision) => ({
   toLevel: decision.level,
   reasonKey: decision.reasonKey,
 });
+// FADE-09: a pass is credited at the BRIGHTEST level used during it, so a Darker press
+// mid-pass never inflates credit; any Brighter press makes the pass guided. Without a
+// manual change this pass (passDimmer null) all three read the run's own level.
+const creditedLevel = state => (state.passDimmer
+  ? Math.min(state.passDimmer.brightest, state.hintLevel) : state.hintLevel);
+const passBrightened = state => !!(state.passDimmer && state.passDimmer.brightened === true);
+const passBeganAt = state => (state.passDimmer ? state.passDimmer.startLevel : state.hintLevel);
 const passComplete = pass => !!pass && pass.completedSteps >= pass.plannedSteps && !pass.aborted;
 // The optional microphone score the composition root computed for the pass that is
 // closing. An event without one keeps what the pass already carried, and an explicit
@@ -62,7 +69,7 @@ const passMs = pass => (Number.isFinite(pass && pass.activeMs)
   ? Math.max(0, pass.activeMs)
   : passActiveMs(pass.completedSteps, pass.bpm));
 const passUnguidedMs = pass => (
-  pass.hintLevel === FADE.recallLevel && passComplete(pass) && passIsClean(pass) ? passMs(pass) : 0
+  pass.hintLevel === FADE.recallLevel && !pass.brightened && passComplete(pass) && passIsClean(pass) ? passMs(pass) : 0
 );
 
 // A pass keeps the practice time it actually earned (WR-02). A wait-mode pass has no clock,
@@ -535,6 +542,9 @@ export function createRun(chart) {
     pendingDecision: null,
     cleanStreak: 0,
     failStreak: 0,
+    // The per-pass manual-dimmer record: null means no manual change this pass. It is
+    // never seeded with a level, so a hand-built state keeps recording state.hintLevel.
+    passDimmer: null,
     // The quiz plan lives on the run as a copy of the chart's questions. It is never an
     // empty literal: NEXT_QUESTION ends the pass at questions.length and the summary
     // derives its counts from this array.
@@ -604,6 +614,7 @@ export function reduce(state, event = {}) {
         drillWallStartedAt: wallAt(event),
         drillWallEndedAt: null,
         sessionId: sessionFor(chart, wallAt(event)),
+        passDimmer: null,
       };
       if (chart.timed === false) effects.push(announce('question'));
       else effects.push({ type: 'startTransport' }, announce('count-in'));
@@ -851,6 +862,10 @@ export function reduce(state, event = {}) {
         stoppedEarly: false,
         drillWallEndedAt: null,
         flashUntilBeat: 0,
+        // A restart replays the same pass, so its manual-dimmer record survives: a
+        // Brighter press is not undone by replaying it, and a Check recall that was
+        // brightened stays a guided recall (CR-01, FADE-09).
+        passDimmer: state.passDimmer,
         ...identityFor(state, chart, event),
       };
       if (timed) effects.push({ type: 'startTransport' }, announce('count-in'));
@@ -894,18 +909,19 @@ export function reduce(state, event = {}) {
           : Math.max(0, Math.min(chart.steps.length, stepIndexFor(chart, currentBeat)));
         const pass = {
           index: state.plan.passIndex,
-          hintLevel: state.hintLevel,
+          hintLevel: creditedLevel(state),
           bpm: chart.bpm,
           completedSteps,
           plannedSteps: chart.steps.length,
           selfReport: null,
           unguidedMs: 0,
           aborted: false,
+          brightened: passBrightened(state),
           reasonKey: null,
           // The practice time this pass actually earned (WR-02).
           activeMs: activeMsFor(chart, state, completedSteps, event),
         };
-        const wasRecall = state.hintLevel === FADE.recallLevel;
+        const wasRecall = passBeganAt(state) === FADE.recallLevel;
         next = {
           ...state,
           phase: 'result',
@@ -934,7 +950,7 @@ export function reduce(state, event = {}) {
       const plannedSteps = chart.steps.length;
       const pass = {
         index: state.plan.passIndex,
-        hintLevel: state.hintLevel,
+        hintLevel: creditedLevel(state),
         bpm: chart.bpm,
         completedSteps: plannedSteps,
         plannedSteps,
@@ -942,13 +958,19 @@ export function reduce(state, event = {}) {
         assessment: assessmentFor(state, event),
         unguidedMs: 0,
         aborted: false,
+        brightened: passBrightened(state),
         reasonKey: null,
         // A completed pass earned the whole chart's time, in the chart's own step span.
         activeMs: activeMsFor(chart, state, plannedSteps, event),
       };
-      if (state.hintLevel === FADE.recallLevel) {
+      if (passBeganAt(state) === FADE.recallLevel) {
         // The mandatory no-light recall pass closes the drill; there is no review
-        // after it, only the result and its self-report (FADE-03/D-25).
+        // after it, only the result and its self-report (FADE-03/D-25). Only a pass that
+        // BEGAN at No lights is the recall: Darker reaching No lights mid-pass goes to the
+        // review and the next pass is the recall. A Brighter press turns the recall into a
+        // guided attempt: the drill still ends, but it is never a completed recall and no
+        // self-report is asked (Check recall, FADE-09).
+        const guided = passBrightened(state);
         next = {
           ...state,
           phase: 'result',
@@ -961,7 +983,7 @@ export function reduce(state, event = {}) {
           endedAt: at(event),
           drillWallEndedAt: wallAt(event),
           passes: [...state.passes, pass],
-          recall: { attempted: true, completed: true, selfReport: null, bpm: chart.bpm },
+          recall: { attempted: true, completed: !guided, selfReport: null, bpm: chart.bpm },
           changes: finalizeChanges(chart, state.changes, plannedSteps),
           syncScore: syncScoreAt(state, event),
           flashUntilBeat: 0,
@@ -1031,7 +1053,9 @@ export function reduce(state, event = {}) {
       const timed = chart.timed !== false;
       next = {
         ...state,
-        chart: nextChart,
+        // Only the opening attempt of a Check recall can be a cold recall (CR-01). An
+        // ordinary chart is kept by reference, so an unchanged pass is not rebuilt.
+        chart: nextChart.coldRecall === true ? { ...nextChart, coldRecall: false } : nextChart,
         phase: timed ? 'countIn' : 'active',
         hintLevel,
         plan: { passIndex, totalPasses: totalPassesFor(passIndex, hintLevel, decision.cleanStreak) },
@@ -1062,6 +1086,7 @@ export function reduce(state, event = {}) {
         activeStartBeat: nextChart.countInBeats,
         flashUntilBeat: 0,
         drillWallEndedAt: null,
+        passDimmer: null,
       };
       if (timed) effects.push({ type: 'startTransport' }, announce('pass-start'));
       else effects.push(announce('question'));
@@ -1084,67 +1109,33 @@ export function reduce(state, event = {}) {
       effects.push({ type: 'stopTransport' }, { type: 'zeroLeds' }, announce('result-stopped'));
       break;
 
-    case 'ABORT_PASS': {
-      // Asking for a hint never changes the lit set mid-phrase: the pass ends, is
-      // recorded as aborted and a fresh count-in starts one level lower (D-24).
-      if (state.phase !== 'countIn' && state.phase !== 'active' && state.phase !== 'paused') break;
-      if (state.hintLevel <= 0) break;
-      const currentBeat = Number.isFinite(event.beat)
-        ? event.beat
-        : (state.phase === 'paused' && Number.isFinite(state.pausedBeat) ? state.pausedBeat : state.beat);
-      const completedSteps = chart.timed === false
-        ? Math.max(0, Math.min(chart.steps.length, state.stepIndex))
-        : Math.max(0, Math.min(chart.steps.length, stepIndexFor(chart, currentBeat)));
+    case 'DIMMER': {
+      // FADE-08: one level, immediately, without ending the pass. Brighter is -1, Darker
+      // +1. Legal only while a pass plays, so a change can never be counted twice against
+      // the boundary decision. Both streaks reset: the auto ladder restarts at the new level.
+      if (state.phase !== 'countIn' && state.phase !== 'active') break;
+      const delta = event.delta === -1 ? -1 : event.delta === 1 ? 1 : 0;
+      if (!delta) break;
       const fromLevel = state.hintLevel;
-      const toLevel = clampLevel(fromLevel - 1);
-      const pass = {
-        index: state.plan.passIndex,
-        hintLevel: fromLevel,
-        bpm: chart.bpm,
-        completedSteps,
-        plannedSteps: chart.steps.length,
-        selfReport: null,
-        unguidedMs: 0,
-        aborted: true,
-        reasonKey: 'asked',
-        // The minutes the abandoned pass did play still count as practice (WR-02).
-        activeMs: activeMsFor(chart, state, completedSteps, event),
-      };
-      const passIndex = state.plan.passIndex + 1;
-      const wasRecall = fromLevel === FADE.recallLevel;
-      // A wait chart has no count-in and no transport: the new pass asks question one
-      // immediately, and the abandoned pass's questions are dropped with its outcomes
-      // (WR-01). A timed chart keeps the count-in and the transport restart.
-      const timed = chart.timed !== false;
+      const toLevel = clampLevel(fromLevel + delta);
+      if (toLevel === fromLevel) break; // clamped: Brighter at Full pattern, Darker at No lights
+      const prior = state.passDimmer || { startLevel: fromLevel, brightest: fromLevel, brightened: false };
       next = {
         ...state,
-        phase: timed ? 'countIn' : 'active',
         hintLevel: toLevel,
-        plan: { passIndex, totalPasses: totalPassesFor(passIndex, toLevel) },
-        passes: [...state.passes, pass],
-        levelChange: { direction: 'asked', fromLevel, toLevel, reasonKey: 'asked' },
         cleanStreak: 0,
         failStreak: 0,
-        recall: wasRecall
-          ? { attempted: true, completed: false, selfReport: null, bpm: chart.bpm }
-          : state.recall,
-        selfReport: null,
-        beat: 0,
-        stepIndex: 0,
-        questionIndex: 0,
-        questionOutcomes: [],
-        pausedBeat: null,
-        pauseReason: null,
-        resumeFromBeat: chart.countInBeats,
-        activeStartBeat: chart.countInBeats,
-        changes: CHART_CHANGES.has(chart.family) ? freshChanges(chart) : state.changes,
-        // Asking for a hint abandons this pass's score and its manual marks with the pass.
-        syncScore: null,
-        markedHits: [],
+        passDimmer: {
+          startLevel: prior.startLevel,
+          brightest: Math.min(prior.brightest, toLevel),
+          brightened: prior.brightened || delta < 0,
+        },
+        levelChange: { direction: delta < 0 ? 'down' : 'up', fromLevel, toLevel, reasonKey: REASON.manual },
+        plan: { ...state.plan, totalPasses: totalPassesFor(state.plan.passIndex, toLevel, 0) },
+        // A one-beat Hint-on-demand flash belongs to the level it was asked at.
         flashUntilBeat: 0,
       };
-      if (timed) effects.push({ type: 'stopTransport' }, { type: 'startTransport' }, announce('pass-asked'));
-      else effects.push(announce('question'));
+      effects.push(announce('level-manual'));
       break;
     }
 
@@ -1183,6 +1174,9 @@ export function reduce(state, event = {}) {
         // recompute its unguided time; never append a second pass (D-30/Pitfall 6).
         const report = event.clean === true ? 'clean' : event.clean === false ? 'shaky' : null;
         if (report === null) break;
+        // A guided (brightened) recall has no self-report (FADE-09).
+        const lastPass = state.passes.length ? state.passes[state.passes.length - 1] : null;
+        if (lastPass && lastPass.brightened === true) break;
         const passes = state.passes.slice();
         let recallIndex = -1;
         for (let i = passes.length - 1; i >= 0; i--) {
@@ -1524,6 +1518,42 @@ function frameCore(state, position) {
   };
 }
 
+// FADE-10: the frame the "N lit / M dark" readout counts. It is stable per step (RESEARCH
+// Pitfall 6): the step's own first beat, never the live beat, so an on/off-beat blink or a
+// chord bar's Hint-on-demand pulse never flickers the numbers, and a one-beat flash is
+// ignored. Idle and count-in count the count-in frame Start shows first at this level (the
+// idle branch of frameAt ignores the level, RESEARCH Pattern 4). Pause counts the step the
+// pass stopped on. Pass review and the result light nothing: FINISH, STOP and END_DRILL zero
+// the guitar, so the readout says 0 lit and every lightable note of the shape is dark (WR-01).
+export function readoutFrame(state, position = {}) {
+  const chart = state.chart;
+  const steady = { ...state, flashUntilBeat: 0 };
+  if (state.phase === 'passReview' || state.phase === 'result') {
+    return { ...frameAt(steady, { phase: 'finished', beat: chart.totalBeats }), led: [] };
+  }
+  if (chart.timed === false) {
+    const phase = state.phase === 'countIn' || state.phase === 'active' ? state.phase : 'active';
+    return frameAt({ ...steady, phase }, { ...position, phase });
+  }
+  const phase = position.phase || state.phase;
+  if (phase === 'idle' || phase === 'countIn') {
+    // A live count-in previews the bar it leads into: after Resume that is the resumed bar
+    // (RESUME sets activeStartBeat), never the chart's first step (WR-02). Idle has no run
+    // anchor yet, so it previews the chart's own first bar.
+    const anchor = phase === 'countIn' && state.phase === 'countIn'
+      ? (Number.isFinite(position.activeStartBeat) ? position.activeStartBeat
+        : Number.isFinite(state.activeStartBeat) ? state.activeStartBeat : chart.countInBeats)
+      : chart.countInBeats;
+    return frameAt({ ...steady, phase: 'countIn' }, { phase: 'countIn', beat: 0, activeStartBeat: anchor });
+  }
+  let beat = Number.isFinite(position.beat) ? position.beat : state.beat;
+  if (state.phase === 'paused' && Number.isFinite(state.pausedBeat)) beat = state.pausedBeat;
+  const steps = chart.steps || [];
+  const step = steps[clamp(stepIndexFor(chart, beat), 0, Math.max(0, steps.length - 1))];
+  const stepBeat = step && Number.isFinite(step.beat) ? step.beat : chart.countInBeats;
+  return frameAt({ ...steady, phase: 'active' }, { phase: 'active', beat: stepBeat });
+}
+
 // The idle stage's preview for a play-along family: the very frame a live pass would paint on
 // its first bar. The stage only exists on the Scales tab, whose browse view carries the scale,
 // so the composition root paints this frame over it — the UI-SPEC's idle row asks for bar 1's
@@ -1644,9 +1674,12 @@ export function summarizeDrill(state) {
   const recall = { ...summary.recall };
   let recallPass = null;
   for (let i = passes.length - 1; i >= 0; i--) {
-    if (passes[i].hintLevel === FADE.recallLevel) { recallPass = passes[i]; break; }
+    if (passes[i].hintLevel === FADE.recallLevel && !passes[i].brightened) { recallPass = passes[i]; break; }
   }
   if (recallPass && recallPass.selfReport) recall.selfReport = recallPass.selfReport;
+  // FADE-09: a recall that ended brightened is a guided attempt, never a recall.
+  const lastPass = passes.length ? passes[passes.length - 1] : null;
+  if (lastPass && lastPass.brightened === true && recall.attempted && !recall.completed) recall.guided = true;
   const withHintsPasses = passes.filter(pass => passComplete(pass) && pass.hintLevel !== FADE.recallLevel);
   return {
     ...summary,
@@ -1654,9 +1687,12 @@ export function summarizeDrill(state) {
     activeMs: passes.reduce((sum, pass) => sum + passMs(pass), 0),
     unguidedMs: passes.reduce((sum, pass) => sum + passUnguidedMs(pass), 0),
     passes,
+    guided: passes.some(pass => pass.brightened === true),
     withHints: {
       passes: withHintsPasses,
-      clean: withHintsPasses.filter(pass => pass.selfReport === 'clean').length,
+      // A brightened pass never counts as a clean with-lights pass (FADE-09).
+      clean: withHintsPasses.filter(pass => pass.selfReport === 'clean' && !pass.brightened).length,
+      guided: withHintsPasses.filter(pass => pass.brightened === true).length,
       endedAtLevel: withHintsPasses.length
         ? withHintsPasses[withHintsPasses.length - 1].hintLevel
         : summary.startLevel,

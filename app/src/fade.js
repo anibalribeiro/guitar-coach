@@ -25,6 +25,7 @@ export const REASON = {
   holdSkip: 'holdSkip',
   demote: 'demote',
   asked: 'asked',
+  manual: 'manual',
 };
 
 export const clampLevel = n => Math.max(0, Math.min(3, Number.isFinite(n) ? Math.trunc(n) : 0));
