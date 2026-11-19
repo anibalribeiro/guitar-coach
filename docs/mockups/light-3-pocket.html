@@ -1,0 +1,368 @@
+<!doctype html>
+<!--
+  LIGHT 3 — POCKET COACH: "mobile-first, the phone is held like the neck, the fade is a dimmer"
+
+  Thesis: on Android the phone sits on a music stand or your knee next to the guitar. So the neck
+  is drawn vertically — headstock at the top, low E on the left, exactly as you see your own neck
+  when you look down at it — and the light fade is a physical-feeling dimmer switch right beside
+  it. One thumb reaches everything: bottom navigation, one big Start button, one dimmer.
+
+  Key UX changes vs. the current UI:
+  - Four bottom tabs (Today, Practice, Progress, Library) replace the header buttons, the tab row
+    and the left rail. On desktop the same screens sit side by side (Today | Practice | Progress)
+    with a slim left rail, so there is one IA for both sizes.
+  - Vertical fretboard that fits a portrait phone without sideways scrolling for frets 0–12;
+    the rest of the neck scrolls vertically with the page.
+  - The fade is a dimmer with four detents (Full pattern, Anchors, Hint on demand, No lights)
+    next to the neck, plus a one-line "what the guitar shows" readout.
+  - Start drill is a large round button wrapped in the beat ring (the count-in and metronome are
+    visible on the button itself); Check recall is a separate, always-available secondary action.
+  - Key/scale/position/labels collapse into one tappable lesson title that opens the Library.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Coach — Pocket</title>
+<style>
+:root {
+  --bg: #fff3e8; --surface: #ffffff; --surface-2: #fde8d7; --line: #f0d6c2; --line-2: #e2bfa6;
+  --ink: #2b1830; --ink-2: #4a3150; --muted: #6a536d; --teal: #0b6762; --teal-2: #0e7f78; --teal-soft: #d6eeea;
+  --coral: #b8401f; --led: #ffb627; --led-soft: #ffe7b0; --board: #f7e6d3; --fret: #c9a88a;
+  --round: ui-rounded, "SF Pro Rounded", "Nunito", "Varela Round", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 500 15px/1.45 var(--round); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--teal); outline-offset: 2px; }
+.cap { font-size: 12px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+/* ---------- App shell (phone first) ---------- */
+.appbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: rgba(255,243,232,.92); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.appbar .logo { white-space: nowrap; font-weight: 800; font-size: 18px; letter-spacing: -.01em; display: flex; align-items: center; gap: 8px; }
+.appbar .sp { flex: 1; }
+.chip { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 12px; font-weight: 750; font-size: 13px; border: 1.5px solid var(--line-2); background: var(--surface); }
+.chip .d { width: 8px; height: 8px; border-radius: 50%; background: var(--teal-2); }
+.screens { padding: 0 16px 96px; }
+.screen { display: none; }
+.screen.on { display: block; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding: 6px 6px calc(8px + env(safe-area-inset-bottom)); }
+.tabbar button { border: 0; background: none; display: grid; justify-items: center; gap: 2px; padding: 6px 0; border-radius: 14px; font-size: 12px; font-weight: 750; color: var(--muted); }
+.tabbar button[aria-selected="true"] { color: var(--teal); background: var(--teal-soft); }
+.rail { display: none; }
+
+/* ---------- Practice ---------- */
+.lesson { display: flex; align-items: center; gap: 12px; padding: 14px 0 10px; }
+.lesson button.title { border: 0; background: none; padding: 0; text-align: left; }
+.lesson h1 { font-size: 23px; line-height: 1.15; margin: 2px 0 0; letter-spacing: -.015em; }
+.lesson h1 span { color: var(--muted); font-weight: 650; font-size: 15px; display: block; }
+.lesson .clip { margin-left: auto; width: 44px; height: 44px; border-radius: 14px; border: 1.5px solid var(--line-2); background: var(--surface); display: grid; place-items: center; flex: none; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 92px; gap: 12px; align-items: start; }
+.neck { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 10px 6px 8px; }
+.neck svg { display: block; width: 100%; height: auto; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .2; } }
+.pulse { animation: pulse 1.1s ease-in-out infinite; }
+.dimmer { position: sticky; top: 70px; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 12px 8px; display: grid; justify-items: center; gap: 8px; }
+.dimmer .cap { font-size: 10.5px; text-align: center; }
+.track { position: relative; width: 56px; height: 300px; border-radius: 28px; background: linear-gradient(180deg, #ffd36b 0%, #ffe9b8 34%, #f4e3d6 66%, #3a2640 100%); border: 1.5px solid var(--line-2); }
+.notch { position: absolute; left: 50%; transform: translate(-50%, -50%); width: 100%; height: 75px; border: 0; background: none; padding: 0; }
+.notch::after { content: ""; position: absolute; right: -3px; top: 50%; width: 8px; height: 2px; background: var(--ink-2); opacity: .4; }
+.knob { position: absolute; left: 50%; width: 64px; height: 40px; transform: translate(-50%, -50%); border-radius: 14px; background: var(--surface); border: 2px solid var(--ink); box-shadow: 0 6px 14px -6px rgba(43,24,48,.55); display: grid; place-items: center; transition: top .25s ease; pointer-events: none; }
+.knob i { width: 26px; height: 3px; border-radius: 2px; background: var(--ink); box-shadow: 0 -6px 0 var(--line-2), 0 6px 0 var(--line-2); }
+.dim-names { display: grid; gap: 0; width: 100%; }
+.readout { margin: 12px 0 0; display: flex; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; }
+.readout b { display: block; font-size: 15px; }
+.readout small { color: var(--muted); font-size: 13px; }
+.readout .pips { margin-left: auto; display: flex; gap: 4px; flex: none; }
+.pips i { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--teal); }
+.pips i.on { background: var(--teal); }
+.go { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; margin-top: 14px; }
+.start { position: relative; width: 112px; height: 112px; border-radius: 50%; border: 0; background: var(--teal); color: #fff; font-weight: 800; font-size: 17px; line-height: 1.1; box-shadow: 0 14px 26px -14px rgba(11,103,98,.9); }
+.start svg { position: absolute; inset: -9px; width: calc(100% + 18px); height: calc(100% + 18px); }
+.start small { display: block; font-size: 12px; font-weight: 650; opacity: .9; margin-top: 2px; }
+.side-acts { display: grid; gap: 8px; }
+.sec { border: 1.5px solid var(--ink); background: var(--surface); border-radius: 14px; padding: 11px 14px; font-weight: 800; font-size: 15px; text-align: left; display: flex; justify-content: space-between; align-items: center; }
+.tiny { display: flex; gap: 6px; flex-wrap: wrap; }
+.tiny span { font-size: 12.5px; font-weight: 700; color: var(--ink-2); background: var(--surface-2); border-radius: 999px; padding: 4px 10px; }
+
+/* ---------- Today ---------- */
+.hello { padding: 18px 0 6px; }
+.hello h2 { font-size: 27px; line-height: 1.12; letter-spacing: -.02em; margin: 4px 0 6px; }
+.hello p { margin: 0; color: var(--ink-2); }
+.plan { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; position: relative; }
+.plan li { display: grid; grid-template-columns: 40px 1fr auto; gap: 12px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; }
+.plan li.now { border: 2px solid var(--teal); box-shadow: 0 10px 22px -16px rgba(11,103,98,.7); }
+.plan li.done { opacity: .8; }
+.plan .num { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--surface-2); font-weight: 800; }
+.plan li.now .num { background: var(--teal); color: #fff; }
+.plan li.done .num { background: var(--teal-soft); color: var(--teal); }
+.plan b { display: block; font-size: 15.5px; }
+.plan small { color: var(--muted); font-size: 13px; }
+.lvl { display: grid; justify-items: end; gap: 3px; font-size: 11.5px; font-weight: 750; color: var(--ink-2); text-align: right; }
+.bulb { display: inline-flex; gap: 2px; }
+.bulb i { width: 7px; height: 14px; border-radius: 4px; background: var(--led); }
+.bulb i.off { background: #3a2640; opacity: .18; }
+.tools2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 12px 14px; text-align: left; }
+.tile b { display: block; }
+.tile small { color: var(--muted); font-size: 13px; }
+
+/* ---------- Progress ---------- */
+.ringrow { display: grid; grid-template-columns: 132px 1fr; gap: 16px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 16px; margin-top: 16px; }
+.ringrow svg { width: 132px; height: 132px; }
+.ringrow b { font-size: 17px; display: block; }
+.ringrow p { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; }
+.stat b { display: block; font-size: 22px; letter-spacing: -.02em; }
+.stat small { color: var(--muted); font-size: 12px; font-weight: 700; }
+.skill { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 11px 0; border-bottom: 1px solid var(--line); }
+.skill small { color: var(--muted); font-size: 13px; }
+.skill .due { color: var(--coral); font-weight: 800; }
+h3.sub { font-size: 17px; margin: 22px 0 4px; }
+.backup { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; align-items: center; }
+.backup button { border: 1.5px solid var(--line-2); background: var(--surface); border-radius: 12px; padding: 8px 12px; font-weight: 750; font-size: 14px; }
+.backup small { color: var(--muted); font-size: 12.5px; flex-basis: 100%; }
+
+/* ---------- Library ---------- */
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface-2); border-radius: 14px; padding: 4px; margin: 16px 0 12px; }
+.seg button { border: 0; background: none; border-radius: 10px; padding: 8px 0; font-weight: 750; font-size: 13.5px; color: var(--ink-2); }
+.seg button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(43,24,48,.18); }
+.lib { display: grid; gap: 8px; }
+.lib button { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; text-align: left; }
+.lib b { display: block; }
+.lib small { color: var(--muted); font-size: 13px; }
+
+/* ---------- Desktop: the same four screens become three panes ---------- */
+@media (min-width: 1024px) {
+  body { padding-left: 76px; }
+  .tabbar { display: none; }
+  .rail { display: grid; position: fixed; left: 0; top: 0; bottom: 0; width: 76px; background: var(--surface); border-right: 1px solid var(--line); align-content: start; justify-items: center; gap: 6px; padding: 14px 0; z-index: 7; }
+  .rail .mark { margin-bottom: 14px; }
+  .rail button { width: 60px; border: 0; background: none; border-radius: 14px; padding: 8px 0 6px; display: grid; justify-items: center; gap: 2px; font-size: 11px; font-weight: 750; color: var(--muted); }
+  .rail button[aria-selected="true"] { color: var(--teal); background: var(--teal-soft); }
+  .appbar { padding: 12px 28px; }
+  .appbar .logo { display: none; }
+  .screens { display: grid; grid-template-columns: 330px minmax(0, 1fr) 340px; gap: 28px; padding: 0 28px 32px; max-width: 1400px; margin: 0 auto; align-items: start; }
+  .screen { display: block; }
+  #s-practice { order: 2; } #s-today { order: 1; } #s-progress { order: 3; }
+  #s-library { display: none; }
+  body.lib-open #s-library { display: block; order: 1; } body.lib-open #s-today { display: none; }
+  .stage { grid-template-columns: minmax(0, 1fr) 104px; max-width: 560px; margin: 0 auto; }
+  .neck svg { height: 470px; width: auto; max-width: 100%; margin: 0 auto; }
+  .track { height: 300px !important; }
+  .lesson { padding-top: 8px; }
+  .lesson, .readout, .go { max-width: 560px; margin-left: auto; margin-right: auto; }
+  .track { height: 340px; }
+}
+@media (max-width: 1023px) {
+  .neck svg { max-height: 400px; }
+  .track { height: 250px; }
+  .start { width: 96px; height: 96px; font-size: 16px; }
+}
+@media (max-width: 520px) { .chip.streak { display: none; } }
+@media (max-width: 380px) { .start { width: 100px; height: 100px; } .stage { grid-template-columns: minmax(0, 1fr) 84px; } }
+</style>
+</head>
+<body>
+
+<nav class="rail" aria-label="Main" role="tablist">
+  <svg class="mark" width="36" height="36" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="11" fill="#0b6762"/><path d="M12 8 V28 M18 8 V28 M24 8 V28" stroke="#d6eeea" stroke-width="1.6"/><circle cx="18" cy="15" r="3.6" fill="#ffb627"/></svg>
+</nav>
+
+<header class="appbar">
+  <span class="logo"><svg width="26" height="26" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="11" fill="#0b6762"/><path d="M12 8 V28 M18 8 V28 M24 8 V28" stroke="#d6eeea" stroke-width="1.6"/><circle cx="18" cy="15" r="3.6" fill="#ffb627"/></svg>Guitar Coach</span>
+  <span class="sp"></span>
+  <span class="chip" title="Chrome · Bluetooth · Mic · Offline ready"><span class="d"></span>T2 · 82%</span>
+  <span class="chip streak">12-day streak</span>
+</header>
+
+<main class="screens">
+  <!-- ===== Today ===== -->
+  <section class="screen" id="s-today" aria-label="Today">
+    <div class="hello">
+      <p class="cap">Thursday · 13-minute session</p>
+      <h2>Two blocks in. The lights get dimmer from here.</h2>
+      <p>Each block starts a little darker. Recall runs with the guitar fully dark.</p>
+    </div>
+    <ol class="plan">
+      <li class="done"><span class="num">✓</span><div><b>Warm-up</b><small>Scale run · A minor pentatonic, box 1 · 2 min</small></div><span class="lvl"><span class="bulb"><i></i><i></i><i></i><i></i></span>Full</span></li>
+      <li class="now"><span class="num">2</span><div><b>Focus</b><small>Box 1 at Anchors · due · 3 min</small></div><span class="lvl"><span class="bulb"><i></i><i></i><i class="off"></i><i class="off"></i></span>Anchors</span></li>
+      <li><span class="num">3</span><div><b>New material</b><small>Blues note (♭5) in box 1 · 3 min</small></div><span class="lvl"><span class="bulb"><i></i><i></i><i></i><i></i></span>Full</span></li>
+      <li><span class="num">4</span><div><b>Play-along</b><small>12-bar blues in A · 80 BPM backing · 3 min</small></div><span class="lvl"><span class="bulb"><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span>Hint</span></li>
+      <li><span class="num">5</span><div><b>Recall</b><small>Box 1 from memory · 2 min</small></div><span class="lvl"><span class="bulb"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span>Dark</span></li>
+    </ol>
+    <div class="tools2">
+      <button class="tile" type="button"><b>Tuner</b><small>A 110.0 Hz · in tune</small></button>
+      <button class="tile" type="button"><b>Backing</b><small>Metronome 72 · drone A</small></button>
+    </div>
+  </section>
+
+  <!-- ===== Practice ===== -->
+  <section class="screen on" id="s-practice" aria-label="Practice">
+    <div class="lesson">
+      <button class="title" type="button" data-go="library">
+        <p class="cap">Block 2 of 5 · Focus</p>
+        <h1>A minor pentatonic ▾<span>Box 1 · frets 5–8 · note names</span></h1>
+      </button>
+      <button class="clip" type="button" aria-label="Watch the demo clip"><svg width="20" height="20" viewBox="0 0 20 20" aria-hidden="true"><path d="M6 4 L16 10 L6 16 Z" fill="#2b1830"/></svg></button>
+    </div>
+    <div class="stage">
+      <div class="neck" id="neck"></div>
+      <div class="dimmer" role="group" aria-label="Light level">
+        <p class="cap">Lights</p>
+        <div class="track" id="track">
+          <button class="notch" type="button" data-l="0" style="top:12.5%" aria-label="Full pattern"></button>
+          <button class="notch" type="button" data-l="1" style="top:37.5%" aria-label="Anchors"></button>
+          <button class="notch" type="button" data-l="2" style="top:62.5%" aria-label="Hint on demand"></button>
+          <button class="notch" type="button" data-l="3" style="top:87.5%" aria-label="No lights"></button>
+          <span class="knob" id="knob"><i></i></span>
+        </div>
+        <p class="cap" id="dimName" style="color:var(--ink)">Anchors</p>
+      </div>
+    </div>
+    <div class="go">
+      <button class="start" type="button">
+        <svg viewBox="0 0 130 130" aria-hidden="true"><circle cx="65" cy="65" r="61" fill="none" stroke="#d6eeea" stroke-width="5"/>
+          <path d="M65 4 A61 61 0 0 1 126 65" fill="none" stroke="#ffb627" stroke-width="5" stroke-linecap="round"/>
+          <circle cx="65" cy="4" r="5" fill="#2b1830"/><circle cx="126" cy="65" r="5" fill="#2b1830"/><circle cx="65" cy="126" r="5" fill="#d6eeea"/><circle cx="4" cy="65" r="5" fill="#d6eeea"/></svg>
+        Start<small>count-in · 72</small>
+      </button>
+      <div class="side-acts">
+        <button class="sec" type="button">Check recall <span aria-hidden="true">→</span></button>
+        <div class="tiny"><span>Mic scoring on</span><span>Up &amp; down</span><span>6 / 12</span></div>
+      </div>
+    </div>
+    <div class="readout">
+      <div><b id="roTitle">Anchors · 4 of 12 LEDs lit</b><small id="roSub">Roots and each string’s first note. Next: C, 3rd string, fret 5.</small></div>
+      <span class="pips" aria-label="2 of 3 clean passes"><i class="on"></i><i class="on"></i><i></i></span>
+    </div>
+  </section>
+
+  <!-- ===== Progress ===== -->
+  <section class="screen" id="s-progress" aria-label="Progress">
+    <div class="ringrow">
+      <svg viewBox="0 0 132 132" aria-hidden="true">
+        <circle cx="66" cy="66" r="54" fill="none" stroke="#ffe7b0" stroke-width="16"/>
+        <circle cx="66" cy="66" r="54" fill="none" stroke="#2b1830" stroke-width="16" stroke-dasharray="112 340" transform="rotate(-90 66 66)"/>
+        <text x="66" y="64" text-anchor="middle" font-family="ui-rounded, Nunito, system-ui" font-size="28" font-weight="800" fill="#2b1830">33%</text>
+        <text x="66" y="84" text-anchor="middle" font-family="ui-rounded, Nunito, system-ui" font-size="12" font-weight="700" fill="#6a536d">in the dark</text>
+      </svg>
+      <div><b>31 of 94 minutes this week with no lights</b><p>Last week it was 19%. The dark slice is the number that matters.</p></div>
+    </div>
+    <div class="stats">
+      <div class="stat"><b>12</b><small>day streak</small></div>
+      <div class="stat"><b>3</b><small>reviews due</small></div>
+      <div class="stat"><b>6</b><small>skills owned</small></div>
+    </div>
+    <h3 class="sub">Skills, brightest first</h3>
+    <div class="skill"><span>Changes Am → C</span><span class="bulb"><i></i><i></i><i></i><i></i></span><small>Full pattern · <span class="due">due today</span></small></div>
+    <div class="skill"><span>Power chords E5 → A5</span><span class="bulb"><i></i><i></i><i></i><i class="off"></i></span><small>Full pattern · 2 of 3 clean</small></div>
+    <div class="skill"><span>Minor pentatonic box 1</span><span class="bulb"><i></i><i></i><i class="off"></i><i class="off"></i></span><small>Anchors · <span class="due">due today</span></small></div>
+    <div class="skill"><span>Find the note: A</span><span class="bulb"><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span><small>Hint on demand · 71%</small></div>
+    <div class="skill"><span>Low E string notes</span><span class="bulb"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span><small>No lights · mastered 94%</small></div>
+    <div class="backup"><button type="button">Export JSON</button><button type="button">Import JSON</button><small>Progress stays in this browser. Export to move it to another device.</small></div>
+  </section>
+
+  <!-- ===== Library ===== -->
+  <section class="screen" id="s-library" aria-label="Library">
+    <div class="seg" role="tablist"><button role="tab" type="button" aria-selected="true">Scales</button><button role="tab" type="button" aria-selected="false">Chords</button><button role="tab" type="button" aria-selected="false">Progress.</button><button role="tab" type="button" aria-selected="false">Songs</button></div>
+    <div class="lib">
+      <button type="button"><span><b>Minor pentatonic</b><small>5 boxes · key A</small></span><span class="bulb"><i></i><i></i><i class="off"></i><i class="off"></i></span></button>
+      <button type="button"><span><b>Blues scale</b><small>Minor pentatonic + ♭5</small></span><span class="bulb"><i></i><i></i><i></i><i></i></span></button>
+      <button type="button"><span><b>Major pentatonic</b><small>5 boxes</small></span><span class="bulb"><i></i><i></i><i></i><i></i></span></button>
+      <button type="button"><span><b>Major</b><small>3 notes per string · 7 positions</small></span><span class="bulb"><i></i><i></i><i></i><i class="off"></i></span></button>
+      <button type="button"><span><b>Natural minor</b><small>3 notes per string</small></span><span class="bulb"><i></i><i></i><i></i><i></i></span></button>
+    </div>
+  </section>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="Main" id="tabbar"></nav>
+
+<script>
+// ---------- Navigation: bottom tabs on phone, rail on desktop ----------
+const TABS = [
+  ['today', 'Today', '<path d="M4 6 H20 M4 12 H20 M4 18 H14" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'],
+  ['practice', 'Practice', '<path d="M8 3 V21 M12 3 V21 M16 3 V21" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.2" fill="currentColor"/>'],
+  ['progress', 'Progress', '<path d="M12 3 A9 9 0 1 1 3 12" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>'],
+  ['library', 'Library', '<rect x="4" y="4" width="6" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'],
+];
+const tabHTML = TABS.map(([id, t, ic]) => `<button role="tab" type="button" data-go="${id}" aria-selected="${id === 'practice'}"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('');
+document.getElementById('tabbar').innerHTML = tabHTML;
+document.querySelector('.rail').insertAdjacentHTML('beforeend', tabHTML);
+function go(id) {
+  document.querySelectorAll('[data-go]').forEach(b => b.getAttribute('role') === 'tab' && b.setAttribute('aria-selected', String(b.dataset.go === id)));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + id));
+  document.body.classList.toggle('lib-open', id === 'library');
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
+
+// ---------- Theory: A minor pentatonic box 1, standard tuning EADGBE ----------
+const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const BOX = { 6: [5, 8], 5: [5, 7], 4: [5, 7], 3: [5, 7], 2: [5, 8], 1: [5, 8] };
+const SEQ = []; for (const s of [6, 5, 4, 3, 2, 1]) for (const f of BOX[s]) SEQ.push({ s, f, n: NAMES[(OPEN[s] + f) % 12], root: (OPEN[s] + f) % 12 === 9 });
+const STEP = 6; // six notes played; the target is C on the 3rd string, fret 5
+const isAnchor = n => n.root || n.f === BOX[n.s][0];
+
+// ---------- Vertical neck: headstock up, low E on the left ----------
+function neckV(level) {
+  const W = 300, F = 12, top = 26, bottom = 14, H = 560, padX = 40;
+  const d = f => 1 - Math.pow(2, -f / 12);
+  const openH = 26, usable = H - top - bottom - openH;
+  const y = f => top + openH + d(f) / d(F) * usable;
+  const mid = f => f === 0 ? top + openH / 2 : (y(f - 1) + y(f)) / 2;
+  const gap = (W - 2 * padX) / 5, x = s => padX + (6 - s) * gap;
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="A minor pentatonic box 1 on a vertical neck"><defs><radialGradient id="gl"><stop offset="0" stop-color="#ffb627" stop-opacity=".7"/><stop offset="1" stop-color="#ffb627" stop-opacity="0"/></radialGradient></defs>`;
+  ['E', 'A', 'D', 'G', 'B', 'E'].forEach((t, i) => g += `<text x="${x(6 - i)}" y="${y(0) - 12}" text-anchor="middle" font-family="ui-rounded, Nunito, system-ui" font-size="13" font-weight="800" fill="#6a536d">${t}</text>`);
+  g += `<rect x="${padX - 18}" y="${y(0)}" width="${W - 2 * padX + 36}" height="${y(F) - y(0) + 6}" rx="10" fill="#f7e6d3"/>`;
+  if (level === 3) g += `<rect x="${padX - 14}" y="${y(4) + 3}" width="${W - 2 * padX + 28}" height="${y(8) - y(4) - 6}" rx="12" fill="none" stroke="#0b6762" stroke-width="2" stroke-dasharray="6 6"/>`;
+  for (const m of [3, 5, 7, 9]) g += `<circle cx="${W / 2}" cy="${mid(m)}" r="6" fill="#e8cdb2"/>`;
+  g += `<circle cx="${x(5) + gap / 2}" cy="${mid(12)}" r="6" fill="#e8cdb2"/><circle cx="${x(2) + gap / 2}" cy="${mid(12)}" r="6" fill="#e8cdb2"/>`;
+  for (let f = 1; f <= F; f++) {
+    g += `<line x1="${padX - 18}" y1="${y(f)}" x2="${W - padX + 18}" y2="${y(f)}" stroke="#c9a88a" stroke-width="2.4"/>`;
+    g += `<text x="11" y="${mid(f) + 4}" text-anchor="middle" font-family="ui-rounded, Nunito, system-ui" font-size="11.5" font-weight="${[3, 5, 7, 9, 12].includes(f) ? 800 : 600}" fill="${[3, 5, 7, 9, 12].includes(f) ? '#2b1830' : '#6a536d'}">${f}</text>`;
+  }
+  g += `<rect x="${padX - 18}" y="${y(0) - 4}" width="${W - 2 * padX + 36}" height="8" rx="3" fill="#2b1830"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${x(s)}" y1="${y(0) - 4}" x2="${x(s)}" y2="${y(F) + 6}" stroke="#7c6450" stroke-width="${0.7 + s * 0.32}"/>`;
+  const r = 15;
+  SEQ.forEach((n, i) => {
+    let st;
+    if (i < STEP) st = 'hit';
+    else if (i === STEP) st = level === 3 ? null : 'target';
+    else st = level === 0 ? 'lit' : level === 1 ? (isAnchor(n) ? 'lit' : null) : null;
+    if (!st) return;
+    const cx = x(n.s), cy = mid(n.f);
+    if (st === 'lit' || st === 'target') g += `<circle cx="${cx}" cy="${cy}" r="${r * 2}" fill="url(#gl)"/>`;
+    if (st === 'target') g += `<circle class="pulse" cx="${cx}" cy="${cy}" r="${r + 6}" fill="none" stroke="#0b6762" stroke-width="3"/>`;
+    const c = { lit: [n.root ? '#b8401f' : '#ffb627', n.root ? '#8f2f15' : '#d38f00', n.root ? '#fff' : '#2b1830'], target: ['#0b6762', '#0b6762', '#fff'], hit: ['#fff', '#0e7f78', '#0b6762'] }[st];
+    g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c[0]}" stroke="${c[1]}" stroke-width="${st === 'hit' ? 2.2 : 1.4}"/>`;
+    g += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="ui-rounded, Nunito, system-ui" font-size="14" font-weight="800" fill="${c[2]}">${st === 'hit' ? '✓' : n.n}</text>`;
+  });
+  return g + '</svg>';
+}
+
+// ---------- Dimmer ----------
+const LEVELS = [
+  ['Full', 'Full pattern', 'Every note in the box is lit. Next: C, 3rd string, fret 5.'],
+  ['Anchors', 'Anchors', 'Roots and each string’s first note. Next: C, 3rd string, fret 5.'],
+  ['Hint', 'Hint on demand', 'Dark until you tap “hint” — the next note flashes for one beat.'],
+  ['Dark', 'No lights', 'Nothing lights. The dashed frame is all the screen keeps.'],
+];
+function setLevel(l) {
+  document.getElementById('neck').innerHTML = neckV(l);
+  document.getElementById('knob').style.top = (12.5 + l * 25) + '%';
+  document.getElementById('dimName').textContent = LEVELS[l][0];
+  const rest = SEQ.slice(STEP);
+  const lit = l === 0 ? rest.length : l === 1 ? rest.filter((n, i) => i === 0 || isAnchor(n)).length : l === 2 ? 1 : 0;
+  document.getElementById('roTitle').textContent = l === 3 ? 'No lights · guitar dark' : l === 2 ? 'Hint on demand · 1 LED when asked' : `${LEVELS[l][1]} · ${lit} of ${SEQ.length} LEDs lit`;
+  document.getElementById('roSub').textContent = LEVELS[l][2];
+}
+document.querySelectorAll('.notch').forEach(b => b.addEventListener('click', () => setLevel(+b.dataset.l)));
+document.querySelectorAll('.seg button').forEach(b => b.addEventListener('click', () => document.querySelectorAll('.seg button').forEach(x => x.setAttribute('aria-selected', String(x === b)))));
+setLevel(1);
+</script>
+</body>
+</html>

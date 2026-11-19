@@ -1,0 +1,438 @@
+<!doctype html>
+<!--
+  LIGHT 5 — BLUES NOTEBOOK: "Pocket Coach as a practice notebook; one card at a time, and the lights hang on a string"
+
+  Thesis: a practice notebook doesn't show you the whole syllabus. It shows today's page. This
+  Pocket Coach variation deals the session as a deck of cards, one block at a time, each with the
+  coach's reason for choosing it. The lights the guitar is showing hang under the neck as a string
+  of festoon bulbs, one per note of the shape. As you improve, you watch the string go out
+  bulb by bulb.
+
+  What changes vs. light-3 Pocket Coach (same four tabs, vertical neck, dimmer and Start ring):
+  - Palette and type: cream ruled paper, indigo ink, mustard bulbs and rust roots, set in a book serif
+    (Charter / Iowan). Reads like a notebook, not an app.
+  - Fade and readout: the dimmer is a horizontal slider plate under the neck. "Lights on the guitar"
+    is a festoon string of 14 bulbs (one per note in the box), so lit vs. dark is counted, not described.
+    A thin whole-neck strip beside the zoomed neck shows where the box sits on frets 0–19.
+  - Today: a card deck instead of a list. The top card is the current block with the coach's
+    reason ("due since Tuesday", "weakest pair") and one Start button. The rest wait underneath.
+  - Progress: a "darkness calendar" (each day shaded by the share of practice done with no lights)
+    and a log of the dates each skill went dark.
+  - Library: Scales opens to the five boxes of a scale as vertical thumbnails with bulbs.
+    The blues scale's ♭5 is marked as "the blue note".
+  - Desktop: a two-page notebook spread under centred top tabs. Practice is the left page, and the
+    chosen tab (Today by default) is the right page. No side rail.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Coach — Notebook</title>
+<style>
+:root {
+  --paper: #fbf7ed; --paper-2: #f3ecdb; --card: #fffdf7; --rule: #e6dcc4; --rule-2: #cdbf9f;
+  --ink: #232c55; --ink-2: #3b4470; --muted: #5d6080; --rust: #a23b26; --mustard: #e8b43a; --mustard-soft: #f8e6b4;
+  --blue: #4b3fa0; --blue-soft: #e6e2f6; --board: #f4e9d2;
+  --serif: Charter, "Bitstream Charter", "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  --sans: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 400 16px/1.5 var(--serif); -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image: repeating-linear-gradient(180deg, transparent 0 27px, rgba(150,170,210,.18) 27px 28px); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.acc { font-family: var(--sans); font-size: .94em; }
+.small { font: 600 12px/1.3 var(--sans); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+/* ---------- Shell ---------- */
+.appbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: rgba(251,247,237,.95); border-bottom: 2px solid var(--ink); }
+.logo { font: italic 700 20px/1 var(--serif); white-space: nowrap; }
+.logo span { color: var(--rust); }
+.appbar .sp { flex: 1; }
+.tag { white-space: nowrap; font: 600 13px var(--sans); border: 1.5px solid var(--ink); border-radius: 6px; padding: 4px 9px; background: var(--card); }
+.tag i { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: #2f7d4f; margin-right: 6px; vertical-align: 1px; }
+.toptabs { display: none; }
+.screens { padding: 0 16px 96px; }
+.screen { display: none; }
+.screen.on { display: block; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--card); border-top: 2px solid var(--ink); padding: 6px 6px calc(8px + env(safe-area-inset-bottom)); }
+.tabbar button { border: 0; background: none; display: grid; justify-items: center; gap: 1px; padding: 5px 0; font: 600 12px var(--sans); color: var(--muted); border-radius: 10px; }
+.tabbar button[aria-selected="true"] { color: var(--ink); background: var(--mustard-soft); }
+
+/* ---------- Practice ---------- */
+.lesson { padding: 14px 0 8px; }
+.lesson h1 { font-size: 27px; line-height: 1.1; margin: 3px 0 2px; font-weight: 700; }
+.lesson h1 em { color: var(--blue); }
+.lesson p { margin: 0; color: var(--ink-2); font-size: 15px; }
+.stage { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
+.overview svg { width: 26px; height: 100%; display: block; }
+.neck { background: var(--card); border: 1.5px solid var(--ink); border-radius: 6px 6px 18px 18px; padding: 6px 4px 0; box-shadow: 4px 4px 0 var(--rule-2); }
+.neck svg { display: block; width: 100%; height: auto; max-height: 420px; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.pulse { animation: pulse 1.1s ease-in-out infinite; }
+.festoon { margin: 4px 0 0; }
+.festoon svg { display: block; width: 100%; height: auto; }
+.festoon-cap { display: flex; justify-content: space-between; gap: 8px; font: 600 13px var(--sans); color: var(--ink-2); margin-top: -2px; flex-wrap: wrap; }
+.festoon-cap b { color: var(--ink); }
+.plate { margin-top: 12px; background: var(--card); border: 1.5px solid var(--ink); border-radius: 14px; padding: 10px 12px 12px; box-shadow: 4px 4px 0 var(--rule-2); }
+.plate-top { display: flex; justify-content: space-between; align-items: baseline; }
+.plate-top b { font-size: 17px; }
+.slot { position: relative; height: 34px; margin: 10px 4px 2px; border-radius: 17px; background: linear-gradient(90deg, #f7d26b, #f8e6b4 40%, #e3dccd 70%, #3a3f60); border: 1.5px solid var(--ink); }
+.slot button { position: absolute; top: 0; height: 100%; width: 25%; border: 0; background: none; padding: 0; }
+.slider { position: absolute; top: 50%; width: 44px; height: 44px; transform: translate(-50%, -50%); border-radius: 12px; background: var(--card); border: 2px solid var(--ink); box-shadow: 0 4px 0 var(--ink); transition: left .25s; pointer-events: none; display: grid; place-items: center; }
+.slider i { width: 3px; height: 18px; background: var(--ink); border-radius: 2px; box-shadow: -6px 0 0 var(--rule-2), 6px 0 0 var(--rule-2); }
+.marks { display: grid; grid-template-columns: repeat(4, 1fr); font: 600 11.5px/1.2 var(--sans); color: var(--muted); text-align: center; margin-top: 8px; }
+.marks span.on { color: var(--ink); }
+.go { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; margin-top: 14px; }
+.start { position: relative; width: 104px; height: 104px; border-radius: 50%; border: 2px solid var(--ink); background: var(--ink); color: #fff; font: 700 18px/1.1 var(--serif); }
+.start svg { position: absolute; inset: -11px; width: calc(100% + 22px); height: calc(100% + 22px); }
+.start small { display: block; font: 600 12px var(--sans); opacity: .9; margin-top: 3px; }
+.acts { display: grid; gap: 8px; }
+.sec { border: 1.5px solid var(--ink); background: var(--card); border-radius: 10px; padding: 10px 12px; font: 700 15px var(--sans); text-align: left; display: flex; justify-content: space-between; }
+.note { font-size: 14px; color: var(--ink-2); border-left: 3px solid var(--blue); padding: 2px 0 2px 10px; }
+
+/* ---------- Today: card deck ---------- */
+.deckhead { padding: 16px 0 6px; }
+.deckhead h2 { font-size: 26px; margin: 3px 0 4px; line-height: 1.15; }
+.deckhead p { margin: 0; color: var(--ink-2); }
+.deck { position: relative; margin: 18px 6px 38px; }
+.deck .under { position: absolute; left: 8px; right: 8px; height: 100%; border: 1.5px solid var(--ink); border-radius: 16px; background: var(--card); }
+.deck .under.u1 { top: 12px; left: 10px; right: 10px; transform: rotate(1.4deg); }
+.deck .under.u2 { top: 24px; left: 18px; right: 18px; transform: rotate(-1.2deg); background: var(--paper-2); }
+.topcard { position: relative; background: var(--card); border: 2px solid var(--ink); border-radius: 16px; padding: 16px; box-shadow: 0 10px 22px -16px rgba(35,44,85,.6); }
+.topcard .n { font: 700 13px var(--sans); color: var(--rust); }
+.topcard h3 { font-size: 24px; margin: 4px 0 2px; }
+.topcard .why { margin: 10px 0 12px; padding: 10px 12px; background: var(--paper-2); border-radius: 10px; font-size: 15px; }
+.topcard .why b { font-family: var(--sans); font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); display: block; }
+.topcard .row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font: 600 13px var(--sans); color: var(--ink-2); }
+.topcard .btn { margin-left: auto; background: var(--ink); color: #fff; border: 0; border-radius: 10px; padding: 10px 16px; font: 700 15px var(--sans); }
+.bulbs { display: inline-flex; gap: 3px; vertical-align: middle; }
+.bulbs i { width: 10px; height: 13px; border-radius: 50% 50% 45% 45%; background: var(--mustard); border: 1px solid #b98a14; }
+.bulbs i.off { background: transparent; border-color: var(--rule-2); }
+.later { list-style: none; padding: 0; margin: 0; }
+.later li { display: grid; grid-template-columns: 30px 1fr auto; gap: 10px; align-items: center; padding: 9px 0; border-bottom: 1px dashed var(--rule-2); }
+.later .k { font: 700 14px var(--sans); color: var(--muted); }
+.later small { display: block; color: var(--muted); font: 500 13px var(--sans); }
+.later li.done { color: var(--muted); }
+.later li.done b { text-decoration: line-through; }
+
+/* ---------- Progress ---------- */
+.cal { margin-top: 16px; background: var(--card); border: 1.5px solid var(--ink); border-radius: 14px; padding: 14px; box-shadow: 4px 4px 0 var(--rule-2); }
+.cal h2 { margin: 2px 0 2px; font-size: 22px; }
+.cal p { margin: 0 0 10px; color: var(--ink-2); font-size: 15px; }
+.grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 5px; }
+.grid span { aspect-ratio: 1; border-radius: 6px; border: 1px solid var(--rule); display: grid; place-items: center; font: 600 11px var(--sans); }
+.grid .h { border: 0; aspect-ratio: auto; color: var(--muted); }
+.legend { display: flex; align-items: center; gap: 6px; font: 600 12px var(--sans); color: var(--muted); margin-top: 10px; flex-wrap: wrap; }
+.legend i { width: 16px; height: 16px; border-radius: 4px; display: inline-block; border: 1px solid var(--rule); }
+.log { margin-top: 18px; }
+.log h3 { font-size: 19px; margin: 0 0 6px; }
+.log li { list-style: none; display: grid; grid-template-columns: 70px 1fr; gap: 10px; padding: 8px 0; border-bottom: 1px dashed var(--rule-2); }
+.log ul { padding: 0; margin: 0; }
+.log time { font: 700 13px var(--sans); color: var(--rust); padding-top: 2px; }
+.log small { display: block; color: var(--muted); font: 500 13px var(--sans); }
+.backup { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.backup button { border: 1.5px solid var(--ink); background: var(--card); border-radius: 8px; padding: 7px 12px; font: 700 14px var(--sans); }
+
+/* ---------- Library ---------- */
+.seg { display: flex; gap: 0; margin: 16px 0 12px; border-bottom: 2px solid var(--ink); }
+.seg button { flex: 1; border: 0; background: none; padding: 8px 0; font: 700 14px var(--sans); color: var(--muted); border-bottom: 4px solid transparent; margin-bottom: -2px; }
+.seg button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--rust); }
+.fam { margin-bottom: 16px; }
+.fam h3 { font-size: 20px; margin: 0; }
+.fam p { margin: 0 0 8px; color: var(--muted); font: 500 13.5px var(--sans); }
+.boxes { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.bx { background: var(--card); border: 1.5px solid var(--rule-2); border-radius: 10px; padding: 6px 4px; display: grid; justify-items: center; gap: 4px; font: 700 12px var(--sans); }
+.bx.sel { border-color: var(--ink); box-shadow: 2px 2px 0 var(--ink); }
+.bx svg { width: 100%; max-width: 54px; height: 80px; display: block; }
+.boxes { align-items: start; }
+.bx .bulbs i { width: 7px; height: 9px; }
+.libl { display: grid; gap: 8px; }
+.libl .it { display: flex; justify-content: space-between; align-items: center; gap: 10px; background: var(--card); border: 1.5px solid var(--rule-2); border-radius: 10px; padding: 10px 12px; text-align: left; }
+.libl small { display: block; color: var(--muted); font: 500 13px var(--sans); }
+
+/* ---------- Desktop: notebook spread ---------- */
+@media (min-width: 1024px) {
+  .tabbar { display: none; }
+  .appbar { padding: 12px 32px; }
+  .toptabs { display: flex; gap: 4px; position: absolute; left: 50%; transform: translateX(-50%); }
+  .toptabs button { border: 1.5px solid transparent; background: none; border-radius: 8px; padding: 6px 16px; font: 700 14px var(--sans); color: var(--ink-2); }
+  .toptabs button[aria-selected="true"] { border-color: var(--ink); background: var(--mustard-soft); color: var(--ink); }
+  .screens { max-width: 1200px; margin: 24px auto 32px; padding: 0; display: grid; grid-template-columns: 1fr 1fr; background: var(--card); border: 2px solid var(--ink); border-radius: 10px; box-shadow: 8px 8px 0 var(--rule-2); position: relative; }
+  .screens::after { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 30px; transform: translateX(-50%); background: linear-gradient(90deg, transparent, rgba(35,44,85,.08) 45%, rgba(35,44,85,.14) 50%, rgba(35,44,85,.08) 55%, transparent); pointer-events: none; }
+  .screen { display: none; padding: 8px 44px 32px; }
+  #s-practice { display: block; grid-column: 1; grid-row: 1; }
+  .screen.on:not(#s-practice) { display: block; grid-column: 2; grid-row: 1; }
+  body.prac #s-today { display: block; grid-column: 2; grid-row: 1; }
+  .neck svg { max-height: 330px; width: auto; max-width: 100%; margin: 0 auto; }
+  .screens { margin-top: 16px; }
+  .screen { padding-top: 0; }
+  .lesson { padding-top: 10px; }
+  .plate { margin-top: 8px; padding: 8px 12px 10px; }
+  .go { margin-top: 10px; }
+  .start { width: 92px; height: 92px; }
+}
+</style>
+</head>
+<body class="prac">
+
+<header class="appbar">
+  <span class="logo">Guitar <span>Coach</span></span>
+  <nav class="toptabs" role="tablist" aria-label="Main" id="toptabs"></nav>
+  <span class="sp"></span>
+  <span class="tag" title="Chrome · Bluetooth · Mic · Offline ready"><i></i>T2 · 82%</span>
+</header>
+
+<main class="screens">
+  <!-- ===== Practice ===== -->
+  <section class="screen on" id="s-practice" aria-label="Practice">
+    <div class="lesson">
+      <p class="small">Card 3 of 5 · New material</p>
+      <h1>The <em>blue note</em>, box 1</h1>
+      <p>A blues scale · frets 5–8 · labels: degrees</p>
+    </div>
+    <div class="stage">
+      <div class="overview" id="overview" title="Where this box sits on the whole neck"></div>
+      <div class="neck">
+        <div id="neck"></div>
+        <div class="festoon" id="festoon"></div>
+      </div>
+    </div>
+    <div class="festoon-cap"><span id="festCount"><b>7 of 14</b> bulbs lit on the guitar</span><span id="festNext">Next: <span class="acc">♭5</span> on the A string</span></div>
+    <div class="plate" role="group" aria-label="Dimmer">
+      <div class="plate-top"><b id="plateName">Anchors</b><span class="small" id="platePass">2 of 3 clean passes</span></div>
+      <div class="slot" id="slot">
+        <button type="button" data-l="0" style="left:0" aria-label="Full pattern"></button>
+        <button type="button" data-l="1" style="left:25%" aria-label="Anchors"></button>
+        <button type="button" data-l="2" style="left:50%" aria-label="Hint on demand"></button>
+        <button type="button" data-l="3" style="left:75%" aria-label="No lights"></button>
+        <span class="slider" id="slider"><i></i></span>
+      </div>
+      <div class="marks" id="marks"><span>Full pattern</span><span>Anchors</span><span>Hint on demand</span><span>No lights</span></div>
+    </div>
+    <div class="go">
+      <button class="start" type="button">
+        <svg viewBox="0 0 130 130" aria-hidden="true"><circle cx="65" cy="65" r="61" fill="none" stroke="#e6dcc4" stroke-width="4"/><path d="M65 4 A61 61 0 0 1 126 65" fill="none" stroke="#e8b43a" stroke-width="4" stroke-linecap="round"/><circle cx="65" cy="4" r="5.5" fill="#a23b26"/><circle cx="126" cy="65" r="5.5" fill="#232c55"/><circle cx="65" cy="126" r="5.5" fill="#e6dcc4"/><circle cx="4" cy="65" r="5.5" fill="#e6dcc4"/></svg>
+        Start<small>count-in · 66</small>
+      </button>
+      <div class="acts">
+        <p class="note">The <span class="acc">♭5</span> sits one fret above the 4 on the A string and one below the 5 on the G string. Find it from there.</p>
+        <button class="sec" type="button">Check recall <span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Today: card deck ===== -->
+  <section class="screen" id="s-today" aria-label="Today">
+    <div class="deckhead">
+      <p class="small">Thursday 19 November · 13 minutes</p>
+      <h2>Today’s page: five cards.</h2>
+      <p>Two done. Each card starts a little darker than the last.</p>
+    </div>
+    <div class="deck">
+      <div class="under u2"></div><div class="under u1"></div>
+      <article class="topcard">
+        <span class="n">Card 3 · New material · 3 min</span>
+        <h3>The blue note in box 1</h3>
+        <div class="why"><b>Why this card</b>Box 1 reached No lights on Tuesday, so it’s ready to carry one new note: the <span class="acc">♭5</span> (<span class="acc">E♭</span> in A).</div>
+        <div class="row"><span class="bulbs" title="Starts at Full pattern"><i></i><i></i><i></i><i></i></span>Starts at Full pattern<button class="btn" type="button">Start card</button></div>
+      </article>
+    </div>
+    <p class="small" style="margin-bottom:4px">The rest of the page</p>
+    <ol class="later">
+      <li class="done"><span class="k">1</span><div><b>Warm-up · A minor pentatonic, box 1</b><small>Done · 24/24 · no lights</small></div><span class="bulbs"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span></li>
+      <li class="done"><span class="k">2</span><div><b>Focus · Am → C changes</b><small>Done · 23 clean changes</small></div><span class="bulbs"><i></i><i></i><i class="off"></i><i class="off"></i></span></li>
+      <li><span class="k">4</span><div><b>Play-along · 12-bar blues in A</b><small>Generated backing at 80 BPM · 3 min</small></div><span class="bulbs"><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span></li>
+      <li><span class="k">5</span><div><b>Recall · blues box 1 from memory</b><small>Guitar dark · 2 min</small></div><span class="bulbs"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span></li>
+    </ol>
+  </section>
+
+  <!-- ===== Progress ===== -->
+  <section class="screen" id="s-progress" aria-label="Progress">
+    <div class="cal">
+      <p class="small">November</p>
+      <h2>The darkness calendar</h2>
+      <p>Each day is shaded by how much of your practice ran with no lights. Darker days are better days.</p>
+      <div class="grid" id="cal"></div>
+      <div class="legend">Lights on <i style="background:#fdf1cc"></i><i style="background:#c9c3dc"></i><i style="background:#7a7fa8"></i><i style="background:#232c55"></i> Lights off</div>
+    </div>
+    <div class="log">
+      <h3>Lights retired</h3>
+      <ul>
+        <li><time>17 Nov</time><div>A minor pentatonic, box 1 went dark<small>3 clean passes at No lights · mastered 92%</small></div></li>
+        <li><time>12 Nov</time><div>Low E string notes went dark<small>Find the note · 94%</small></div></li>
+        <li><time>8 Nov</time><div>Em → G changes went dark<small>34 changes a minute</small></div></li>
+        <li><time>Next?</time><div>Am → C changes is at Anchors<small>2 of 3 clean passes · due today</small></div></li>
+      </ul>
+    </div>
+    <div class="backup"><button type="button">Export JSON</button><button type="button">Import JSON</button></div>
+  </section>
+
+  <!-- ===== Library ===== -->
+  <section class="screen" id="s-library" aria-label="Library">
+    <div class="seg" role="tablist" id="libTabs">
+      <button role="tab" type="button" data-t="scales" aria-selected="true">Scales</button>
+      <button role="tab" type="button" data-t="chords" aria-selected="false">Chords</button>
+      <button role="tab" type="button" data-t="progs" aria-selected="false">Progressions</button>
+      <button role="tab" type="button" data-t="songs" aria-selected="false">Songs</button>
+    </div>
+    <div id="libBody"></div>
+  </section>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="Main" id="tabbar"></nav>
+
+<script>
+// ---------- Navigation ----------
+const TABS = [
+  ['today', 'Today', '<rect x="5" y="4" width="13" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="M8 4 V2 M15 4 V2" stroke="currentColor" stroke-width="2"/>'],
+  ['practice', 'Practice', '<path d="M8 3 V21 M12 3 V21 M16 3 V21" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.2" fill="currentColor"/>'],
+  ['progress', 'Progress', '<rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="6" y="11" width="4" height="4" fill="currentColor"/><rect x="14" y="7" width="4" height="4" fill="currentColor"/>'],
+  ['library', 'Library', '<path d="M4 5 H10 V19 H4 Z M14 5 L19 6 L17 20 L12 19 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'],
+];
+const tabHTML = (icons) => TABS.map(([id, t, ic]) => `<button role="tab" type="button" data-go="${id}" aria-selected="${id === 'practice'}">${icons ? `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>` : ''}${t}</button>`).join('');
+document.getElementById('tabbar').innerHTML = tabHTML(true);
+document.getElementById('toptabs').innerHTML = tabHTML(false);
+function go(id) {
+  document.querySelectorAll('[role=tab][data-go]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.go === id)));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + id));
+  document.body.classList.toggle('prac', id === 'practice');
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
+
+// ---------- Theory: A blues scale, box 1, standard tuning EADGBE ----------
+const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+const DEG = { 0: '1', 3: '♭3', 5: '4', 6: '♭5', 7: '5', 10: '♭7' };
+const ROOT = 9;
+const BOX = { 6: [5, 8], 5: [5, 6, 7], 4: [5, 7], 3: [5, 7, 8], 2: [5, 8], 1: [5, 8] };
+const SEQ = []; for (const s of [6, 5, 4, 3, 2, 1]) for (const f of BOX[s]) { const iv = (OPEN[s] + f - ROOT + 120) % 12; SEQ.push({ s, f, iv, t: DEG[iv], root: iv === 0, blue: iv === 6 }); }
+const STEP = 3; // three notes played; the target is the ♭5 on the A string, fret 6
+// Anchors (sparse rule): every root plus each string's lowest note.
+const isAnchor = n => n.root || n.f === BOX[n.s][0];
+
+// ---------- Zoomed vertical neck, frets 4–9, with a whole-neck overview strip ----------
+const FROM = 4, TO = 9;
+function neckV(level) {
+  const W = 300, top = 30, H = 380, padX = 42;
+  const step = (H - top - 10) / (TO - FROM + 1);
+  const line = f => top + (f - (FROM - 1)) * step; // line under fret f
+  const mid = f => line(f) - step / 2;
+  const gap = (W - 2 * padX) / 5, x = s => padX + (6 - s) * gap;
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="A blues scale box 1, frets 4 to 9"><defs><radialGradient id="gl"><stop offset="0" stop-color="#e8b43a" stop-opacity=".75"/><stop offset="1" stop-color="#e8b43a" stop-opacity="0"/></radialGradient></defs>`;
+  ['E', 'A', 'D', 'G', 'B', 'E'].forEach((t, i) => g += `<text x="${x(6 - i)}" y="18" text-anchor="middle" font-family="Avenir Next, Segoe UI, sans-serif" font-size="12.5" font-weight="700" fill="#5d6080">${t}</text>`);
+  g += `<rect x="${padX - 20}" y="${top}" width="${W - 2 * padX + 40}" height="${H - top - 10}" rx="4" fill="#f4e9d2"/>`;
+  for (const m of [5, 7, 9]) if (m >= FROM && m <= TO) g += `<circle cx="${W / 2}" cy="${mid(m)}" r="6" fill="#e3d4b3"/>`;
+  for (let f = FROM; f <= TO; f++) {
+    g += `<line x1="${padX - 20}" y1="${line(f)}" x2="${W - padX + 20}" y2="${line(f)}" stroke="#bfa979" stroke-width="2.4"/>`;
+    g += `<text x="13" y="${mid(f) + 4}" text-anchor="middle" font-family="Avenir Next, Segoe UI, sans-serif" font-size="12" font-weight="${[5, 7, 9].includes(f) ? 700 : 500}" fill="${[5, 7, 9].includes(f) ? '#232c55' : '#5d6080'}">${f}</text>`;
+  }
+  g += `<line x1="${padX - 20}" y1="${top}" x2="${W - padX + 20}" y2="${top}" stroke="#bfa979" stroke-width="2.4"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${x(s)}" y1="${top}" x2="${x(s)}" y2="${H - 10}" stroke="#6d6046" stroke-width="${0.7 + s * 0.32}"/>`;
+  const r = 15;
+  SEQ.forEach((n, i) => {
+    let st = null;
+    if (i < STEP) st = 'hit';
+    else if (i === STEP) st = level < 3 ? 'target' : null;
+    else st = level === 0 || (level === 1 && isAnchor(n)) ? 'lit' : null;
+    const cx = x(n.s), cy = mid(n.f);
+    if (!st) { if (n.blue && level <= 1) g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="#4b3fa0" stroke-width="1.6" stroke-dasharray="3 3"/>`; return; }
+    if (st === 'lit' || st === 'target') g += `<circle cx="${cx}" cy="${cy}" r="${r * 2}" fill="url(#gl)"/>`;
+    if (st === 'target') g += `<circle class="pulse" cx="${cx}" cy="${cy}" r="${r + 6}" fill="none" stroke="#4b3fa0" stroke-width="3"/>`;
+    const c = st === 'hit' ? ['#fffdf7', '#4b3fa0', '#4b3fa0'] : n.blue ? ['#4b3fa0', '#342b7a', '#ffffff'] : n.root ? ['#a23b26', '#7c2b1b', '#ffffff'] : ['#e8b43a', '#b98a14', '#232c55'];
+    g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c[0]}" stroke="${c[1]}" stroke-width="${st === 'hit' ? 2 : 1.4}"/>`;
+    g += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="Avenir Next, Segoe UI, sans-serif" font-size="${n.t.length > 1 ? 12.5 : 14}" font-weight="700" fill="${c[2]}">${st === 'hit' ? '✓' : n.t}</text>`;
+  });
+  return g + '</svg>';
+}
+function overview() {
+  const H = 380, top = 30, d = f => 1 - Math.pow(2, -f / 12), yy = f => top + d(f) / d(19) * (H - top - 10);
+  let g = `<svg viewBox="0 0 26 ${H}" preserveAspectRatio="none" aria-label="Frets 4 to 9 of 19"><rect x="6" y="${top}" width="14" height="${H - top - 10}" rx="3" fill="#f4e9d2" stroke="#cdbf9f"/>`;
+  g += `<rect x="3" y="${yy(FROM - 1)}" width="20" height="${yy(TO) - yy(FROM - 1)}" rx="4" fill="rgba(232,180,58,.35)" stroke="#232c55" stroke-width="1.6"/>`;
+  for (let f = 1; f <= 19; f++) g += `<line x1="6" x2="20" y1="${yy(f)}" y2="${yy(f)}" stroke="#bfa979" stroke-width=".8"/>`;
+  g += `<rect x="5" y="${top - 3}" width="16" height="4" rx="1" fill="#232c55"/><text x="13" y="${top - 9}" text-anchor="middle" font-size="9" font-family="Avenir Next, Segoe UI, sans-serif" font-weight="700" fill="#5d6080">0</text><text x="13" y="${H}" text-anchor="middle" font-size="9" font-family="Avenir Next, Segoe UI, sans-serif" font-weight="700" fill="#5d6080">19</text>`;
+  return g + '</svg>';
+}
+
+// ---------- Festoon: one bulb per note of the box, hung on a wire ----------
+function festoon(level) {
+  const n = SEQ.length, W = 300, H = 58, sag = 16;
+  const px = i => 14 + i * (W - 28) / (n - 1), py = i => 10 + sag * Math.sin(Math.PI * i / (n - 1));
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Bulbs lit on the guitar"><defs><radialGradient id="fg"><stop offset="0" stop-color="#ffd75e" stop-opacity=".9"/><stop offset="1" stop-color="#ffd75e" stop-opacity="0"/></radialGradient></defs>`;
+  g += `<path d="M2 8 Q ${W / 2} ${10 + sag * 2} ${W - 2} 8" fill="none" stroke="#232c55" stroke-width="1.4"/>`;
+  let lit = 0;
+  SEQ.forEach((nn, i) => {
+    const on = i >= STEP && (level === 0 || (level === 1 && isAnchor(nn)) || (level < 3 && i === STEP));
+    if (on) lit++;
+    const x = px(i), y = py(i);
+    g += `<line x1="${x}" y1="${y}" x2="${x}" y2="${y + 6}" stroke="#232c55" stroke-width="1.4"/><rect x="${x - 3}" y="${y + 5}" width="6" height="4" fill="#232c55"/>`;
+    if (on) g += `<circle cx="${x}" cy="${y + 16}" r="12" fill="url(#fg)"/>`;
+    g += `<ellipse cx="${x}" cy="${y + 15}" rx="5.5" ry="7" fill="${on ? (nn.blue ? '#7d70d8' : nn.root ? '#e0674e' : '#f3c443') : '#fbf7ed'}" stroke="${on ? '#8a6510' : '#a8a08c'}" stroke-width="1"/>`;
+  });
+  return { svg: g + '</svg>', lit };
+}
+
+// ---------- Dimmer ----------
+const LEVELS = ['Full pattern', 'Anchors', 'Hint on demand', 'No lights'];
+const PASS = ['3 of 3 clean passes', '2 of 3 clean passes', 'unlocks after Anchors', 'recall pass'];
+function setLevel(l) {
+  document.getElementById('neck').innerHTML = neckV(l);
+  const f = festoon(l);
+  document.getElementById('festoon').innerHTML = f.svg;
+  document.getElementById('festCount').innerHTML = l === 3 ? '<b>All bulbs out</b>, guitar dark' : `<b>${f.lit} of ${SEQ.length}</b> bulbs lit on the guitar`;
+  document.getElementById('festNext').textContent = l === 3 ? 'Next: from memory' : 'Next: ♭5 on the A string';
+  document.getElementById('slider').style.left = (12.5 + l * 25) + '%';
+  document.getElementById('plateName').textContent = LEVELS[l];
+  document.getElementById('platePass').textContent = PASS[l];
+  document.querySelectorAll('#marks span').forEach((s, i) => s.classList.toggle('on', i === l));
+}
+document.querySelectorAll('#slot button').forEach(b => b.addEventListener('click', () => setLevel(+b.dataset.l)));
+document.getElementById('overview').innerHTML = overview();
+setLevel(1);
+
+// ---------- Darkness calendar (November; 0 = rest day) ----------
+(function cal() {
+  const share = [0, .1, .15, 0, .2, .25, .2, .3, 0, .35, .3, .45, .4, 0, .5, .45, .55, .5, .62, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1];
+  const col = v => v < 0 ? 'transparent' : v === 0 ? '#fbf7ed' : v < .2 ? '#fdf1cc' : v < .35 ? '#c9c3dc' : v < .5 ? '#7a7fa8' : '#232c55';
+  let h = ['M', 'T', 'W', 'T', 'F', 'S', 'S'].map(d => `<span class="h">${d}</span>`).join('') + '<span class="h"></span>'.repeat(6); // 1 November 2026 is a Sunday
+  share.forEach((v, i) => h += `<span style="background:${col(v)};color:${v >= .35 ? '#fff' : '#3b4470'}${v < 0 ? ';border-style:dashed' : ''}${i === 18 ? ';outline:2px solid #a23b26;outline-offset:1px' : ''}">${i + 1}</span>`);
+  document.getElementById('cal').innerHTML = h;
+})();
+
+// ---------- Library ----------
+const PENT = [[5, 8], [8, 10], [10, 12], [12, 15], [15, 17]];
+const BOXES = [
+  { 6: [5, 8], 5: [5, 7], 4: [5, 7], 3: [5, 7], 2: [5, 8], 1: [5, 8] },
+  { 6: [8, 10], 5: [7, 10], 4: [7, 10], 3: [7, 9], 2: [8, 10], 1: [8, 10] },
+  { 6: [10, 12], 5: [10, 12], 4: [10, 12], 3: [9, 12], 2: [10, 13], 1: [10, 12] },
+  { 6: [12, 15], 5: [12, 15], 4: [12, 14], 3: [12, 14], 2: [13, 15], 1: [12, 15] },
+  { 6: [15, 17], 5: [15, 17], 4: [14, 17], 3: [14, 17], 2: [15, 17], 1: [15, 17] },
+];
+function mini(box, blues) {
+  const fs = Object.values(box).flat(); const lo = Math.min(...fs), hi = Math.max(...fs);
+  const x = s => 6 + (6 - s) * 8.4, y = f => 10 + (f - lo + .5) * 14;
+  let g = `<svg viewBox="0 0 54 ${10 + (hi - lo + 1) * 14 + 4}" aria-hidden="true"><rect x="2" y="10" width="50" height="${(hi - lo + 1) * 14}" rx="2" fill="#f4e9d2"/>`;
+  for (let f = 0; f <= hi - lo + 1; f++) g += `<line x1="2" x2="52" y1="${10 + f * 14}" y2="${10 + f * 14}" stroke="#bfa979" stroke-width=".8"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${x(s)}" x2="${x(s)}" y1="10" y2="${10 + (hi - lo + 1) * 14}" stroke="#6d6046" stroke-width=".7"/>`;
+  for (const s of [6, 5, 4, 3, 2, 1]) for (const f of box[s]) { const iv = (OPEN[s] + f - ROOT + 120) % 12; g += `<circle cx="${x(s)}" cy="${y(f)}" r="3.4" fill="${iv === 0 ? '#a23b26' : '#e8b43a'}"/>`; }
+  if (blues) { [[5, 6], [3, 8]].forEach(([s, f]) => g += `<circle cx="${x(s)}" cy="${y(f)}" r="3.4" fill="#4b3fa0"/>`); }
+  g += `<text x="27" y="8" text-anchor="middle" font-size="8" font-family="Avenir Next, Segoe UI, sans-serif" font-weight="700" fill="#5d6080">${lo}–${hi}</text>`;
+  return g + '</svg>';
+}
+const bulbs = n => `<span class="bulbs">${[0, 1, 2, 3].map(k => `<i class="${k < n ? '' : 'off'}"></i>`).join('')}</span>`;
+const LIB = {
+  scales: () => `
+    <div class="fam"><h3>Minor pentatonic in A</h3><p>Five boxes · box 1 is dark, box 2 is next</p><div class="boxes">${BOXES.map((b, i) => `<button type="button" class="bx">${mini(b)}${bulbs([0, 1, 2, 4, 4][i])}Box ${i + 1}</button>`).join('')}</div></div>
+    <div class="fam"><h3>Blues scale in A</h3><p>Pentatonic plus the blue note (♭5, shown in violet)</p><div class="boxes">${BOXES.map((b, i) => `<button type="button" class="bx${i === 0 ? ' sel' : ''}">${mini(b, i === 0)}${bulbs(i === 0 ? 2 : 4)}Box ${i + 1}</button>`).join('')}</div></div>
+    <div class="libl"><button type="button" class="it"><span><b>Major</b><small>3 notes per string · 7 positions</small></span>${bulbs(3)}</button><button type="button" class="it"><span><b>Find the note</b><small>One note name, every string</small></span>${bulbs(1)}</button></div>`,
+  chords: () => `<div class="libl">${[['Am → C', 'Open chords · fingers 1 and 2 stay', 2], ['G → C', 'Open chords', 1], ['E5 → A5', 'Power chords · 6th and 5th string', 4], ['Em → G', 'Open chords', 0]].map(([t, c, b]) => `<button type="button" class="it"><span><b>${t}</b><small>${c}</small></span>${bulbs(b)}</button>`).join('')}</div>`,
+  progs: () => `<div class="libl">${[['12-bar blues in A', 'A5 – D5 – E5', 4], ['Am – F – C – G', 'i – VI – III – VII', 3], ['C – G – Am – F', 'I – V – vi – IV', 3]].map(([t, c, b]) => `<button type="button" class="it"><span><b>${t}</b><small>${c}</small></span>${bulbs(b)}</button>`).join('')}</div>`,
+  songs: () => `<div class="libl">${[['Amazing Grace', 'G major · 3/4', 3], ['Will the Circle Be Unbroken', 'G major', 2], ['This Little Light of Mine', 'C major', 4], ['Oh! Susanna', 'C major', 3]].map(([t, c, b]) => `<button type="button" class="it"><span><b>${t}</b><small>${c} · generated accompaniment</small></span>${bulbs(b)}</button>`).join('')}</div>`,
+};
+function lib(t) { document.querySelectorAll('#libTabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t))); document.getElementById('libBody').innerHTML = LIB[t](); }
+document.getElementById('libTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) lib(b.dataset.t); });
+lib('scales');
+</script>
+</body>
+</html>

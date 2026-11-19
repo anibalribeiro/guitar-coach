@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Coach light mocks</title>
+<style>
+:root { --bg: #efece6; --panel: #fff; --ink: #1f1d1a; --muted: #6b655c; --line: #d9d3c8; --accent: #b4441f; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+header { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; padding: 12px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+h1 { font-size: 16px; margin: 0; }
+.group { display: flex; gap: 4px; flex-wrap: wrap; }
+button { font: inherit; padding: 6px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--ink); cursor: pointer; }
+button[aria-pressed="true"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.thesis { flex: 1 1 260px; color: var(--muted); font-size: 13px; }
+a { color: var(--accent); }
+main { padding: 16px; display: flex; justify-content: center; }
+.frame { width: 1440px; max-width: 100%; height: calc(100vh - 110px); border: 1px solid var(--line); border-radius: 12px; background: #fff; overflow: hidden; box-shadow: 0 6px 24px rgba(0,0,0,.08); transition: width .2s; }
+.frame.phone { width: 390px; height: min(844px, calc(100vh - 110px)); border-radius: 28px; border: 8px solid #222; }
+iframe { width: 100%; height: 100%; border: 0; display: block; }
+.all { display: none; gap: 16px; padding: 16px; overflow-x: auto; }
+.all .frame { flex: 0 0 auto; }
+body.compare main { display: none; }
+body.compare .all { display: flex; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Guitar Coach · light mocks</h1>
+  <div class="group" id="mocks"></div>
+  <div class="group" id="sizes">
+    <button type="button" data-size="desktop" aria-pressed="true">Desktop</button>
+    <button type="button" data-size="phone" aria-pressed="false">Phone</button>
+    <button type="button" data-size="compare" aria-pressed="false">All phones</button>
+  </div>
+  <div class="thesis" id="thesis"></div>
+</header>
+<main><div class="frame" id="frame"><iframe id="view" title="Mock preview"></iframe></div></main>
+<div class="all" id="all"></div>
+<script>
+const MOCKS = [
+  { file: 'light-1-decrescendo.html', name: '1 · Decrescendo', thesis: 'Today’s session as a line of sheet music; every block gets quieter (fewer lights) until recall is tacet.' },
+  { file: 'light-2-lights-out.html', name: '2 · Lights Out', thesis: 'Home is a map of the neck: each box drawn at the light level you’ve reached; the map is the picker.' },
+  { file: 'light-3-pocket.html', name: '3 · Pocket Coach', thesis: 'Phone-first: bottom tabs, vertical neck as you see it, and a dimmer switch for the light fade.' },
+  { file: 'light-4-changes.html', name: '4 · Changes', thesis: 'Pocket Coach for chords: Am → C with the next shape previewed, a rotary dimmer, an LED mirror, and the session as a playlist.' },
+  { file: 'light-5-notebook.html', name: '5 · Notebook', thesis: 'Pocket Coach as a practice notebook: one session card at a time, a festoon of bulbs for the lights on the guitar, a darkness calendar.' },
+  { file: 'light-6-daylight.html', name: '6 · Daylight Coach', thesis: 'Pocket Coach that talks you through the session: Brighter / Start / Darker on one thumb row, open strings shown honestly as LED-less.' },
+];
+const $ = id => document.getElementById(id);
+let current = 0, size = 'desktop';
+MOCKS.forEach((m, i) => {
+  const b = document.createElement('button');
+  b.type = 'button'; b.textContent = m.name; b.dataset.i = i;
+  $('mocks').append(b);
+  const f = document.createElement('div');
+  f.className = 'frame phone';
+  f.innerHTML = `<iframe title="${m.name}" src="${m.file}"></iframe>`;
+  $('all').append(f);
+});
+function render() {
+  document.querySelectorAll('#mocks button').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.i === current && size !== 'compare')));
+  document.querySelectorAll('#sizes button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.size === size)));
+  document.body.classList.toggle('compare', size === 'compare');
+  $('frame').classList.toggle('phone', size === 'phone');
+  const m = MOCKS[current];
+  if (!$('view').src.endsWith(m.file)) $('view').src = m.file;
+  $('thesis').innerHTML = size === 'compare' ? 'All mocks side by side at phone width.' : `${m.thesis} <a href="${m.file}" target="_blank">Open alone ↗</a>`;
+  try { location.hash = `${current + 1}-${size}`; } catch (e) {}
+}
+$('mocks').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; current = +b.dataset.i; if (size === 'compare') size = 'desktop'; render(); });
+$('sizes').addEventListener('click', e => { const b = e.target.closest('button'); if (b) { size = b.dataset.size; render(); } });
+const [h, s] = location.hash.slice(1).split('-');
+if (h >= 1 && h <= MOCKS.length) current = h - 1;
+if (['desktop', 'phone', 'compare'].includes(s)) size = s;
+render();
+</script>
+</body>
+</html>

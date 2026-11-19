@@ -1,0 +1,415 @@
+<!doctype html>
+<!--
+  LIGHT 1 — DECRESCENDO: "today's session is a score, and the lights are its dynamics"
+
+  Thesis: practice is a 13-minute piece you play top to bottom. The daily session plan is
+  engraved across the top as five measures (warm-up, focus, new material, play-along, recall),
+  and the light fade is written the way a musician already reads "getting quieter":
+  a decrescendo hairpin from f (full pattern) to tacet (no lights). You always know where you
+  are in the piece and how loud the guitar is allowed to be.
+
+  Key UX changes vs. the current UI:
+  - The session plan replaces the Field Book rail as the spine of the page. "Open session" is no
+    longer a card in a sidebar; the session *is* the page, with a playhead on the current block.
+  - The fade becomes the primary control under the neck: a hairpin with four stops (Full pattern,
+    Anchors, Hint on demand, No lights), the clean-pass counter and a live "on the guitar: n LEDs lit".
+  - Key / scale / position pickers and the Scales/Chords/Progressions/Songs tabs move into a
+    "Repertoire" drawer; in a session the plan chooses for you.
+  - Progress, due reviews, tuner and backing track become quiet marginalia in a right column
+    instead of competing panels; guided vs. unguided minutes is the headline stat.
+  - The capability line ("Browser unsupported · Bluetooth …") collapses into one status pill.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Coach — Decrescendo</title>
+<style>
+:root {
+  --paper: #f6f0e3; --paper-2: #efe6d3; --card: #fbf8f1; --rule: #d9cdb5; --rule-2: #c6b796;
+  --ink: #1d2433; --ink-2: #3a4152; --muted: #5d5f66; --verm: #a8361a; --verm-soft: #f3d9cc;
+  --amber: #e7a23b; --amber-glow: #f4c46a; --sage: #4f6b4f; --sage-soft: #dfe6d6;
+  --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+  --sans: "Avenir Next", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--paper); color: var(--ink); font: 400 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased; overflow-x: hidden;
+  background-image: repeating-linear-gradient(0deg, transparent 0 31px, rgba(160,140,100,.06) 31px 32px); }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 2px solid var(--verm); outline-offset: 2px; }
+.eyebrow { font: 600 11px/1.3 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); margin: 0; }
+.dyn { font: italic 700 20px/1 var(--serif); letter-spacing: -.02em; }
+
+/* ---------- Header ---------- */
+.top { display: flex; align-items: center; gap: 16px; padding: 14px 32px; border-bottom: 1px solid var(--rule); background: rgba(251,248,241,.7); }
+.brand { font: 600 24px/1 var(--serif); letter-spacing: -.01em; margin: 0; }
+.brand i { color: var(--verm); font-style: italic; }
+.date { color: var(--muted); font-size: 14px; }
+.top .spacer { flex: 1; }
+.pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--rule-2); border-radius: 999px; padding: 6px 12px; background: var(--card); font-size: 13px; font-weight: 600; }
+.pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--sage); box-shadow: 0 0 0 3px var(--sage-soft); }
+.ghost { border: 1px solid var(--rule-2); background: transparent; border-radius: 8px; padding: 7px 12px; font-size: 14px; font-weight: 600; }
+.ghost:hover { background: var(--card); }
+
+/* ---------- Score (session plan) ---------- */
+.score { padding: 22px 32px 6px; }
+.score-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.score-head h2 { font: 600 22px/1.2 var(--serif); margin: 0; }
+.score-head .meta { color: var(--muted); font-size: 14px; }
+.score-head .tempo { margin-left: auto; font: 600 13px var(--mono); color: var(--ink-2); }
+.staff { position: relative; border: 1px solid var(--rule-2); border-radius: 10px; background: var(--card); overflow: hidden; }
+.measures > li { display: contents; }
+.measures { display: grid; grid-template-columns: 2fr 3fr 3fr 3fr 2fr; list-style: none; margin: 0; padding: 0; }
+.measure { position: relative; padding: 12px 14px 44px; border-left: 2px solid var(--ink); min-width: 0; cursor: pointer; text-align: left; background: transparent; border-top: 0; border-bottom: 0; border-right: 0; }
+.measure:first-child { border-left: 4px double var(--ink); }
+.measure:last-child { border-right: 5px double var(--ink); }
+.measure:hover { background: rgba(231,162,59,.07); }
+.measure .n { font: 600 11px var(--mono); color: var(--muted); }
+.measure .name { display: block; font: 600 16px/1.25 var(--serif); margin-top: 2px; }
+.measure .what { display: block; color: var(--ink-2); font-size: 13px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.measure .min { position: absolute; top: 12px; right: 12px; font: 600 12px var(--mono); color: var(--muted); }
+.measure .dyn { position: absolute; left: 14px; bottom: 12px; color: var(--ink); }
+.measure .state { position: absolute; right: 12px; bottom: 12px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.measure.done .state { color: var(--sage); }
+.measure.now { background: linear-gradient(180deg, rgba(231,162,59,.16), rgba(231,162,59,.04)); }
+.measure.now .state { color: var(--verm); }
+.measure.now::before { content: ""; position: absolute; top: 0; bottom: 0; left: 38%; width: 2px; background: var(--verm); box-shadow: 0 0 0 3px rgba(168,54,26,.12); }
+.hairpin { display: block; width: 100%; height: 22px; border-top: 1px solid var(--rule); background: var(--paper-2); padding: 3px 0; }
+.score-note { color: var(--muted); font-size: 13px; margin: 8px 2px 0; }
+
+/* ---------- Desk ---------- */
+.desk { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 28px; padding: 18px 32px 40px; }
+.lesson-head { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+.lesson-head h1 { font: 600 40px/1.05 var(--serif); margin: 4px 0 6px; letter-spacing: -.015em; }
+.lesson-head h1 em { color: var(--verm); }
+.lesson-head .sub { color: var(--ink-2); margin: 0; }
+.lesson-head .tools { margin-left: auto; display: flex; gap: 8px; flex-wrap: wrap; }
+.chips { display: flex; gap: 6px; margin: 14px 0 12px; flex-wrap: wrap; }
+.chip { border: 1px solid var(--rule-2); border-radius: 6px; padding: 3px 9px; font: 600 13px var(--serif); background: var(--card); }
+.chip small { font: 500 11px var(--mono); color: var(--muted); margin-left: 4px; }
+.chip.root { background: var(--verm); color: #fff; border-color: var(--verm); }
+.chip.root small { color: #fbe3da; }
+
+.neck-wrap { border: 1px solid var(--rule-2); border-radius: 12px; background: #fcfaf4; padding: 10px 8px 4px; overflow-x: auto; position: relative; }
+.neck-wrap svg { display: block; width: 100%; min-width: 900px; height: auto; }
+.neck-cap { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 13px; margin: 8px 2px 0; }
+.neck-cap b { color: var(--ink); }
+@keyframes pulse { 0%,100% { opacity: .9; } 50% { opacity: .15; } }
+.pulse { animation: pulse 1.2s ease-in-out infinite; transform-box: fill-box; }
+
+/* ---------- Fade (decrescendo) ---------- */
+.fade { margin-top: 18px; border: 1px solid var(--rule-2); border-radius: 12px; background: var(--card); padding: 16px 18px 18px; }
+.fade-top { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.fade-top h3 { font: 600 19px var(--serif); margin: 0; }
+.fade-top .why { color: var(--ink-2); font-size: 14px; }
+.ladder { position: relative; display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 14px; }
+.ladder svg.pin { position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 48px; pointer-events: none; }
+.stop { position: relative; z-index: 1; background: none; border: 0; padding: 56px 12px 0 6px; text-align: left; display: flex; flex-direction: column; }
+.stop .dyn { color: var(--muted); margin-bottom: 4px; }
+.stop .lbl { font-weight: 700; font-size: 14px; }
+.stop .desc { color: var(--muted); font-size: 12.5px; line-height: 1.35; }
+.stop[aria-pressed="true"] .dyn { color: var(--verm); }
+.stop[aria-pressed="true"] .lbl { color: var(--verm); }
+.stop[aria-pressed="true"]::after { content: ""; position: absolute; left: 6px; right: 12px; bottom: -8px; height: 3px; border-radius: 2px; background: var(--verm); }
+.passes { display: flex; align-items: center; gap: 10px; margin-top: 20px; padding-top: 12px; border-top: 1px dashed var(--rule-2); flex-wrap: wrap; font-size: 14px; color: var(--ink-2); }
+.pips { display: inline-flex; gap: 5px; }
+.pips i { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--sage); }
+.pips i.on { background: var(--sage); }
+.passes .led { margin-left: auto; font: 600 13px var(--mono); color: var(--ink); }
+
+.drillbar { display: flex; align-items: center; gap: 14px; margin-top: 16px; flex-wrap: wrap; }
+.beats { display: flex; gap: 7px; }
+.beats i { width: 12px; height: 12px; border-radius: 50%; background: var(--rule); }
+.beats i.on { background: var(--verm); box-shadow: 0 0 0 4px rgba(168,54,26,.15); }
+.tally { font: 600 15px var(--mono); }
+.tally small { color: var(--muted); font-weight: 500; }
+.drillbar .grow { flex: 1; }
+.primary { background: var(--ink); color: #fbf8f1; border: 0; border-radius: 10px; padding: 12px 22px; font-size: 16px; font-weight: 700; }
+.primary:hover { background: #2c3550; }
+.secondary { background: var(--card); border: 1.5px solid var(--ink); border-radius: 10px; padding: 10.5px 18px; font-size: 15px; font-weight: 700; }
+.mic { font-size: 13px; color: var(--muted); }
+.mic b { color: var(--ink); }
+
+/* ---------- Marginalia ---------- */
+.margin { border-left: 1px solid var(--rule); padding-left: 24px; display: grid; gap: 22px; align-content: start; }
+.margin h4 { font: 600 17px var(--serif); margin: 2px 0 8px; }
+.big { font: 600 34px/1 var(--serif); }
+.big small { font: 500 14px var(--sans); color: var(--muted); }
+.bar { height: 12px; border-radius: 6px; background: var(--paper-2); overflow: hidden; display: flex; margin: 10px 0 6px; border: 1px solid var(--rule); }
+.bar span { display: block; height: 100%; }
+.legend { display: flex; gap: 14px; font-size: 12.5px; color: var(--ink-2); flex-wrap: wrap; }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.skills { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+.skills li { display: grid; grid-template-columns: 1fr auto; gap: 2px 8px; align-items: center; font-size: 14px; }
+.skills small { grid-column: 1 / -1; color: var(--muted); font-size: 12.5px; }
+.rungs { display: inline-flex; gap: 3px; }
+.rungs i { width: 14px; height: 6px; border-radius: 2px; background: var(--amber); }
+.rungs i.off { background: transparent; border: 1.5px solid var(--ink-2); }
+.due { color: var(--verm); font-weight: 700; font-size: 12px; }
+.toolrow { display: grid; gap: 8px; }
+.tool { display: flex; align-items: center; gap: 10px; border: 1px solid var(--rule); border-radius: 10px; padding: 9px 12px; background: var(--card); font-size: 14px; text-align: left; width: 100%; }
+.tool b { display: block; }
+.tool span { color: var(--muted); font-size: 12.5px; }
+.tool svg { flex: none; }
+
+/* ---------- Repertoire drawer ---------- */
+.rep { margin: 0 32px 40px; border-top: 2px solid var(--ink); padding-top: 14px; }
+.rep summary { cursor: pointer; font: 600 19px var(--serif); list-style: none; display: flex; align-items: center; gap: 10px; }
+.rep summary::-webkit-details-marker { display: none; }
+.rep summary span { font: 400 14px var(--sans); color: var(--muted); }
+@media (max-width: 640px) { .rep summary { flex-direction: column; align-items: flex-start; gap: 2px; } .top .pill { font-size: 12px; } }
+.rep-tabs { display: flex; gap: 4px; margin: 14px 0; flex-wrap: wrap; }
+.rep-tabs button { border: 1px solid var(--rule-2); background: var(--card); border-radius: 999px; padding: 6px 14px; font-weight: 600; font-size: 14px; }
+.rep-tabs button[aria-selected="true"] { background: var(--ink); color: #fbf8f1; border-color: var(--ink); }
+.rep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.rep-item { border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; background: var(--card); text-align: left; }
+.rep-item b { display: block; font-family: var(--serif); font-size: 16px; }
+.rep-item span { color: var(--muted); font-size: 13px; }
+.backup { margin-top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; color: var(--muted); font-size: 13px; }
+
+/* ---------- Phone ---------- */
+@media (max-width: 1100px) {
+  .desk { grid-template-columns: minmax(0, 1fr); }
+  .margin { border-left: 0; border-top: 1px solid var(--rule); padding: 20px 0 0; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+}
+@media (max-width: 640px) {
+  .top { padding: 10px 16px; gap: 10px; flex-wrap: wrap; }
+  .brand { font-size: 21px; }
+  .date, .top .ghost.hide-sm { display: none; }
+  .score, .desk { padding-left: 16px; padding-right: 16px; }
+  .rep { margin: 0 16px 32px; }
+  .staff { overflow-x: auto; }
+  .measures { grid-template-columns: 110px 150px 150px 150px 110px; width: max-content; }
+  .hairpin { width: 670px; }
+  .staff { display: block; }
+  .score-head .tempo { margin-left: 0; }
+  .lesson-head h1 { font-size: 30px; }
+  .lesson-head .tools { margin-left: 0; }
+  .neck-wrap svg { min-width: 760px; }
+  .ladder { grid-template-columns: repeat(2, 1fr); row-gap: 14px; }
+  .ladder svg.pin { display: none; }
+  .stop { border: 1px solid var(--rule); border-radius: 10px; padding: 8px 10px; }
+  .stop[aria-pressed="true"] { border-color: var(--verm); background: #fdf1ea; }
+  .stop[aria-pressed="true"]::after { display: none; }
+  .passes .led { margin-left: 0; }
+  .drillbar .grow { display: none; }
+  .primary, .secondary { flex: 1; }
+  .margin { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<header class="top">
+  <p class="brand">Guitar <i>Coach</i></p>
+  <span class="date">Thursday 19 November · day 12 of your streak</span>
+  <span class="spacer"></span>
+  <span class="pill" title="Chrome · Bluetooth · Microphone · Offline ready"><span class="dot"></span>T2 connected · 82%</span>
+  <button class="ghost hide-sm" type="button">Repertoire</button>
+  <button class="ghost" type="button" aria-label="More">···</button>
+</header>
+
+<section class="score" aria-labelledby="scoreTitle">
+  <div class="score-head">
+    <h2 id="scoreTitle">Today’s session</h2>
+    <span class="meta">13 minutes · five blocks · each block plays a little quieter</span>
+    <span class="tempo">♩ = 72 · count-in 1 bar</span>
+  </div>
+  <div class="staff">
+    <ol class="measures" id="measures">
+      <li><button class="measure done" type="button" data-i="0"><span class="n">I</span><span class="name">Warm-up</span><span class="what">A minor pentatonic, box 1</span><span class="min">2′</span><span class="dyn">f</span><span class="state">✓ 24/24</span></button></li>
+      <li><button class="measure now" type="button" data-i="1"><span class="n">II</span><span class="name">Focus</span><span class="what">C major, 8th-fret position · due</span><span class="min">3′</span><span class="dyn">mp</span><span class="state">playing</span></button></li>
+      <li><button class="measure" type="button" data-i="2"><span class="n">III</span><span class="name">New material</span><span class="what">Power chords E5 → A5</span><span class="min">3′</span><span class="dyn">f</span><span class="state">next</span></button></li>
+      <li><button class="measure" type="button" data-i="3"><span class="n">IV</span><span class="name">Play-along</span><span class="what">12-bar blues in A · backing track</span><span class="min">3′</span><span class="dyn">p</span><span class="state"></span></button></li>
+      <li><button class="measure" type="button" data-i="4"><span class="n">V</span><span class="name">Recall</span><span class="what">C major from memory</span><span class="min">2′</span><span class="dyn">tacet</span><span class="state"></span></button></li>
+    </ol>
+    <svg class="hairpin" viewBox="0 0 1000 18" preserveAspectRatio="none" aria-hidden="true"><path d="M8 2 L992 9 M8 16 L992 9" stroke="#1d2433" stroke-width="1.4" fill="none" vector-effect="non-scaling-stroke" opacity=".55"/></svg>
+  </div>
+  <p class="score-note">The dynamic under each block is the light level it starts at. Recall is always tacet: the guitar stays dark and the screen hides the notes.</p>
+</section>
+
+<main class="desk">
+  <article>
+    <div class="lesson-head">
+      <div>
+        <p class="eyebrow">Block II · Focus · review due since Tuesday</p>
+        <h1>C major, <em>8th-fret</em> position</h1>
+        <p class="sub">Three notes per string · up and back down · labels: scale degrees</p>
+      </div>
+      <div class="tools">
+        <button class="ghost" type="button">Key C ▾</button>
+        <button class="ghost" type="button">Degrees ▾</button>
+        <button class="ghost" type="button">▶ Demo clip</button>
+      </div>
+    </div>
+    <div class="chips" id="chips"></div>
+    <div class="neck-wrap" id="neckWrap"></div>
+    <div class="neck-cap"><span>Next note: <b id="nextNote">G · 5th string, fret 10</b></span><span>Scroll the neck sideways · arrows move, Enter plays</span></div>
+
+    <section class="fade" aria-labelledby="fadeTitle">
+      <div class="fade-top">
+        <h3 id="fadeTitle">Decrescendo</h3>
+        <span class="why" id="fadeWhy">Three clean passes take a hint away. Two missed passes bring it back.</span>
+      </div>
+      <div class="ladder" role="group" aria-label="Light level">
+        <svg class="pin" viewBox="0 0 1000 56" preserveAspectRatio="none" aria-hidden="true">
+          <defs><linearGradient id="hp" x1="0" x2="1"><stop offset="0" stop-color="#e7a23b" stop-opacity=".55"/><stop offset=".75" stop-color="#e7a23b" stop-opacity=".08"/><stop offset="1" stop-color="#e7a23b" stop-opacity="0"/></linearGradient></defs>
+          <path d="M0 3 L1000 22 L0 41 Z" fill="url(#hp)"/>
+          <path d="M0 3 L1000 22 L0 41" fill="none" stroke="#1d2433" stroke-width="1.5" vector-effect="non-scaling-stroke"/>
+        </svg>
+        <button class="stop" type="button" data-l="0" aria-pressed="false"><span class="dyn">f</span><span class="lbl">Full pattern</span><span class="desc">Every note in the box is lit.</span></button>
+        <button class="stop" type="button" data-l="1" aria-pressed="true"><span class="dyn">mp</span><span class="lbl">Anchors</span><span class="desc">Roots and each string’s first and last note.</span></button>
+        <button class="stop" type="button" data-l="2" aria-pressed="false"><span class="dyn">p</span><span class="lbl">Hint on demand</span><span class="desc">Dark until you ask; the note flashes for one beat.</span></button>
+        <button class="stop" type="button" data-l="3" aria-pressed="false"><span class="dyn">tacet</span><span class="lbl">No lights</span><span class="desc">You play it from memory.</span></button>
+      </div>
+      <div class="passes">
+        <span class="pips" aria-label="2 of 3 clean passes"><i class="on"></i><i class="on"></i><i></i></span>
+        <span id="passText">2 of 3 clean passes at Anchors — one more and the middle notes go dark.</span>
+        <span class="led" id="ledCount">On the T2: 13 of 18 LEDs</span>
+      </div>
+    </section>
+
+    <div class="drillbar">
+      <span class="beats" aria-label="Beat 2 of 4"><i></i><i class="on"></i><i></i><i></i></span>
+      <span class="tally">4 / 18 <small>· pass 3 · timing ±38 ms</small></span>
+      <span class="grow"></span>
+      <span class="mic"><b>Mic scoring on</b> · or self-report</span>
+      <button class="secondary" type="button">Check recall</button>
+      <button class="primary" type="button">Pause drill</button>
+    </div>
+  </article>
+
+  <aside class="margin" aria-label="Progress and tools">
+    <section>
+      <p class="eyebrow">This week</p>
+      <div class="big">31 <small>of 94 min unguided</small></div>
+      <div class="bar" aria-hidden="true"><span style="width:33%;background:var(--ink)"></span><span style="width:67%;background:var(--amber-glow)"></span></div>
+      <div class="legend"><span><i style="background:var(--ink)"></i>Unguided (no lights)</span><span><i style="background:var(--amber-glow)"></i>With lights</span></div>
+    </section>
+    <section>
+      <h4>Where each skill sits</h4>
+      <ul class="skills">
+        <li>A minor pentatonic, box 1 <span class="rungs" title="No lights"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span><small>No lights · mastered 92%</small></li>
+        <li>C major, 8th fret <span class="rungs" title="Anchors"><i></i><i></i><i class="off"></i><i class="off"></i></span><small>Anchors · <span class="due">due today</span></small></li>
+        <li>Find the note: A <span class="rungs" title="Hint on demand"><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span><small>Hint on demand · 71%</small></li>
+        <li>Am → C changes <span class="rungs" title="Full pattern"><i></i><i></i><i></i><i class="off"></i></span><small>Full pattern · <span class="due">due today</span></small></li>
+        <li>Power chords E5 → A5 <span class="rungs" title="New"><i></i><i></i><i></i><i></i></span><small>New today · full pattern</small></li>
+      </ul>
+    </section>
+    <section class="toolrow">
+      <h4>On the stand</h4>
+      <button class="tool" type="button"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><circle cx="13" cy="13" r="11" fill="none" stroke="#4f6b4f" stroke-width="2"/><path d="M13 13 L13 4" stroke="#4f6b4f" stroke-width="2.4" stroke-linecap="round"/></svg><div><b>Tuner</b><span>Low E 82.4 Hz · in tune</span></div></button>
+      <button class="tool" type="button"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><path d="M8 20 L12 5 L14 5 L18 20 Z" fill="none" stroke="#1d2433" stroke-width="1.8"/><path d="M13 16 L19 8" stroke="#a8361a" stroke-width="2" stroke-linecap="round"/></svg><div><b>Metronome &amp; drone</b><span>72 BPM · C drone · backing off</span></div></button>
+      <button class="tool" type="button"><svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="3" y="6" width="20" height="14" rx="3" fill="none" stroke="#1d2433" stroke-width="1.8"/><path d="M11 10 L16 13 L11 16 Z" fill="#a8361a"/></svg><div><b>Watch &amp; read</b><span>3-notes-per-string shapes · 0:42 clip</span></div></button>
+    </section>
+  </aside>
+</main>
+
+<details class="rep">
+  <summary>Repertoire <span>— pick anything outside today’s plan. Choosing here leaves the session paused, not lost.</span></summary>
+  <div class="rep-tabs" role="tablist">
+    <button role="tab" aria-selected="true" type="button">Scales</button><button role="tab" aria-selected="false" type="button">Chords</button><button role="tab" aria-selected="false" type="button">Progressions</button><button role="tab" aria-selected="false" type="button">Songs</button>
+  </div>
+  <div class="rep-grid">
+    <button class="rep-item" type="button"><b>Minor pentatonic</b><span>5 boxes · any key</span></button>
+    <button class="rep-item" type="button"><b>Major pentatonic</b><span>5 boxes · any key</span></button>
+    <button class="rep-item" type="button"><b>Blues scale</b><span>Pentatonic + ♭5 · blues note</span></button>
+    <button class="rep-item" type="button"><b>Major</b><span>3 notes per string · 7 positions</span></button>
+    <button class="rep-item" type="button"><b>Natural minor</b><span>3 notes per string · 7 positions</span></button>
+  </div>
+  <div class="backup">Progress lives in this browser only. <button class="ghost" type="button">Export JSON</button><button class="ghost" type="button">Import JSON</button></div>
+</details>
+
+<script>
+// ---------- Theory (standard tuning EADGBE) ----------
+const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const DEG = { 0: '1', 2: '2', 4: '3', 5: '4', 7: '5', 9: '6', 11: '7' };
+const STRING_NAME = { 1: '1st', 2: '2nd', 3: '3rd', 4: '4th', 5: '5th', 6: '6th' };
+// 3-notes-per-string C major box from C on the 6th string, 8th fret.
+function threeNps(rootMidi, ivs) {
+  const pcs = ivs.map(i => (rootMidi + i) % 12);
+  const out = []; let m = rootMidi;
+  for (let s = 6; s >= 1; s--) for (let k = 0; k < 3; k++) {
+    while (!pcs.includes(m % 12)) m++;
+    out.push({ s, f: m - OPEN[s], midi: m, iv: (m - rootMidi + 120) % 12 }); m++;
+  }
+  return out;
+}
+const BOX = threeNps(48, [0, 2, 4, 5, 7, 9, 11]);
+const bounds = {}; BOX.forEach(n => { const b = bounds[n.s] || (bounds[n.s] = [99, -1]); b[0] = Math.min(b[0], n.f); b[1] = Math.max(b[1], n.f); });
+const ANCHORS = BOX.filter(n => n.iv === 0 || n.f === bounds[n.s][0] || n.f === bounds[n.s][1]);
+const STEP = 4; // four notes played, fifth is the target
+
+// ---------- Neck renderer (inline SVG, real fret spacing) ----------
+function neckSVG(o) {
+  const L = o.len, C = o.cross, f0 = o.from, F = o.to, openW = 34, padA = 10, padB = 16, numH = 26;
+  const d = f => 1 - Math.pow(2, -f / 12);
+  const usable = L - padA - padB - openW;
+  const line = f => padA + openW + (d(f) - d(f0)) / (d(F) - d(f0)) * usable;
+  const mid = f => f === 0 ? padA + openW / 2 : (line(f - 1) + line(f)) / 2;
+  const sPad = 16, gap = (C - 2 * sPad) / 5, sp = s => sPad + (s - 1) * gap;
+  let g = `<svg viewBox="0 0 ${L} ${C + numH}" role="img" aria-label="${o.label}"><defs><radialGradient id="glow"><stop offset="0" stop-color="#f4c46a" stop-opacity=".9"/><stop offset="1" stop-color="#f4c46a" stop-opacity="0"/></radialGradient></defs>`;
+  for (const m of [3, 5, 7, 9, 15, 17, 19]) g += `<circle cx="${mid(m)}" cy="${C / 2}" r="5" fill="#e4d8bf"/>`;
+  g += `<circle cx="${mid(12)}" cy="${sp(2) + gap / 2}" r="5" fill="#e4d8bf"/><circle cx="${mid(12)}" cy="${sp(4) + gap / 2}" r="5" fill="#e4d8bf"/>`;
+  if (o.region) { const [a, b] = o.region; g += `<rect x="${line(a - 1) + 2}" y="4" width="${line(b) - line(a - 1) - 4}" height="${C - 8}" rx="10" fill="none" stroke="#a8361a" stroke-width="1.5" stroke-dasharray="5 5"/>`; }
+  for (let f = 1; f <= F; f++) g += `<line x1="${line(f)}" y1="${sp(1) - 6}" x2="${line(f)}" y2="${sp(6) + 6}" stroke="#a99a7c" stroke-width="1.6"/>`;
+  g += `<rect x="${line(0) - 4}" y="${sp(1) - 8}" width="6" height="${sp(6) - sp(1) + 16}" rx="2" fill="#1d2433"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${padA}" y1="${sp(s)}" x2="${L - padB + 8}" y2="${sp(s)}" stroke="#3a4152" stroke-width="${0.7 + s * 0.28}" opacity=".75"/>`;
+  for (let f = 1; f <= F; f++) g += `<text x="${mid(f)}" y="${C + 18}" text-anchor="middle" font-family="SF Mono, Menlo, monospace" font-size="12" font-weight="${[3, 5, 7, 9, 12, 15, 17, 19].includes(f) ? 700 : 400}" fill="${[3, 5, 7, 9, 12, 15, 17, 19].includes(f) ? '#1d2433' : '#6b6a66'}">${f}</text>`;
+  for (const n of o.notes) {
+    const x = mid(n.f), y = sp(n.s), r = 12.5;
+    if (n.r === 'lit' || n.r === 'root' || n.r === 'target') g += `<circle cx="${x}" cy="${y}" r="${r * 2}" fill="url(#glow)"/>`;
+    if (n.r === 'target') g += `<circle class="pulse" cx="${x}" cy="${y}" r="${r + 5}" fill="none" stroke="#a8361a" stroke-width="2.5"/>`;
+    const sty = { lit: ['#f4c46a', '#b9832a', '#1d2433'], root: ['#a8361a', '#7d2711', '#ffffff'], target: ['#1d2433', '#1d2433', '#ffffff'], hit: ['#fbf8f1', '#4f6b4f', '#4f6b4f'], ghost: ['#fbf8f1', '#c6b796', '#8a8471'] }[n.r];
+    g += `<circle cx="${x}" cy="${y}" r="${r}" fill="${sty[0]}" stroke="${sty[1]}" stroke-width="${n.r === 'hit' ? 2 : 1.2}"/>`;
+    g += `<text x="${x}" y="${y + 4.5}" text-anchor="middle" font-family="Iowan Old Style, Palatino, Georgia, serif" font-size="13" font-weight="700" fill="${sty[2]}">${n.t}</text>`;
+  }
+  return g + '</svg>';
+}
+
+// ---------- Render by fade level ----------
+const LV = [
+  { why: 'Every note of the box is lit on the guitar and on screen.', pass: '3 of 3 clean passes at Full pattern — moved down to Anchors on Tuesday.' },
+  { why: 'Three clean passes take a hint away. Two missed passes bring it back.', pass: '2 of 3 clean passes at Anchors — one more and the middle notes go dark.' },
+  { why: 'The guitar is dark. Tap “?” or press H and the next note flashes for one beat.', pass: 'Hint on demand unlocks after 3 clean passes at Anchors.' },
+  { why: 'Nothing lights. The dashed frame is the only thing the screen keeps.', pass: 'No-light recall is the block that counts toward mastery.' },
+];
+function render(level) {
+  const seq = BOX; // ascending order
+  const target = seq[STEP];
+  let notes = [];
+  if (level === 0) notes = seq.map((n, i) => ({ ...n, r: i < STEP ? 'hit' : i === STEP ? 'target' : n.iv === 0 ? 'root' : 'lit' }));
+  if (level === 1) notes = seq.map((n, i) => {
+    const anchor = ANCHORS.includes(n);
+    if (i < STEP) return { ...n, r: 'hit' };
+    if (i === STEP) return { ...n, r: 'target' };
+    return { ...n, r: anchor ? (n.iv === 0 ? 'root' : 'lit') : 'ghost' };
+  }).filter(n => n.r !== 'ghost' || false);
+  if (level === 2) notes = seq.slice(0, STEP).map(n => ({ ...n, r: 'hit' })).concat([{ ...target, r: 'target' }]);
+  if (level === 3) notes = seq.slice(0, STEP).map(n => ({ ...n, r: 'hit' }));
+  notes = notes.map(n => ({ ...n, t: DEG[n.iv] }));
+  document.getElementById('neckWrap').innerHTML = neckSVG({ len: 1180, cross: 190, from: 0, to: 19, notes, region: level === 3 ? [8, 13] : null, label: 'C major, 8th-fret position on the neck' });
+  const lit = { 0: BOX.length - STEP, 1: ANCHORS.filter(n => BOX.indexOf(n) >= STEP).length + (ANCHORS.includes(target) ? 0 : 1), 2: 1, 3: 0 }[level];
+  document.getElementById('ledCount').textContent = level === 3 ? 'On the T2: all LEDs dark' : `On the T2: ${lit} of ${BOX.length} LEDs lit`;
+  document.getElementById('fadeWhy').textContent = LV[level].why;
+  document.getElementById('passText').textContent = LV[level].pass;
+  document.querySelectorAll('.stop').forEach(b => b.setAttribute('aria-pressed', String(+b.dataset.l === level)));
+  document.getElementById('nextNote').textContent = level === 3 ? 'from memory — 5th string next' : `${NAMES[target.midi % 12]} · ${STRING_NAME[target.s]} string, fret ${target.f}`;
+}
+document.querySelectorAll('.stop').forEach(b => b.addEventListener('click', () => render(+b.dataset.l)));
+document.getElementById('chips').innerHTML = [0, 2, 4, 5, 7, 9, 11].map(iv => `<span class="chip${iv ? '' : ' root'}">${NAMES[iv]}<small>${DEG[iv]}</small></span>`).join('');
+document.querySelectorAll('.measure').forEach(m => m.addEventListener('click', () => {
+  document.querySelectorAll('.measure').forEach(x => x.classList.remove('now'));
+  m.classList.add('now');
+}));
+document.querySelectorAll('.rep-tabs button').forEach(b => b.addEventListener('click', () => document.querySelectorAll('.rep-tabs button').forEach(x => x.setAttribute('aria-selected', String(x === b)))));
+render(1);
+// Bring the active box and the current block into view inside their own scrollers.
+const nw = document.getElementById('neckWrap'); nw.scrollLeft = (nw.scrollWidth - nw.clientWidth) * 0.6;
+const st = document.querySelector('.staff'); st.scrollLeft = 70;
+</script>
+</body>
+</html>

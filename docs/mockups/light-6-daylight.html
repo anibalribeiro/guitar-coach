@@ -1,0 +1,419 @@
+<!doctype html>
+<!--
+  LIGHT 6 — DAYLIGHT COACH: "Pocket Coach that talks you through the session; brighter / darker are thumb buttons"
+
+  Thesis: a beginner on day 3 doesn't want a dashboard. They want a coach who says what to do
+  next and why, and who visibly takes the lights away when they've earned it. This Pocket Coach
+  variation turns Today into a short coach conversation, and puts the dimmer on the same thumb
+  row as Start: Brighter, Start, Darker. The drill shown is the open-position E minor pentatonic.
+  It shows something the hardware really does: open strings have no LED, so dimming the open
+  position leaves the guitar almost dark very quickly.
+
+  What changes vs. light-3 Pocket Coach (same four tabs, vertical neck, dimmer and Start ring):
+  - Palette and type: daylight white and sky, navy ink, cobalt actions, marigold LEDs and raspberry
+    roots, set in a geometric sans (Futura / Century Gothic).
+  - Fade: the dimmer is a push-button switch, Brighter / Darker, either side of Start, with four lamps
+    above it. The "lights on the guitar" readout is a large count (lit vs. dark LEDs) plus the
+    number of clean passes until the next fade.
+  - Today: a coach conversation. Short messages, a result card after each finished block
+    ("lights went down to Anchors") and one Continue button.
+  - Progress: the neck you own drawn vertically (frets 0–19, shaded where you play with no lights),
+    plus per-family bars showing how many skills sit at each light level.
+  - Library: Songs first, each with its chord line and a play-along whose lights fade per verse.
+    Scales, Chords and Progressions are tabs alongside.
+  - Desktop: no side panes. One centred stage (coach notes | vertical neck | controls); the other
+    tabs replace the stage instead of sitting next to it. The least dense desktop of the set.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Coach — Daylight</title>
+<style>
+:root {
+  --bg: #f4f8fc; --sky: #e3eefb; --surface: #ffffff; --line: #d6e1ee; --line-2: #b7c7da;
+  --ink: #13233a; --ink-2: #2c3e57; --muted: #52637a; --cobalt: #2a53c4; --cobalt-soft: #dfe7fb;
+  --marigold: #ffb12e; --marigold-soft: #ffeac2; --rasp: #bf2d60; --mint: #1d7f55; --mint-soft: #d9f1e5;
+  --geo: Futura, "Futura PT", "Century Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 500 15.5px/1.45 var(--geo); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+.eyebrow { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+/* ---------- Shell ---------- */
+.appbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: rgba(244,248,252,.94); backdrop-filter: blur(8px); }
+.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 18px; white-space: nowrap; }
+.appbar .sp { flex: 1; }
+.conn { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 13px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--line-2) inset; }
+.conn i { width: 8px; height: 8px; border-radius: 50%; background: var(--mint); }
+.pills { display: none; }
+.screens { padding: 0 16px 96px; }
+.screen { display: none; }
+.screen.on { display: block; }
+.tabbar { position: fixed; left: 12px; right: 12px; bottom: calc(10px + env(safe-area-inset-bottom)); z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--ink); border-radius: 22px; padding: 6px; box-shadow: 0 12px 30px -12px rgba(19,35,58,.6); }
+.tabbar button { border: 0; background: none; display: grid; justify-items: center; gap: 1px; padding: 6px 0; border-radius: 16px; font-size: 11.5px; font-weight: 700; color: #b9c6da; }
+.tabbar button[aria-selected="true"] { background: #ffffff; color: var(--ink); }
+
+/* ---------- Practice ---------- */
+.steps { display: grid; grid-template-columns: 2fr 3fr 3fr 3fr 2fr; gap: 4px; margin: 4px 0 10px; }
+.steps i { height: 6px; border-radius: 3px; background: var(--line); }
+.steps i.done { background: var(--mint); }
+.steps i.now { background: linear-gradient(90deg, var(--cobalt) 45%, var(--line) 45%); }
+.head h1 { font-size: 25px; line-height: 1.12; margin: 2px 0 2px; letter-spacing: -.01em; }
+.head p { margin: 0; color: var(--muted); font-size: 14px; }
+.bubble { position: relative; margin: 12px 0 12px; background: var(--surface); border-radius: 18px 18px 18px 6px; padding: 10px 14px; box-shadow: 0 1px 0 var(--line), 0 6px 18px -14px rgba(19,35,58,.5); font-size: 14.5px; color: var(--ink-2); display: flex; gap: 10px; align-items: flex-start; }
+.bubble b { color: var(--ink); }
+.avatar { flex: none; width: 30px; height: 30px; border-radius: 50%; background: var(--cobalt); display: grid; place-items: center; }
+.neck { background: var(--surface); border-radius: 24px; padding: 10px 6px 6px; box-shadow: 0 1px 0 var(--line), 0 12px 30px -22px rgba(19,35,58,.6); }
+.neck svg { display: block; width: 100%; height: auto; max-height: 360px; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .2; } }
+.pulse { animation: pulse 1.1s ease-in-out infinite; }
+.readout { display: grid; grid-template-columns: auto auto 1fr; gap: 14px; align-items: center; margin-top: 12px; background: var(--sky); border-radius: 18px; padding: 10px 14px; }
+.readout .num { font-size: 30px; font-weight: 700; line-height: 1; letter-spacing: -.02em; }
+.readout .num small { display: block; font-size: 11.5px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); margin-top: 3px; }
+.readout .num.lit { color: #a86a00; }
+.readout p { margin: 0; font-size: 13.5px; color: var(--ink-2); }
+.lamps { display: flex; justify-content: center; gap: 18px; margin: 14px 0 6px; }
+.lamp { display: grid; justify-items: center; gap: 2px; font-size: 11px; font-weight: 700; color: var(--muted); width: 62px; text-align: center; line-height: 1.15; border: 0; background: none; padding: 0; }
+.lamp svg { display: block; }
+.lamp[aria-pressed="true"] { color: var(--ink); }
+.thumb { display: grid; grid-template-columns: 1fr auto 1fr; gap: 12px; align-items: center; margin-top: 6px; }
+.dimbtn { height: 64px; border-radius: 20px; border: 0; background: var(--surface); box-shadow: 0 0 0 1.5px var(--line-2) inset; display: grid; justify-items: center; align-content: center; gap: 2px; font-size: 13px; font-weight: 700; }
+.dimbtn.dark { background: var(--ink); color: #fff; box-shadow: none; }
+.dimbtn:disabled { opacity: .45; cursor: default; }
+.start { position: relative; width: 110px; height: 110px; border-radius: 50%; border: 0; background: var(--cobalt); color: #fff; font-weight: 700; font-size: 18px; line-height: 1.1; box-shadow: 0 16px 28px -14px rgba(42,83,196,.9); }
+.start svg { position: absolute; inset: -10px; width: calc(100% + 20px); height: calc(100% + 20px); }
+.start small { display: block; font-size: 12px; font-weight: 600; opacity: .92; margin-top: 2px; }
+.sess { display: none; margin-top: 16px; }
+.sess li { list-style: none; display: flex; justify-content: space-between; gap: 8px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.sess ol { padding: 0; margin: 6px 0 0; }
+.sess li.now { font-weight: 700; color: var(--cobalt); }
+.sess li.done { color: var(--muted); }
+.recall { display: block; margin: 14px auto 0; border: 0; background: none; color: var(--cobalt); font-weight: 700; font-size: 15px; text-decoration: underline; text-underline-offset: 4px; }
+
+/* ---------- Today: coach conversation ---------- */
+.chat { display: grid; gap: 10px; padding-top: 8px; }
+.msg { max-width: 88%; background: var(--surface); border-radius: 18px 18px 18px 6px; padding: 10px 14px; box-shadow: 0 1px 0 var(--line); font-size: 15px; }
+.msg.me { justify-self: end; background: var(--cobalt); color: #fff; border-radius: 18px 18px 6px 18px; box-shadow: none; }
+.who { display: flex; gap: 8px; align-items: center; font-size: 12px; font-weight: 700; color: var(--muted); }
+.result { background: var(--surface); border-radius: 18px; padding: 12px 14px; border: 1.5px solid var(--mint); display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; }
+.result b { font-size: 16px; }
+.result small { color: var(--muted); font-size: 13px; grid-column: 1; }
+.result .chg { grid-row: 1 / span 2; grid-column: 2; align-self: center; text-align: center; font-size: 12px; font-weight: 700; color: var(--mint); }
+.lampsrow { display: inline-flex; gap: 3px; }
+.lampsrow i { width: 9px; height: 13px; border-radius: 50% 50% 40% 40%; background: var(--marigold); }
+.lampsrow i.off { background: var(--line); }
+.plan { display: flex; gap: 6px; flex-wrap: wrap; }
+.plan span { font-size: 12.5px; font-weight: 700; padding: 4px 10px; border-radius: 999px; background: var(--sky); color: var(--ink-2); }
+.plan span.done { background: var(--mint-soft); color: var(--mint); }
+.plan span.now { background: var(--cobalt); color: #fff; }
+.cont { margin-top: 6px; width: 100%; border: 0; border-radius: 18px; background: var(--cobalt); color: #fff; font-weight: 700; font-size: 16px; padding: 14px; }
+
+/* ---------- Progress ---------- */
+.prog { display: grid; grid-template-columns: 110px 1fr; gap: 14px; margin-top: 10px; align-items: start; }
+.vneck { background: var(--surface); border-radius: 20px; padding: 8px 6px; box-shadow: 0 1px 0 var(--line); }
+.vneck svg { display: block; width: 100%; height: auto; }
+.fams { display: grid; gap: 12px; }
+.fam b { display: flex; justify-content: space-between; font-size: 15px; }
+.fam b span { color: var(--muted); font-size: 13px; }
+.stack { display: flex; height: 18px; border-radius: 6px; overflow: hidden; margin-top: 4px; background: var(--line); }
+.stack i { display: block; height: 100%; }
+.key { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 10px; font-size: 12px; font-weight: 700; color: var(--ink-2); margin-top: 4px; }
+.key span { display: flex; align-items: center; gap: 6px; }
+.key i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.big3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 14px; }
+.big3 div { background: var(--surface); border-radius: 16px; padding: 10px 12px; box-shadow: 0 1px 0 var(--line); }
+.big3 b { display: block; font-size: 22px; }
+.big3 small { color: var(--muted); font-size: 12px; font-weight: 700; }
+
+/* ---------- Library ---------- */
+.search { display: flex; align-items: center; gap: 8px; background: var(--surface); border-radius: 14px; padding: 10px 12px; box-shadow: 0 0 0 1.5px var(--line) inset; color: var(--muted); font-size: 15px; margin-top: 8px; }
+.seg { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+.seg button { border: 0; border-radius: 999px; padding: 7px 14px; font-weight: 700; font-size: 14px; background: var(--surface); box-shadow: 0 0 0 1.5px var(--line) inset; color: var(--ink-2); }
+.seg button[aria-selected="true"] { background: var(--ink); color: #fff; box-shadow: none; }
+.songs { display: grid; gap: 10px; }
+.song { background: var(--surface); border-radius: 20px; padding: 14px; box-shadow: 0 1px 0 var(--line); text-align: left; border: 0; width: 100%; }
+.song .t { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.song b { font-size: 17px; }
+.song .meta { font-size: 12.5px; color: var(--muted); font-weight: 700; white-space: nowrap; }
+.chordline { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
+.chordline span { font-weight: 700; font-size: 13px; padding: 3px 9px; border-radius: 8px; background: var(--sky); color: var(--cobalt); }
+.lyric { font-size: 14px; color: var(--ink-2); font-style: italic; margin: 0 0 8px; }
+.verses { display: flex; gap: 10px; align-items: center; font-size: 12px; font-weight: 700; color: var(--muted); flex-wrap: wrap; }
+.verses .lampsrow { margin-left: 2px; }
+.vz { white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
+.lst { display: grid; gap: 8px; }
+.lst .song { display: flex; justify-content: space-between; align-items: center; }
+
+/* ---------- Desktop: one centred stage, no side panes ---------- */
+@media (min-width: 1024px) {
+  .tabbar { display: none; }
+  .appbar { padding: 14px 32px; }
+  .pills { display: flex; gap: 4px; background: var(--surface); border-radius: 999px; padding: 4px; box-shadow: 0 0 0 1.5px var(--line) inset; position: absolute; left: 50%; transform: translateX(-50%); }
+  .pills button { border: 0; background: none; border-radius: 999px; padding: 7px 18px; font-weight: 700; font-size: 14px; color: var(--ink-2); }
+  .pills button[aria-selected="true"] { background: var(--ink); color: #fff; }
+  .screens { max-width: 1120px; margin: 0 auto; padding: 8px 32px 40px; }
+  #s-practice.on { display: grid; grid-template-columns: 300px minmax(0, 380px) 300px; grid-template-areas: "head neck ctl" "bub neck ctl" "x neck ctl"; justify-content: center; column-gap: 40px; align-items: start; }
+  #s-practice .top { grid-area: head; }
+  #s-practice .bubble { grid-area: bub; margin-top: 4px; }
+  #s-practice .neck { grid-area: neck; }
+  #s-practice .ctl { grid-area: ctl; align-self: center; }
+  #s-practice .neck svg { height: 600px; width: auto; max-height: none; }
+  #s-practice.on { grid-template-columns: 300px auto 300px; grid-template-areas: "head neck ctl" "bub neck ctl" "sess neck ctl"; }
+  #s-practice .sess { display: block; grid-area: sess; }
+  .ctl .readout { margin-top: 0; }
+  .thumb { grid-template-columns: 1fr auto 1fr; }
+  #s-today.on, #s-library.on { max-width: 620px; margin: 0 auto; }
+  #s-progress.on { max-width: 760px; margin: 0 auto; }
+  .prog { grid-template-columns: 160px 1fr; gap: 28px; }
+}
+@media (max-width: 1023px) {
+  #s-practice.on { display: flex; flex-direction: column; }
+  #s-practice .bubble { order: 5; margin-top: 16px; }
+  #s-practice .ctl { order: 4; }
+  .head h1 { font-size: 22px; }
+  .neck svg { max-height: 290px; }
+  .readout { padding: 8px 12px; gap: 10px; margin-top: 10px; }
+  .readout .num { font-size: 26px; }
+  .readout p { font-size: 12.5px; }
+  .lamps { margin: 8px 0 2px; }
+  .lamp svg { width: 26px; height: 30px; }
+  .dimbtn { height: 58px; }
+}
+@media (max-width: 370px) { .start { width: 96px; height: 96px; } .lamps { gap: 6px; } }
+</style>
+</head>
+<body>
+
+<header class="appbar">
+  <span class="logo"><svg width="28" height="28" viewBox="0 0 28 28" aria-hidden="true"><circle cx="14" cy="14" r="13" fill="#2a53c4"/><path d="M14 5 V9 M14 19 V23 M5 14 H9 M19 14 H23" stroke="#ffb12e" stroke-width="2.2" stroke-linecap="round"/><circle cx="14" cy="14" r="3.6" fill="#ffffff"/></svg>Guitar Coach</span>
+  <nav class="pills" role="tablist" aria-label="Main" id="pills"></nav>
+  <span class="sp"></span>
+  <span class="conn" title="Chrome · Bluetooth · Mic · Offline ready"><i></i>T2 · 82%</span>
+</header>
+
+<main class="screens">
+  <!-- ===== Practice ===== -->
+  <section class="screen on" id="s-practice" aria-label="Practice">
+    <div class="top">
+      <div class="steps" aria-label="Block 2 of 5"><i class="done"></i><i class="now"></i><i></i><i></i><i></i></div>
+      <div class="head">
+        <p class="eyebrow">Focus · 1 min 20 s left</p>
+        <h1>E minor pentatonic, open position</h1>
+        <p>Frets 0–3 · up and back · note names</p>
+      </div>
+    </div>
+    <div class="bubble"><span class="avatar" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="3" fill="#fff"/><path d="M8 1 V3 M8 13 V15 M1 8 H3 M13 8 H15" stroke="#ffb12e" stroke-width="1.8" stroke-linecap="round"/></svg></span><span id="coach"><b>Open strings never light up</b>: the T2 has no LED at the nut. At Anchors your guitar shows two lights: the root E on the D string and the note you’re about to play. Open strings stay on screen as rings.</span></div>
+    <div class="sess"><p class="eyebrow">Tonight’s 13 minutes</p><ol>
+      <li class="done"><span>1 · Warm-up · scale run</span><span>done</span></li>
+      <li class="now"><span>2 · Focus · E minor open</span><span>1:20 left</span></li>
+      <li><span>3 · New · G → C changes</span><span>3′</span></li>
+      <li><span>4 · Play-along · Amazing Grace</span><span>3′</span></li>
+      <li><span>5 · Recall · lights off</span><span>2′</span></li></ol></div>
+    <div class="neck" id="neck"></div>
+    <div class="ctl">
+      <div class="readout">
+        <div class="num lit" id="nLit">1<small>lit</small></div>
+        <div class="num" id="nDark">5<small>dark</small></div>
+        <p id="roTxt">LEDs on the guitar for this shape. <b>1 more clean pass</b> and the dimmer drops to Hint on demand.</p>
+      </div>
+      <div class="lamps" role="group" aria-label="Light level" id="lamps"></div>
+      <div class="thumb">
+        <button class="dimbtn" type="button" id="brighter"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><circle cx="11" cy="11" r="4.5" fill="#ffb12e"/><path d="M11 1.5 V4 M11 18 V20.5 M1.5 11 H4 M18 11 H20.5 M4.3 4.3 L6 6 M16 16 L17.7 17.7 M4.3 17.7 L6 16 M16 6 L17.7 4.3" stroke="#13233a" stroke-width="1.6" stroke-linecap="round"/></svg>Brighter</button>
+        <button class="start" type="button">
+          <svg viewBox="0 0 130 130" aria-hidden="true"><circle cx="65" cy="65" r="61" fill="none" stroke="#dfe7fb" stroke-width="5"/><path d="M65 4 A61 61 0 1 1 4 65" fill="none" stroke="#ffb12e" stroke-width="5" stroke-linecap="round"/><circle cx="65" cy="4" r="5" fill="#13233a"/><circle cx="126" cy="65" r="5" fill="#13233a"/><circle cx="65" cy="126" r="5" fill="#13233a"/><circle cx="4" cy="65" r="6" fill="#bf2d60"/></svg>
+          Pause<small>beat 4 · 76 BPM</small>
+        </button>
+        <button class="dimbtn dark" type="button" id="darker"><svg width="22" height="22" viewBox="0 0 22 22" aria-hidden="true"><path d="M15 3 A8.5 8.5 0 1 0 19 15 A7 7 0 0 1 15 3 Z" fill="#ffffff"/></svg>Darker</button>
+      </div>
+      <button class="recall" type="button">Check recall with the guitar dark</button>
+    </div>
+  </section>
+
+  <!-- ===== Today: coach conversation ===== -->
+  <section class="screen" id="s-today" aria-label="Today">
+    <div class="chat">
+      <span class="who"><span class="avatar" style="width:22px;height:22px"></span>Coach · 18:02</span>
+      <div class="msg">Evening! Today is 13 minutes in five blocks. Each one starts a little darker than the last.</div>
+      <div class="plan"><span class="done">Warm-up 2′</span><span class="now">Focus 3′</span><span>New 3′</span><span>Play-along 3′</span><span>Recall 2′</span></div>
+      <div class="result"><b>Warm-up: open-position scale run</b><small>24 of 24 notes · timing ±41 ms · mic</small><span class="chg"><span class="lampsrow"><i></i><i></i><i class="off"></i><i class="off"></i></span><br>Full → Anchors</span></div>
+      <div class="msg">Clean warm-up, so I took the middle notes away. Now the focus block: <b>E minor pentatonic</b> again, starting at Anchors. You’ve had it due since Monday.</div>
+      <div class="msg me">Can I keep the lights a bit longer?</div>
+      <div class="msg">Sure. Tap <b>Brighter</b> any time. I’ll only count passes at Anchors or darker towards mastery.</div>
+      <button class="cont" type="button" data-go="practice">Continue: Focus · 1:20 left</button>
+    </div>
+  </section>
+
+  <!-- ===== Progress ===== -->
+  <section class="screen" id="s-progress" aria-label="Progress">
+    <p class="eyebrow" style="margin-top:10px">Week of 16 November</p>
+    <div class="big3">
+      <div><b>31′</b><small>with no lights</small></div>
+      <div><b>63′</b><small>with lights</small></div>
+      <div><b>12</b><small>day streak</small></div>
+    </div>
+    <div class="prog">
+      <div class="vneck" id="vneck"></div>
+      <div>
+        <h2 style="font-size:20px;margin:0 0 4px">The neck you own</h2>
+        <p style="margin:0 0 14px;color:var(--ink-2);font-size:14px">Navy is where you play A minor and E minor pentatonic with the guitar dark. Amber still needs lights.</p>
+        <div class="fams" id="fams"></div>
+        <div class="key"><span><i style="background:#ffb12e"></i>Full pattern</span><span><i style="background:#ffd98f"></i>Anchors</span><span><i style="background:#9bb0d6"></i>Hint on demand</span><span><i style="background:#13233a"></i>No lights</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Library ===== -->
+  <section class="screen" id="s-library" aria-label="Library">
+    <div class="search"><svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><circle cx="7.5" cy="7.5" r="5.5" fill="none" stroke="#52637a" stroke-width="2"/><path d="M12 12 L16 16" stroke="#52637a" stroke-width="2" stroke-linecap="round"/></svg>Search songs, scales, chords</div>
+    <div class="seg" role="tablist" id="libTabs">
+      <button role="tab" type="button" data-t="songs" aria-selected="true">Songs</button>
+      <button role="tab" type="button" data-t="scales" aria-selected="false">Scales</button>
+      <button role="tab" type="button" data-t="chords" aria-selected="false">Chords</button>
+      <button role="tab" type="button" data-t="progs" aria-selected="false">Progressions</button>
+    </div>
+    <div id="libBody"></div>
+  </section>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="Main" id="tabbar"></nav>
+
+<script>
+// ---------- Navigation ----------
+const TABS = [
+  ['today', 'Today', '<path d="M4 5 H20 V15 H10 L6 19 V15 H4 Z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'],
+  ['practice', 'Practice', '<path d="M8 3 V21 M12 3 V21 M16 3 V21" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.2" fill="currentColor"/>'],
+  ['progress', 'Progress', '<path d="M5 20 V12 M12 20 V5 M19 20 V9" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>'],
+  ['library', 'Library', '<path d="M9 18 V6 L19 4 V16" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="7" cy="18" r="2.4" fill="currentColor"/><circle cx="17" cy="16" r="2.4" fill="currentColor"/>'],
+];
+const tabHTML = icons => TABS.map(([id, t, ic]) => `<button role="tab" type="button" data-go="${id}" aria-selected="${id === 'practice'}">${icons ? `<svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>` : ''}${t}</button>`).join('');
+document.getElementById('tabbar').innerHTML = tabHTML(true);
+document.getElementById('pills').innerHTML = tabHTML(false);
+function go(id) {
+  document.querySelectorAll('[role=tab][data-go]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.go === id)));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + id));
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
+
+// ---------- Theory: E minor pentatonic, open position, standard tuning EADGBE ----------
+const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const ROOT = 4;
+const BOX = { 6: [0, 3], 5: [0, 2], 4: [0, 2], 3: [0, 2], 2: [0, 3], 1: [0, 3] };
+const SEQ = []; for (const s of [6, 5, 4, 3, 2, 1]) for (const f of BOX[s]) { const pc = (OPEN[s] + f) % 12; SEQ.push({ s, f, n: NAMES[pc], root: pc === ROOT }); }
+const STEP = 3; // three notes played; the target is B on the A string, fret 2
+// Anchors (sparse rule): every root plus each string's lowest note (here, the open strings).
+const isAnchor = n => n.root || n.f === BOX[n.s][0];
+
+// ---------- Vertical neck, frets 0–5 ----------
+function neckV(level) {
+  const W = 300, F = 5, top = 34, openH = 52, H = 400, padX = 42;
+  const step = (H - top - openH - 10) / F;
+  const line = f => top + openH + f * step;
+  const mid = f => f === 0 ? top + openH / 2 - 6 : line(f) - step / 2;
+  const gap = (W - 2 * padX) / 5, x = s => padX + (6 - s) * gap;
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="E minor pentatonic in open position"><defs><radialGradient id="gl"><stop offset="0" stop-color="#ffb12e" stop-opacity=".75"/><stop offset="1" stop-color="#ffb12e" stop-opacity="0"/></radialGradient></defs>`;
+  ['E', 'A', 'D', 'G', 'B', 'E'].forEach((t, i) => g += `<text x="${x(6 - i)}" y="16" text-anchor="middle" font-family="Futura, Century Gothic, sans-serif" font-size="12.5" font-weight="700" fill="#52637a">${t}</text>`);
+  g += `<text x="${W - 6}" y="${mid(0) + 4}" text-anchor="end" font-family="Futura, Century Gothic, sans-serif" font-size="9.5" font-weight="700" fill="#52637a" transform="rotate(-90 ${W - 6} ${mid(0)})">no LEDs</text>`;
+  g += `<rect x="${padX - 20}" y="${line(0)}" width="${W - 2 * padX + 40}" height="${line(F) - line(0) + 4}" rx="10" fill="#f6efe4"/>`;
+  for (const m of [3, 5]) g += `<circle cx="${W / 2}" cy="${mid(m)}" r="6" fill="#e6dccb"/>`;
+  for (let f = 1; f <= F; f++) {
+    g += `<line x1="${padX - 20}" y1="${line(f)}" x2="${W - padX + 20}" y2="${line(f)}" stroke="#c5b598" stroke-width="2.4"/>`;
+    g += `<text x="13" y="${mid(f) + 4}" text-anchor="middle" font-family="Futura, Century Gothic, sans-serif" font-size="12" font-weight="${f === 3 || f === 5 ? 700 : 500}" fill="${f === 3 || f === 5 ? '#13233a' : '#52637a'}">${f}</text>`;
+  }
+  g += `<rect x="${padX - 20}" y="${line(0) - 5}" width="${W - 2 * padX + 40}" height="9" rx="3" fill="#13233a"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${x(s)}" y1="${top + 14}" x2="${x(s)}" y2="${line(F) + 4}" stroke="#7a6a52" stroke-width="${0.7 + s * 0.32}"/>`;
+  const r = 15;
+  SEQ.forEach((n, i) => {
+    const cx = x(n.s), cy = mid(n.f);
+    let st = null;
+    if (i < STEP) st = 'hit';
+    else if (i === STEP) st = level < 3 ? 'target' : null;
+    else if (level === 0 || (level === 1 && isAnchor(n))) st = 'lit';
+    if (!st) return;
+    if (n.f === 0 && st === 'lit') { // open string: screen-only ring, never an LED
+      g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="#ffffff" stroke="${n.root ? '#bf2d60' : '#2a53c4'}" stroke-width="2.2"/>`;
+      g += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="Futura, Century Gothic, sans-serif" font-size="13.5" font-weight="700" fill="${n.root ? '#bf2d60' : '#2a53c4'}">${n.n}</text>`;
+      return;
+    }
+    if (st !== 'hit') g += `<circle cx="${cx}" cy="${cy}" r="${r * 2}" fill="url(#gl)"/>`;
+    if (st === 'target') g += `<circle class="pulse" cx="${cx}" cy="${cy}" r="${r + 6}" fill="none" stroke="#2a53c4" stroke-width="3"/>`;
+    const c = st === 'hit' ? ['#ffffff', '#1d7f55', '#1d7f55'] : st === 'target' ? ['#2a53c4', '#1f3f99', '#ffffff'] : n.root ? ['#bf2d60', '#8f1f47', '#ffffff'] : ['#ffb12e', '#c98400', '#13233a'];
+    g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${c[0]}" stroke="${c[1]}" stroke-width="${st === 'hit' ? 2.2 : 1.4}"/>`;
+    g += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="Futura, Century Gothic, sans-serif" font-size="14" font-weight="700" fill="${c[2]}">${st === 'hit' ? '✓' : n.n}</text>`;
+  });
+  return g + '</svg>';
+}
+
+// ---------- Dimmer: Brighter / Darker push buttons with four lamps ----------
+const LEVELS = ['Full pattern', 'Anchors', 'Hint on demand', 'No lights'];
+const COACH = [
+  '<b>Every note is lit</b>. On the guitar that means the six fretted notes; the open strings show as rings on screen only.',
+  '<b>Open strings never light up</b>: the T2 has no LED at the nut. At Anchors your guitar shows two lights: the root E on the D string and the note you’re about to play. Open strings stay on screen as rings.',
+  '<b>The guitar is dark.</b> Tap the neck or press H and the next note flashes for one beat. Hints you ask for don’t count against you.',
+  '<b>No lights, no rings.</b> Play the shape from memory; this is the pass that counts toward mastery.',
+];
+const lampSVG = (on, i) => `<svg width="30" height="34" viewBox="0 0 30 34" aria-hidden="true">${on ? '<circle cx="15" cy="13" r="14" fill="#ffb12e" opacity=".25"/>' : ''}<path d="M15 3 A9 9 0 0 1 21 19 V23 H9 V19 A9 9 0 0 1 15 3 Z" fill="${on ? '#ffb12e' : '#ffffff'}" stroke="#13233a" stroke-width="1.6"/><rect x="10" y="25" width="10" height="4" rx="1.5" fill="#13233a"/></svg>`;
+let level = 1;
+function setLevel(l) {
+  level = Math.max(0, Math.min(3, l));
+  document.getElementById('neck').innerHTML = neckV(level);
+  document.getElementById('lamps').innerHTML = LEVELS.map((t, i) => `<button type="button" class="lamp" data-l="${i}" aria-pressed="${i === level}">${lampSVG(i < 4 - level, i)}${i === level ? t : '&nbsp;'}</button>`).join('');
+  const fretted = SEQ.filter(n => n.f > 0).length;
+  const rest = SEQ.filter((n, i) => i >= STEP && n.f > 0);
+  const lit = level === 0 ? rest.length : level === 1 ? rest.filter(n => isAnchor(n)).length + 1 : level === 2 ? 1 : 0;
+  document.getElementById('nLit').firstChild.nodeValue = lit;
+  document.getElementById('nDark').firstChild.nodeValue = fretted - lit;
+  document.getElementById('roTxt').innerHTML = ['LEDs on the guitar. <b>Full pattern passed 3 of 3</b> on Monday.', 'LEDs on the guitar for this shape. <b>1 more clean pass</b> and the dimmer drops to Hint on demand.', 'One LED flashes only when you ask. <b>3 clean passes</b> to reach No lights.', 'Guitar dark. <b>This pass counts</b> toward mastery.'][level];
+  document.getElementById('coach').innerHTML = COACH[level];
+  document.getElementById('brighter').disabled = level === 0;
+  document.getElementById('darker').disabled = level === 3;
+  document.querySelectorAll('.lamp').forEach(b => b.addEventListener('click', () => setLevel(+b.dataset.l)));
+}
+document.getElementById('brighter').addEventListener('click', () => setLevel(level - 1));
+document.getElementById('darker').addEventListener('click', () => setLevel(level + 1));
+setLevel(1);
+
+// ---------- Progress: the neck you own (frets 0–19, vertical) ----------
+(function own() {
+  const W = 100, H = 520, top = 16, d = f => 1 - Math.pow(2, -f / 12), y = f => top + d(f) / d(19) * (H - top - 8);
+  // Fret ranges and the level reached there: 3 = no lights … 0 = full pattern.
+  const zones = [[0, 3, 3, 'E minor open'], [5, 8, 3, 'A minor box 1'], [7, 10, 2, 'box 2'], [9, 13, 1, 'box 3'], [12, 15, 0, 'box 4']];
+  const col = ['#ffb12e', '#ffd98f', '#9bb0d6', '#13233a'];
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Regions of the neck played without lights"><rect x="20" y="${top}" width="66" height="${H - top - 8}" rx="4" fill="#f6efe4"/>`;
+  zones.forEach(([a, b, l]) => g += `<rect x="22" y="${a === 0 ? top : y(a - 1)}" width="62" height="${y(b) - (a === 0 ? top : y(a - 1))}" rx="4" fill="${col[l]}" opacity="${l === 3 ? .92 : .85}"/>`);
+  for (let f = 1; f <= 19; f++) {
+    g += `<line x1="20" x2="86" y1="${y(f)}" y2="${y(f)}" stroke="#c5b598" stroke-width="1"/>`;
+    if ([3, 5, 7, 9, 12, 15, 17, 19].includes(f)) g += `<text x="10" y="${(y(f - 1) + y(f)) / 2 + 4}" text-anchor="middle" font-size="10" font-weight="700" font-family="Futura, Century Gothic, sans-serif" fill="#52637a">${f}</text>`;
+  }
+  for (let s = 0; s < 6; s++) g += `<line x1="${28 + s * 10}" x2="${28 + s * 10}" y1="${top}" y2="${H - 8}" stroke="#7a6a52" stroke-width=".7" opacity=".6"/>`;
+  g += `<rect x="18" y="${top - 3}" width="70" height="5" rx="2" fill="#13233a"/>`;
+  document.getElementById('vneck').innerHTML = g + '</svg>';
+  const fams = [['Scales', 9, [2, 2, 1, 4]], ['Chords', 9, [3, 2, 2, 2]], ['Progressions', 4, [3, 1, 0, 0]], ['Songs', 4, [3, 1, 0, 0]]];
+  document.getElementById('fams').innerHTML = fams.map(([t, n, a]) => `<div class="fam"><b>${t} <span>${a[3]} of ${n} dark</span></b><div class="stack" role="img" aria-label="${t}: ${a.join(', ')} at full, anchors, hint, no lights">${a.map((v, i) => `<i style="width:${v / n * 100}%;background:${col[i]}"></i>`).join('')}</div></div>`).join('');
+})();
+
+// ---------- Library ----------
+const lamps = n => `<span class="lampsrow">${[0, 1, 2, 3].map(k => `<i class="${k < n ? '' : 'off'}"></i>`).join('')}</span>`;
+const SONGS = [
+  ['Amazing Grace', 'G · 3/4 · 72 BPM', ['G', 'G7', 'C', 'G', 'D'], 'Amazing grace, how sweet the sound…', [4, 2, 1]],
+  ['Will the Circle Be Unbroken', 'G · 4/4 · 96 BPM', ['G', 'C', 'G', 'D', 'G'], 'Will the circle be unbroken…', [4, 3, 2]],
+  ['This Little Light of Mine', 'C · 4/4 · 104 BPM', ['C', 'F', 'C', 'G', 'C'], 'This little light of mine, I’m gonna let it shine…', [4, 4, 3]],
+  ['Oh! Susanna', 'C · 2/4 · 110 BPM', ['C', 'G', 'C', 'G', 'C'], 'Oh, I come from Alabama with a banjo on my knee…', [4, 3, 3]],
+];
+const LIB = {
+  songs: () => `<div class="songs">${SONGS.map(([t, m, ch, ly, v]) => `<button type="button" class="song"><span class="t"><b>${t}</b><span class="meta">${m}</span></span><span class="chordline">${ch.map(c => `<span>${c}</span>`).join('')}</span><p class="lyric">${ly}</p><span class="verses">${v.map((n, i) => `<span class="vz">Verse ${i + 1} ${lamps(n)}</span>`).join('')}</span></button>`).join('')}</div>`,
+  scales: () => `<div class="lst">${[['E minor pentatonic', 'Open position · frets 0–3', 2], ['A minor pentatonic', '5 boxes', 1], ['Blues scale', 'Pentatonic + ♭5', 4], ['Major', '3 notes per string', 4]].map(([t, c, b]) => `<button type="button" class="song"><span><b>${t}</b><br><span class="meta">${c}</span></span>${lamps(b)}</button>`).join('')}</div>`,
+  chords: () => `<div class="lst">${[['Em, G, C, D', 'Open chords for the songs above', 3], ['Am → C', 'Fingers 1 and 2 stay', 2], ['E5 → A5', 'Power chords', 4]].map(([t, c, b]) => `<button type="button" class="song"><span><b>${t}</b><br><span class="meta">${c}</span></span>${lamps(b)}</button>`).join('')}</div>`,
+  progs: () => `<div class="lst">${[['G – C – D', 'I – IV – V in G', 3], ['Em – C – G – D', 'vi – IV – I – V in G', 4], ['12-bar blues in E', 'E5 – A5 – B5', 4]].map(([t, c, b]) => `<button type="button" class="song"><span><b>${t}</b><br><span class="meta">${c}</span></span>${lamps(b)}</button>`).join('')}</div>`,
+};
+function lib(t) { document.querySelectorAll('#libTabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t))); document.getElementById('libBody').innerHTML = LIB[t](); }
+document.getElementById('libTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) lib(b.dataset.t); });
+lib('songs');
+</script>
+</body>
+</html>

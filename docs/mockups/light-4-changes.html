@@ -1,0 +1,452 @@
+<!doctype html>
+<!--
+  LIGHT 4 — CHANGES: "Pocket Coach for chords; the session plays like a playlist"
+
+  Thesis: the hard part of chords isn't any single shape, it's the change between two of them.
+  So this Pocket Coach variation is built around a chord-change drill (Am → C). The vertical
+  neck shows the chord under your fingers lit, and the next chord as a dashed preview. Fingers
+  that stay put are marked "stay", and the one finger that moves gets an arrow. The lights
+  fade per change, not per note.
+
+  What changes vs. light-3 Pocket Coach (same four tabs, vertical neck, dimmer and Start ring):
+  - Palette and type: sage, moss and tomato on cool paper, with a humanist sans (Seravek / Gill Sans).
+  - Fade: a rotary dimmer knob (four detents) beside the Start button instead of a vertical slider.
+    The readout is an "LED mirror", a tiny 6-string grid of exactly what the T2 is lighting.
+    It is honest about open strings: they have no LED and show on screen only.
+  - Today: the session is a playlist. A "Now playing" block with time left, an "Up next" queue
+    with each block's light level, and Skip / Swap actions.
+  - Progress: changes per minute for Am → C over the last seven sessions, plotted against how
+    many lights were on. Speed goes up while lights go down.
+  - Library: real Chords, Progressions and Songs tabs, with chord-box diagrams and a light meter for each.
+  - Desktop: two panes only (Practice + the Today queue), with Progress and Library swapping into the
+    right pane from the rail. That is less dense than light-3's three panes.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guitar Coach — Changes</title>
+<style>
+:root {
+  --bg: #f1f4ec; --surface: #ffffff; --surface-2: #e6ede0; --line: #d4ddcc; --line-2: #b9c6ae;
+  --ink: #1f2a22; --ink-2: #34443a; --muted: #55635a; --moss: #33612e; --moss-2: #3f7738; --moss-soft: #dde9d6;
+  --tomato: #b4412a; --tomato-soft: #f6dcd3; --led: #f7c948; --led-soft: #fbe8a6;
+  --font: "Seravek", "Gill Sans Nova", "Gill Sans", "Gill Sans MT", "Trebuchet MS", system-ui, -apple-system, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 500 15.5px/1.45 var(--font); -webkit-font-smoothing: antialiased; overflow-x: hidden; }
+button { font: inherit; color: inherit; cursor: pointer; }
+button:focus-visible { outline: 3px solid var(--moss); outline-offset: 2px; }
+.cap { font-size: 12px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); margin: 0; }
+
+/* ---------- Shell ---------- */
+.appbar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 10px 16px; background: rgba(241,244,236,.94); backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+.logo { display: flex; gap: 8px; align-items: center; font-weight: 700; font-size: 18px; white-space: nowrap; }
+.appbar .sp { flex: 1; }
+.pill { white-space: nowrap; display: inline-flex; align-items: center; gap: 6px; border-radius: 999px; padding: 6px 12px; font-weight: 700; font-size: 13px; background: var(--surface); border: 1.5px solid var(--line-2); }
+.pill i { width: 8px; height: 8px; border-radius: 50%; background: var(--moss-2); }
+.screens { padding: 0 16px 96px; }
+.screen { display: none; }
+.screen.on { display: block; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; z-index: 6; display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface); border-top: 1px solid var(--line); padding: 6px 6px calc(8px + env(safe-area-inset-bottom)); }
+.tabbar button, .rail button { border: 0; background: none; display: grid; justify-items: center; gap: 2px; padding: 6px 0; border-radius: 14px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.tabbar button[aria-selected="true"], .rail button[aria-selected="true"] { color: var(--moss); background: var(--moss-soft); }
+.rail { display: none; }
+
+/* ---------- Practice ---------- */
+.lesson { padding: 14px 0 8px; display: flex; gap: 10px; align-items: flex-end; }
+.lesson h1 { margin: 2px 0 0; font-size: 26px; letter-spacing: -.01em; line-height: 1.1; }
+.lesson h1 b { color: var(--moss); }
+.lesson .meta { color: var(--muted); font-size: 14px; }
+.lesson .clip { margin-left: auto; flex: none; border: 1.5px solid var(--line-2); background: var(--surface); border-radius: 12px; padding: 7px 11px; font-weight: 700; font-size: 13px; }
+.bars { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin: 6px 0 10px; }
+.bar { border-radius: 12px; background: var(--surface); border: 1px solid var(--line); padding: 6px 8px 7px; }
+.bar b { display: block; font-size: 17px; }
+.bar .beats { display: flex; gap: 3px; margin-top: 3px; }
+.bar .beats i { flex: 1; height: 5px; border-radius: 3px; background: var(--surface-2); }
+.bar.done { opacity: .65; }
+.bar.done .beats i { background: var(--moss-2); }
+.bar.now { border: 2px solid var(--moss); background: #f8fbf5; }
+.bar.now .beats i.on { background: var(--moss-2); }
+.bar.now .beats i.cur { background: var(--tomato); }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; align-items: stretch; }
+.neck { background: var(--surface); border: 1px solid var(--line); border-radius: 22px; padding: 8px 4px 6px; position: relative; }
+.neck svg { display: block; width: 100%; height: auto; }
+.key { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; font-size: 12px; font-weight: 700; color: var(--ink-2); padding: 4px 6px 2px; }
+.key span { display: inline-flex; align-items: center; gap: 5px; }
+.key i { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .25; } }
+.pulse { animation: pulse 1s ease-in-out infinite; }
+.side { display: grid; gap: 10px; align-content: start; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 10px 8px; display: grid; justify-items: center; gap: 4px; text-align: center; }
+.knob-wrap { position: relative; width: 92px; height: 92px; }
+.knob-wrap svg { width: 92px; height: 92px; display: block; }
+.knob-wrap button { position: absolute; width: 30px; height: 30px; border: 0; background: none; border-radius: 50%; padding: 0; }
+.knob-name { font-weight: 700; font-size: 14px; }
+.mirror svg { width: 86px; height: auto; display: block; }
+.mirror small, .card small { color: var(--muted); font-size: 11.5px; font-weight: 600; line-height: 1.25; }
+.go { display: grid; grid-template-columns: auto 1fr; gap: 14px; align-items: center; margin-top: 14px; }
+.start { position: relative; width: 104px; height: 104px; border-radius: 50%; border: 0; background: var(--moss); color: #fff; font-weight: 700; font-size: 17px; line-height: 1.1; box-shadow: 0 14px 26px -14px rgba(51,97,46,.9); }
+.start svg { position: absolute; inset: -9px; width: calc(100% + 18px); height: calc(100% + 18px); }
+.start small { display: block; font-size: 12px; font-weight: 600; opacity: .92; margin-top: 2px; }
+.acts { display: grid; gap: 8px; }
+.sec { border: 1.5px solid var(--ink); background: var(--surface); border-radius: 14px; padding: 11px 14px; font-weight: 700; font-size: 15px; text-align: left; display: flex; justify-content: space-between; }
+.tip { font-size: 13.5px; color: var(--ink-2); background: var(--led-soft); border-radius: 12px; padding: 8px 11px; }
+.tip b { color: var(--ink); }
+
+/* ---------- Today: playlist ---------- */
+.np { margin-top: 16px; background: var(--moss); color: #fff; border-radius: 22px; padding: 16px; }
+.np .cap { color: #cfe3c8; }
+.np h2 { margin: 4px 0 2px; font-size: 24px; }
+.np p { margin: 0; color: #e4efe0; font-size: 14px; }
+.np .prog { height: 6px; border-radius: 3px; background: rgba(255,255,255,.25); margin: 14px 0 6px; overflow: hidden; }
+.np .prog i { display: block; width: 72%; height: 100%; background: var(--led); }
+.np .row { display: flex; justify-content: space-between; font-size: 13px; color: #e4efe0; }
+.np .ctl { display: flex; gap: 8px; margin-top: 12px; }
+.np .ctl button { flex: 1; border: 1.5px solid rgba(255,255,255,.55); background: transparent; color: #fff; border-radius: 12px; padding: 8px; font-weight: 700; font-size: 14px; }
+.np .ctl button.main { background: #fff; color: var(--moss); border-color: #fff; }
+.qhead { display: flex; justify-content: space-between; align-items: baseline; margin: 18px 0 6px; }
+.qhead h3 { margin: 0; font-size: 18px; }
+.qhead span { color: var(--muted); font-size: 13px; }
+.queue { list-style: none; margin: 0; padding: 0; }
+.queue li { display: grid; grid-template-columns: 28px 1fr auto; gap: 10px; align-items: center; padding: 11px 2px; border-bottom: 1px solid var(--line); }
+.queue .n { font-weight: 700; color: var(--muted); text-align: center; }
+.queue b { display: block; }
+.queue small { color: var(--muted); font-size: 13px; }
+.queue li.done b { text-decoration: line-through; text-decoration-color: var(--line-2); color: var(--muted); }
+.bulbs { display: inline-flex; gap: 2px; }
+.bulbs i { width: 7px; height: 14px; border-radius: 4px; background: var(--led); border: 1px solid #d7a915; }
+.bulbs i.off { background: transparent; border-color: var(--line-2); }
+
+/* ---------- Progress ---------- */
+.chart { margin-top: 16px; background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 14px 14px 10px; }
+.chart h2 { margin: 2px 0 2px; font-size: 20px; }
+.chart p { margin: 0 0 6px; color: var(--ink-2); font-size: 14px; }
+.chart svg { width: 100%; height: auto; display: block; }
+.trio { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 10px; }
+.trio div { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 10px 12px; }
+.trio b { display: block; font-size: 22px; }
+.trio small { color: var(--muted); font-size: 12px; font-weight: 600; }
+.skill { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: center; }
+.skill small { color: var(--muted); font-size: 13px; }
+.due { color: var(--tomato); font-weight: 700; }
+
+/* ---------- Library ---------- */
+.seg { display: grid; grid-template-columns: repeat(4, 1fr); background: var(--surface-2); border-radius: 14px; padding: 4px; margin: 16px 0 12px; }
+.seg button { border: 0; background: none; border-radius: 10px; padding: 8px 0; font-weight: 700; font-size: 13.5px; color: var(--ink-2); }
+.seg button[aria-selected="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 3px rgba(31,42,34,.18); }
+.chords { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.chordc { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 8px 6px 8px; display: grid; justify-items: center; gap: 4px; }
+.chordc b { font-size: 16px; }
+.chordc svg { width: 64px; height: auto; display: block; }
+.chordc.sel { border: 2px solid var(--moss); }
+.list { display: grid; gap: 8px; }
+.list .it { display: flex; justify-content: space-between; gap: 10px; align-items: center; background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 12px 14px; }
+.list b { display: block; }
+.list small { color: var(--muted); font-size: 13px; }
+.roman { font-weight: 700; color: var(--moss); letter-spacing: .04em; }
+.libnote { color: var(--muted); font-size: 13px; margin: 12px 2px 0; }
+
+/* ---------- Desktop: two panes ---------- */
+@media (min-width: 1024px) {
+  body { padding-left: 84px; }
+  .tabbar { display: none; }
+  .rail { display: grid; position: fixed; left: 0; top: 0; bottom: 0; width: 84px; background: var(--surface); border-right: 1px solid var(--line); align-content: start; justify-items: center; gap: 6px; padding: 14px 0; z-index: 7; }
+  .rail .mark { margin-bottom: 14px; }
+  .rail button { width: 66px; font-size: 11.5px; }
+  .appbar { padding: 12px 32px; }
+  .appbar .logo { display: none; }
+  .screens { display: grid; grid-template-columns: minmax(0, 600px) 400px; justify-content: center; gap: 40px; padding: 0 32px 32px; }
+  .screen { display: none; }
+  #s-practice { display: block; grid-column: 1; grid-row: 1; }
+  .screen.on:not(#s-practice) { display: block; grid-column: 2; grid-row: 1; }
+  body.prac #s-today { display: block; grid-column: 2; grid-row: 1; }
+  .stage { grid-template-columns: minmax(0, 1fr) 124px; }
+  .neck svg { max-height: 430px; width: auto; max-width: 100%; margin: 0 auto; }
+}
+@media (max-width: 1023px) { .neck svg { max-height: 380px; width: auto; max-width: 100%; margin: 0 auto; } }
+@media (max-width: 380px) { .stage { grid-template-columns: minmax(0, 1fr) 96px; } .start { width: 92px; height: 92px; } }
+</style>
+</head>
+<body class="prac">
+
+<nav class="rail" aria-label="Main" role="tablist">
+  <svg class="mark" width="38" height="38" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="11" fill="#33612e"/><path d="M11 9 V27 M18 9 V27 M25 9 V27" stroke="#dde9d6" stroke-width="1.6"/><circle cx="11" cy="15" r="3.4" fill="#f7c948"/><circle cx="25" cy="21" r="3.4" fill="none" stroke="#f7c948" stroke-width="1.6" stroke-dasharray="2 2"/></svg>
+</nav>
+
+<header class="appbar">
+  <span class="logo"><svg width="26" height="26" viewBox="0 0 36 36" aria-hidden="true"><rect width="36" height="36" rx="11" fill="#33612e"/><path d="M11 9 V27 M18 9 V27 M25 9 V27" stroke="#dde9d6" stroke-width="1.6"/><circle cx="11" cy="15" r="3.4" fill="#f7c948"/><circle cx="25" cy="21" r="3.4" fill="none" stroke="#f7c948" stroke-width="1.6" stroke-dasharray="2 2"/></svg>Guitar Coach</span>
+  <span class="sp"></span>
+  <span class="pill" title="Chrome · Bluetooth · Mic · Offline ready"><i></i>T2 · 82%</span>
+</header>
+
+<main class="screens">
+  <!-- ===== Practice ===== -->
+  <section class="screen on" id="s-practice" aria-label="Practice">
+    <div class="lesson">
+      <div>
+        <p class="cap">Block 2 of 5 · Focus · due</p>
+        <h1>Am <b>→</b> C changes</h1>
+        <span class="meta">4 beats each · 70 BPM · finger numbers</span>
+      </div>
+      <button class="clip" type="button">▶ 0:40</button>
+    </div>
+    <div class="bars" aria-label="Bar 2 of 4">
+      <div class="bar done"><b>Am</b><span class="beats"><i></i><i></i><i></i><i></i></span></div>
+      <div class="bar now"><b>C</b><span class="beats"><i class="on"></i><i class="on"></i><i class="cur"></i><i></i></span></div>
+      <div class="bar"><b>Am</b><span class="beats"><i></i><i></i><i></i><i></i></span></div>
+      <div class="bar"><b>C</b><span class="beats"><i></i><i></i><i></i><i></i></span></div>
+    </div>
+    <div class="stage">
+      <div class="neck">
+        <div id="neck"></div>
+        <div class="key"><span><i style="background:#f7c948;border:1px solid #c99b10"></i>Now: C</span><span><i style="border:2px dashed #33612e"></i>Next: Am</span><span><i style="background:#fff;border:3px double #33612e"></i>Stays put</span></div>
+      </div>
+      <div class="side">
+        <div class="card" role="group" aria-label="Light level">
+          <p class="cap">Dimmer</p>
+          <div class="knob-wrap" id="knob"></div>
+          <span class="knob-name" id="knobName">Anchors</span>
+        </div>
+        <div class="card mirror">
+          <p class="cap">On the T2</p>
+          <div id="mirror"></div>
+          <small id="mirrorTxt">1 LED · open strings are screen-only</small>
+        </div>
+      </div>
+    </div>
+    <div class="go">
+      <button class="start" type="button">
+        <svg viewBox="0 0 130 130" aria-hidden="true"><circle cx="65" cy="65" r="61" fill="none" stroke="#dde9d6" stroke-width="5"/><path d="M65 4 A61 61 0 0 1 126 65 A61 61 0 0 1 65 126" fill="none" stroke="#f7c948" stroke-width="5" stroke-linecap="round"/><circle cx="65" cy="4" r="5" fill="#1f2a22"/><circle cx="126" cy="65" r="5" fill="#1f2a22"/><circle cx="65" cy="126" r="6" fill="#b4412a"/><circle cx="4" cy="65" r="5" fill="#dde9d6"/></svg>
+        Pause<small>beat 3 of 4</small>
+      </button>
+      <div class="acts">
+        <div class="tip"><b>Fingers 1 and 2 stay down.</b> Only your ring finger moves: A string fret 3 → G string fret 2.</div>
+        <button class="sec" type="button">Check recall <span aria-hidden="true">→</span></button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===== Today: playlist ===== -->
+  <section class="screen" id="s-today" aria-label="Today">
+    <div class="np">
+      <p class="cap">Now playing · block 2 of 5</p>
+      <h2>Am → C changes</h2>
+      <p>Focus · due since Monday · starts at Anchors</p>
+      <div class="prog"><i></i></div>
+      <div class="row"><span>2:10</span><span>23 clean changes</span><span>0:50 left</span></div>
+      <div class="ctl"><button type="button">Swap</button><button class="main" type="button">Resume</button><button type="button">Skip</button></div>
+    </div>
+    <div class="qhead"><h3>Up next</h3><span>13 min · dimmer drops as you go</span></div>
+    <ol class="queue">
+      <li class="done"><span class="n">1</span><div><b>Warm-up: A minor pentatonic, box 1</b><small>Scale run · 2 min · 24/24</small></div><span class="bulbs" title="Full pattern"><i></i><i></i><i></i><i></i></span></li>
+      <li><span class="n">3</span><div><b>New: power chords E5 → A5</b><small>New material · 3 min</small></div><span class="bulbs" title="Full pattern"><i></i><i></i><i></i><i></i></span></li>
+      <li><span class="n">4</span><div><b>Play-along: Am – C – G – F</b><small>Generated backing · 80 BPM · 3 min</small></div><span class="bulbs" title="Hint on demand"><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span></li>
+      <li><span class="n">5</span><div><b>Recall: Am → C, no lights</b><small>Independent recall check · 2 min</small></div><span class="bulbs" title="No lights"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span></li>
+    </ol>
+  </section>
+
+  <!-- ===== Progress ===== -->
+  <section class="screen" id="s-progress" aria-label="Progress">
+    <div class="chart">
+      <p class="cap">Am → C · last 7 sessions</p>
+      <h2>Faster changes, fewer lights</h2>
+      <p>Clean changes per minute (line) against how many lights were on (bulbs).</p>
+      <div id="chart"></div>
+    </div>
+    <div class="trio">
+      <div><b>12</b><small>day streak</small></div>
+      <div><b>31/94</b><small>min unguided</small></div>
+      <div><b>3</b><small>due today</small></div>
+    </div>
+    <div class="skill"><span>Am → C changes</span><span class="bulbs"><i></i><i></i><i class="off"></i><i class="off"></i></span><small>Anchors · <span class="due">due today</span></small></div>
+    <div class="skill"><span>E5 → A5 power chords</span><span class="bulbs"><i></i><i></i><i></i><i></i></span><small>New · full pattern</small></div>
+    <div class="skill"><span>G → C changes</span><span class="bulbs"><i></i><i class="off"></i><i class="off"></i><i class="off"></i></span><small>Hint on demand · 74%</small></div>
+    <div class="skill"><span>Em → G changes</span><span class="bulbs"><i class="off"></i><i class="off"></i><i class="off"></i><i class="off"></i></span><small>No lights · mastered 90%</small></div>
+  </section>
+
+  <!-- ===== Library ===== -->
+  <section class="screen" id="s-library" aria-label="Library">
+    <div class="seg" role="tablist" id="libTabs">
+      <button role="tab" type="button" data-t="scales" aria-selected="false">Scales</button>
+      <button role="tab" type="button" data-t="chords" aria-selected="true">Chords</button>
+      <button role="tab" type="button" data-t="progs" aria-selected="false">Progress.</button>
+      <button role="tab" type="button" data-t="songs" aria-selected="false">Songs</button>
+    </div>
+    <div id="libBody"></div>
+  </section>
+</main>
+
+<nav class="tabbar" role="tablist" aria-label="Main" id="tabbar"></nav>
+
+<script>
+// ---------- Navigation ----------
+const TABS = [
+  ['today', 'Today', '<path d="M5 6 H19 M5 12 H19 M5 18 H13" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><path d="M16 15 L21 18 L16 21 Z" fill="currentColor"/>'],
+  ['practice', 'Practice', '<path d="M8 3 V21 M12 3 V21 M16 3 V21" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="10" r="3.2" fill="currentColor"/>'],
+  ['progress', 'Progress', '<path d="M3 19 L9 12 L13 15 L21 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>'],
+  ['library', 'Library', '<rect x="4" y="4" width="6" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><rect x="13" y="4" width="7" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/>'],
+];
+const tabHTML = TABS.map(([id, t, ic]) => `<button role="tab" type="button" data-go="${id}" aria-selected="${id === 'practice'}"><svg width="22" height="22" viewBox="0 0 24 24" aria-hidden="true">${ic}</svg>${t}</button>`).join('');
+document.getElementById('tabbar').innerHTML = tabHTML;
+document.querySelector('.rail').insertAdjacentHTML('beforeend', tabHTML);
+function go(id) {
+  document.querySelectorAll('[role=tab][data-go]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.go === id)));
+  document.querySelectorAll('.screen').forEach(s => s.classList.toggle('on', s.id === 's-' + id));
+  document.body.classList.toggle('prac', id === 'practice');
+  window.scrollTo(0, 0);
+}
+document.addEventListener('click', e => { const b = e.target.closest('[data-go]'); if (b) go(b.dataset.go); });
+
+// ---------- Theory: open chords, standard tuning EADGBE ----------
+// Shapes are listed 6th string → 1st: 'x' muted, 0 open, n = fret; fingers in the same order.
+const OPEN = { 1: 64, 2: 59, 3: 55, 4: 50, 5: 45, 6: 40 };
+const NAMES = ['C', 'C♯', 'D', 'E♭', 'E', 'F', 'F♯', 'G', 'A♭', 'A', 'B♭', 'B'];
+const CHORDS = {
+  Am: { shape: ['x', 0, 2, 2, 1, 0], fingers: [0, 0, 2, 3, 1, 0], root: 9 },
+  C:  { shape: ['x', 3, 2, 0, 1, 0], fingers: [0, 3, 2, 0, 1, 0], root: 0 },
+  G:  { shape: [3, 2, 0, 0, 0, 3], fingers: [2, 1, 0, 0, 0, 3], root: 7 },
+  D:  { shape: ['x', 'x', 0, 2, 3, 2], fingers: [0, 0, 0, 1, 3, 2], root: 2 },
+  Em: { shape: [0, 2, 2, 0, 0, 0], fingers: [0, 2, 3, 0, 0, 0], root: 4 },
+  E:  { shape: [0, 2, 2, 1, 0, 0], fingers: [0, 2, 3, 1, 0, 0], root: 4 },
+  F:  { shape: ['x', 'x', 3, 2, 1, 1], fingers: [0, 0, 3, 2, 1, 1], root: 5 },
+  E5: { shape: [0, 2, 'x', 'x', 'x', 'x'], fingers: [0, 1, 0, 0, 0, 0], root: 4 },
+  A5: { shape: ['x', 0, 2, 'x', 'x', 'x'], fingers: [0, 0, 1, 0, 0, 0], root: 9 },
+};
+const notesOf = name => CHORDS[name].shape.map((f, i) => ({ s: 6 - i, f, finger: CHORDS[name].fingers[i] })).filter(n => n.f !== 'x')
+  .map(n => ({ ...n, pc: (OPEN[n.s] + n.f) % 12, name: NAMES[(OPEN[n.s] + n.f) % 12], root: (OPEN[n.s] + n.f) % 12 === CHORDS[name].root }));
+// Anchors (sparse rule): the roots plus the lowest-sounding string of the shape.
+const anchorsOf = name => { const ns = notesOf(name); const bass = Math.max(...ns.map(n => n.s)); return ns.filter(n => n.root || n.s === bass); };
+
+// ---------- Vertical neck: headstock up, low E on the left ----------
+function neckV({ now, next, level }) {
+  const W = 300, F = 5, top = 40, bottom = 10, H = 380, padX = 42, openH = 44;
+  const usable = H - top - bottom - openH;
+  const y = f => top + openH + f / F * usable; // first five frets drawn evenly for chord reading
+  const mid = f => f === 0 ? top + openH / 2 - 4 : (y(f - 1) + y(f)) / 2;
+  const gap = (W - 2 * padX) / 5, x = s => padX + (6 - s) * gap;
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${now} chord with ${next} previewed"><defs><radialGradient id="gl"><stop offset="0" stop-color="#f7c948" stop-opacity=".75"/><stop offset="1" stop-color="#f7c948" stop-opacity="0"/></radialGradient></defs>`;
+  ['E', 'A', 'D', 'G', 'B', 'E'].forEach((t, i) => g += `<text x="${x(6 - i)}" y="16" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="12.5" font-weight="700" fill="#55635a">${t}</text>`);
+  g += `<rect x="${padX - 20}" y="${y(0)}" width="${W - 2 * padX + 40}" height="${y(F) - y(0) + 4}" rx="10" fill="#f3efe2"/>`;
+  for (const m of [3, 5]) g += `<circle cx="${W / 2}" cy="${mid(m)}" r="6" fill="#e2dccb"/>`;
+  for (let f = 1; f <= F; f++) {
+    g += `<line x1="${padX - 20}" y1="${y(f)}" x2="${W - padX + 20}" y2="${y(f)}" stroke="#b9ab8c" stroke-width="2.4"/>`;
+    g += `<text x="13" y="${mid(f) + 4}" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="12" font-weight="${f === 3 || f === 5 ? 700 : 500}" fill="${f === 3 || f === 5 ? '#1f2a22' : '#55635a'}">${f}</text>`;
+  }
+  g += `<rect x="${padX - 20}" y="${y(0) - 5}" width="${W - 2 * padX + 40}" height="9" rx="3" fill="#1f2a22"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${x(s)}" y1="${y(0) - 5}" x2="${x(s)}" y2="${y(F) + 4}" stroke="#6f6550" stroke-width="${0.7 + s * 0.32}"/>`;
+  const nowN = notesOf(now), nextN = notesOf(next), anchors = anchorsOf(now);
+  const same = (a, b) => a.s === b.s && a.f === b.f;
+  const r = 15;
+  // muted strings of the current chord
+  CHORDS[now].shape.forEach((f, i) => { if (f === 'x') g += `<text x="${x(6 - i)}" y="${mid(0) + 6}" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="18" font-weight="700" fill="#b4412a">×</text>`; });
+  // next chord preview (dashed) when lights allow
+  if (level <= 1) nextN.filter(n => n.f > 0 && !nowN.some(m => same(m, n))).forEach(n => {
+    g += `<circle cx="${x(n.s)}" cy="${mid(n.f)}" r="${r}" fill="none" stroke="#33612e" stroke-width="2" stroke-dasharray="4 3"/>`;
+    g += `<text x="${x(n.s)}" y="${mid(n.f) + 5}" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="13" font-weight="700" fill="#33612e">${n.finger}</text>`;
+  });
+  // arrow for the finger that moves
+  if (level <= 1) nowN.filter(n => n.f > 0).forEach(n => {
+    const to = nextN.find(m => m.finger === n.finger && !same(m, n) && m.f > 0);
+    if (to) g += `<path d="M${x(n.s) + 15} ${mid(n.f) + 2} Q ${(x(n.s) + x(to.s)) / 2 + 8} ${mid(n.f) + 22} ${x(to.s) - 4} ${mid(to.f) + 19}" fill="none" stroke="#b4412a" stroke-width="2.2" marker-end="url(#ah)"/>`;
+  });
+  g = g.replace('</defs>', '<marker id="ah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0 L10 5 L0 10 Z" fill="#b4412a"/></marker></defs>');
+  nowN.forEach(n => {
+    const show = level === 0 || (level === 1 && anchors.some(a => same(a, n)));
+    const cx = x(n.s), cy = mid(n.f);
+    if (n.f === 0) { // open string: no LED exists, so it is a screen-only ring
+      if (level <= 1) g += `<circle cx="${cx}" cy="${cy}" r="9" fill="${show ? '#ffffff' : 'none'}" stroke="${show ? (n.root ? '#b4412a' : '#33612e') : '#b9c6ae'}" stroke-width="2"/>`;
+      return;
+    }
+    if (!show) return;
+    const stays = nextN.some(m => same(m, n));
+    g += `<circle cx="${cx}" cy="${cy}" r="${r * 2}" fill="url(#gl)"/>`;
+    if (stays && level === 0) g += `<circle cx="${cx}" cy="${cy}" r="${r + 5}" fill="none" stroke="#33612e" stroke-width="1.6"/>`;
+    g += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="${n.root ? '#b4412a' : '#f7c948'}" stroke="${n.root ? '#8a2f1d' : '#c99b10'}" stroke-width="1.4"/>`;
+    g += `<text x="${cx}" y="${cy + 5}" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="14" font-weight="700" fill="${n.root ? '#ffffff' : '#1f2a22'}">${n.finger}</text>`;
+  });
+  if (level === 2) g += `<text x="${W / 2}" y="${H - 22}" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="13" font-weight="700" fill="#55635a">Dark. Am flashes on beat 4 if you ask.</text>`;
+  if (level === 3) g += `<text x="${W / 2}" y="${H - 22}" text-anchor="middle" font-family="Seravek, Gill Sans, sans-serif" font-size="13" font-weight="700" fill="#55635a">Dark. Change on beat 1 from memory.</text>`;
+  return g + '</svg>';
+}
+
+// ---------- LED mirror: exactly the frets the guitar lights (frets 1–5 shown) ----------
+function mirror(lit) {
+  let g = '<svg viewBox="0 0 86 70" aria-hidden="true"><rect x="0" y="0" width="86" height="70" rx="8" fill="#1f2a22"/>';
+  for (let s = 6; s >= 1; s--) for (let f = 1; f <= 5; f++) {
+    const on = lit.some(n => n.s === s && n.f === f);
+    g += `<circle cx="${10 + (6 - s) * 13.2}" cy="${9 + (f - 1) * 13}" r="4" fill="${on ? '#f7c948' : '#3a4a3e'}"${on ? ' stroke="#fff3c4" stroke-width="1"' : ''}/>`;
+  }
+  return g + '</svg>';
+}
+
+// ---------- Rotary dimmer: four detents from 10 o'clock (bright) to 2 o'clock (dark) ----------
+const LEVELS = ['Full pattern', 'Anchors', 'Hint on demand', 'No lights'];
+const ANG = [-120, -40, 40, 120];
+function knob(level) {
+  const c = 46, R = 32;
+  const pt = (a, r) => [c + r * Math.sin(a * Math.PI / 180), c - r * Math.cos(a * Math.PI / 180)];
+  let g = `<svg viewBox="0 0 92 92" aria-hidden="true"><defs><linearGradient id="kg" x1="0" x2="1"><stop offset="0" stop-color="#f7c948"/><stop offset="1" stop-color="#1f2a22"/></linearGradient></defs>`;
+  const [a1x, a1y] = pt(-130, 42), [a2x, a2y] = pt(130, 42);
+  g += `<path d="M${a1x} ${a1y} A42 42 0 1 1 ${a2x} ${a2y}" fill="none" stroke="url(#kg)" stroke-width="5" stroke-linecap="round"/>`;
+  ANG.forEach((a, i) => { const [px, py] = pt(a, 42); g += `<circle cx="${px}" cy="${py}" r="${i === level ? 5.5 : 3.5}" fill="${i === level ? '#b4412a' : '#ffffff'}" stroke="#1f2a22" stroke-width="1.4"/>`; });
+  g += `<circle cx="${c}" cy="${c}" r="${R}" fill="#ffffff" stroke="#1f2a22" stroke-width="2"/><circle cx="${c}" cy="${c}" r="${R - 6}" fill="#f1f4ec"/>`;
+  const [ix, iy] = pt(ANG[level], R - 9);
+  g += `<line x1="${c}" y1="${c}" x2="${ix}" y2="${iy}" stroke="#1f2a22" stroke-width="4" stroke-linecap="round"/></svg>`;
+  g += ANG.map((a, i) => { const [px, py] = pt(a, 42); return `<button type="button" data-l="${i}" aria-label="${LEVELS[i]}" aria-pressed="${i === level}" style="left:${px - 15}px;top:${py - 15}px"></button>`; }).join('');
+  return g;
+}
+
+function setLevel(level) {
+  document.getElementById('neck').innerHTML = neckV({ now: 'C', next: 'Am', level });
+  document.getElementById('knob').innerHTML = knob(level);
+  document.getElementById('knobName').textContent = LEVELS[level];
+  const fretted = notesOf('C').filter(n => n.f > 0);
+  const lit = level === 0 ? fretted : level === 1 ? anchorsOf('C').filter(n => n.f > 0) : [];
+  document.getElementById('mirror').innerHTML = mirror(lit);
+  document.getElementById('mirrorTxt').textContent = level === 2 ? 'Dark · 1 flash on request' : level === 3 ? 'All dark' : `${lit.length} LED${lit.length === 1 ? '' : 's'} · open strings are screen-only`;
+  document.querySelectorAll('#knob button').forEach(b => b.addEventListener('click', () => setLevel(+b.dataset.l)));
+}
+setLevel(1);
+
+// ---------- Progress chart: changes per minute vs lights on ----------
+(function chart() {
+  const cpm = [14, 17, 19, 22, 24, 27, 31], lights = [0, 0, 0, 1, 1, 1, 1];
+  const W = 340, H = 170, L = 30, B = 128;
+  const x = i => L + 14 + i * (W - L - 44) / 6, y = v => B - (v - 10) / 25 * (B - 14);
+  let g = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Changes per minute rose from 14 to 31 while the dimmer moved from full pattern to anchors">`;
+  [10, 20, 30].forEach(v => g += `<line x1="${L}" y1="${y(v)}" x2="${W - 4}" y2="${y(v)}" stroke="#d4ddcc"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end" font-size="11" font-family="Seravek, Gill Sans, sans-serif" fill="#55635a">${v}</text>`);
+  g += `<polyline points="${cpm.map((v, i) => x(i) + ',' + y(v)).join(' ')}" fill="none" stroke="#33612e" stroke-width="3" stroke-linejoin="round"/>`;
+  cpm.forEach((v, i) => g += `<circle cx="${x(i)}" cy="${y(v)}" r="4" fill="#fff" stroke="#33612e" stroke-width="2"/>`);
+  g += `<text x="${x(6) - 6}" y="${y(31) - 10}" text-anchor="end" font-size="12" font-weight="700" font-family="Seravek, Gill Sans, sans-serif" fill="#1f2a22">31 / min</text>`;
+  lights.forEach((l, i) => { for (let k = 0; k < 4; k++) { const on = k < 4 - l * 2; g += `<rect x="${x(i) - 11 + k * 6}" y="${B + 12}" width="4.5" height="11" rx="2" fill="${on ? '#f7c948' : 'none'}" stroke="${on ? '#c99b10' : '#b9c6ae'}"/>`; } });
+  ['Wed', 'Thu', 'Fri', 'Sat', 'Mon', 'Tue', 'Today'].forEach((d, i) => g += `<text x="${x(i)}" y="${B + 38}" text-anchor="middle" font-size="11" font-family="Seravek, Gill Sans, sans-serif" fill="#55635a">${d}</text>`);
+  document.getElementById('chart').innerHTML = g + '</svg>';
+})();
+
+// ---------- Library ----------
+function diagram(name) {
+  const c = CHORDS[name], W = 64, x = s => 8 + (6 - s) * 9.6, y = f => 16 + f * 12;
+  let g = `<svg viewBox="0 0 ${W} 80" aria-hidden="true"><rect x="8" y="14" width="48" height="4" fill="#1f2a22"/>`;
+  for (let f = 1; f <= 5; f++) g += `<line x1="8" y1="${y(f)}" x2="56" y2="${y(f)}" stroke="#b9ab8c"/>`;
+  for (let s = 1; s <= 6; s++) g += `<line x1="${x(s)}" y1="16" x2="${x(s)}" y2="${y(5)}" stroke="#6f6550"/>`;
+  c.shape.forEach((f, i) => { const s = 6 - i; if (f === 'x') g += `<text x="${x(s)}" y="10" text-anchor="middle" font-size="9" fill="#b4412a" font-weight="700">×</text>`; else if (f === 0) g += `<circle cx="${x(s)}" cy="7" r="3" fill="none" stroke="#1f2a22"/>`; else { const root = (OPEN[s] + f) % 12 === c.root; g += `<circle cx="${x(s)}" cy="${y(f) - 6}" r="4.2" fill="${root ? '#b4412a' : '#f7c948'}" stroke="${root ? '#8a2f1d' : '#c99b10'}"/>`; } });
+  return g + '</svg>';
+}
+const bulbs = n => `<span class="bulbs">${[0, 1, 2, 3].map(k => `<i class="${k < n ? '' : 'off'}"></i>`).join('')}</span>`;
+const LIB = {
+  chords: () => `<div class="chords">${[['Am', 2], ['C', 2], ['G', 3], ['D', 4], ['Em', 0], ['E', 1], ['F', 4], ['E5', 4], ['A5', 4]].map(([n, b]) => `<button type="button" class="chordc${n === 'C' ? ' sel' : ''}"><b>${n}</b>${diagram(n)}${bulbs(b)}</button>`).join('')}</div><p class="libnote">Bulbs show how many lights each chord still needs. Tap a chord to drill it alone, or two to drill the change.</p>`,
+  progs: () => `<div class="list">${[['I – V – vi – IV', 'C – G – Am – F', 3], ['i – VI – III – VII', 'Am – F – C – G', 2], ['12-bar blues', 'A5 – D5 – E5 · power chords', 4], ['I – IV – V', 'G – C – D', 1]].map(([r, c, b]) => `<button type="button" class="it"><span><span class="roman">${r}</span><b>${c}</b><small>4 beats per chord · generated backing</small></span>${bulbs(b)}</button>`).join('')}</div>`,
+  songs: () => `<div class="list">${[['Amazing Grace', 'G · G – C – D · 3/4', 3], ['Will the Circle Be Unbroken', 'G · G – C – D', 2], ['This Little Light of Mine', 'C · C – F – G', 4], ['Oh! Susanna', 'C · C – G', 3]].map(([t, c, b]) => `<button type="button" class="it"><span><b>${t}</b><small>${c}</small></span>${bulbs(b)}</button>`).join('')}</div><p class="libnote">Songs are public-domain melodies with generated accompaniment. Nothing is streamed.</p>`,
+  scales: () => `<div class="list">${[['Minor pentatonic', '5 boxes · key A', 2], ['Blues scale', 'Pentatonic + ♭5', 4], ['Major pentatonic', '5 boxes', 4], ['Major', '3 notes per string · 7 positions', 3]].map(([t, c, b]) => `<button type="button" class="it"><span><b>${t}</b><small>${c}</small></span>${bulbs(b)}</button>`).join('')}</div>`,
+};
+function lib(t) {
+  document.querySelectorAll('#libTabs button').forEach(b => b.setAttribute('aria-selected', String(b.dataset.t === t)));
+  document.getElementById('libBody').innerHTML = LIB[t]();
+}
+document.getElementById('libTabs').addEventListener('click', e => { const b = e.target.closest('button'); if (b) lib(b.dataset.t); });
+lib('chords');
+</script>
+</body>
+</html>
