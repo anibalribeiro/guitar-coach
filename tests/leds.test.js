@@ -3,6 +3,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   ledFrame, frameHex, blinkOnForBeat, sceneFromNotes, frameForScene, createLedSink,
+  lightable, ledCounts, litCount,
 } from '../app/src/leds.js';
 import { LED_FRAME_CASES, PROTOCOL_MARKER, PROTOCOL_MARKER_NOTES, ZERO_FRAME } from './fixtures/frames.js';
 import { createFakeLedSink } from './helpers/fakes.js';
@@ -273,4 +274,89 @@ test('an anchor scene, one full-pattern flash and the anchors again are three fr
   assert.equal(frameHex(f.output.frames[0]), frameHex(ledFrame([...anchors, target])));
   assert.equal(frameHex(f.output.frames[1]), frameHex(ledFrame(shape)), 'the flash frame is the full pattern');
   assert.equal(frameHex(f.output.frames[2]), frameHex(ledFrame([...anchors, target])), 'anchors return');
+});
+
+// ---------- Phase 7 honest lights (07-01) ----------
+// Captured from ledFrame at 53959ce, before the lightable refactor, so the codec stays
+// byte-identical (T-07-01).
+const PINNED_FRAMES = [
+  { name: 'empty list', notes: [], hex: 'f1 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00' },
+  {
+    name: 'every string at frets 1, 8, 9, 16, 17, 19, 24',
+    notes: [1, 8, 9, 16, 17, 19, 24].flatMap(f => [1, 2, 3, 4, 5, 6].map(s => ({ s, f }))),
+    hex: 'f1 81 81 a1 81 81 a1 81 81 a1 81 81 a1 81 81 a1 81 81 a1',
+  },
+  {
+    name: 'fret 0, fret 25, f null and a muted fret 0 never light',
+    notes: [{ s: 6, f: 0 }, { s: 5, f: 25 }, { s: 4, f: null }, { s: 3, f: 0, muted: true }, { s: 2, f: 3 }],
+    hex: 'f1 00 00 00 00 00 00 00 00 00 00 00 00 20 00 00 00 00 00',
+  },
+  { name: 'a duplicate pair', notes: [{ s: 3, f: 7 }, { s: 3, f: 7 }], hex: 'f1 00 00 00 00 00 00 00 00 00 02 00 00 00 00 00 00 00 00' },
+];
+for (const c of PINNED_FRAMES) {
+  test(`ledFrame stays byte-identical: ${c.name}`, () => {
+    assert.equal(frameHex(ledFrame(c.notes)), c.hex);
+  });
+}
+
+const popcount = frame => {
+  let bits = 0;
+  for (let i = 1; i <= 18; i++) for (let x = frame[i]; x; x >>= 1) bits += x & 1;
+  return bits;
+};
+
+test('lightable is true only for a fretted, unmuted cell on frets 1-24', () => {
+  assert.equal(lightable({ s: 6, f: 1 }), true);
+  assert.equal(lightable({ s: 1, f: 24 }), true);
+  assert.equal(lightable(null), false);
+  assert.equal(lightable(undefined), false);
+  assert.equal(lightable({ s: 6, f: 0 }), false);
+  assert.equal(lightable({ s: 6, f: null }), false);
+  assert.equal(lightable({ s: 6, f: 25 }), false);
+  assert.equal(lightable({ s: 6, f: 2.5 }), false);
+  assert.equal(lightable({ s: 6, f: 3, muted: true }), false);
+  assert.equal(lightable({ s: 0, f: 3 }), false);
+  assert.equal(lightable({ s: 7, f: 21 }), false);
+  assert.equal(lightable({ s: 2.5, f: 3 }), false);
+  assert.equal(lightable({ f: 3 }), false);
+});
+
+test('WR-02: an out-of-range string never touches the F1 byte and ledCounts matches the bits', () => {
+  const bad = [{ s: 7, f: 21 }, { s: 0, f: 3 }, { s: 2.5, f: 3 }, { s: -1, f: 1 }, { s: 9, f: 24 }];
+  for (const n of bad) {
+    const frame = ledFrame([n]);
+    assert.equal(frame[0], 0xF1, `${n.s}:${n.f} keeps the command byte`);
+    assert.equal(frame.length, 19);
+    assert.equal(popcount(frame), 0, `${n.s}:${n.f} sets no bit`);
+    assert.equal(ledCounts([n]).lit, popcount(frame), `${n.s}:${n.f} count equals bits`);
+  }
+  const mixed = [...bad, { s: 3, f: 5 }];
+  assert.equal(ledCounts(mixed).lit, popcount(ledFrame(mixed)));
+  assert.equal(ledCounts(mixed).lit, 1);
+});
+
+test('FADE-12: ledFrame never sets a fret-0 bit on any string', () => {
+  for (let s = 1; s <= 6; s++) {
+    const frame = ledFrame([{ s, f: 0 }]);
+    for (let i = 1; i <= 18; i++) assert.equal(frame[i], 0, `string ${s} byte ${i}`);
+  }
+});
+
+test('ledCounts lit equals the bits ledFrame sets for the same notes, every string and fret', () => {
+  for (let s = 1; s <= 6; s++) {
+    for (let f = 0; f <= 19; f++) {
+      const notes = [{ s, f }, { s, f }, { s: 6, f: 0 }];
+      assert.equal(ledCounts(notes).lit, popcount(ledFrame(notes)), `${s}:${f}`);
+      assert.equal(litCount(notes), popcount(ledFrame(notes)));
+    }
+  }
+});
+
+test('ledCounts reports lit, dark and open cells and never counts an open string as lit or dark', () => {
+  const shape = [{ s: 6, f: 0 }, { s: 6, f: 3 }, { s: 5, f: 2 }, { s: 5, f: 5 }, { s: 4, f: 0, muted: true }];
+  const lit = [{ s: 6, f: 3 }, { s: 6, f: 3 }, { s: 6, f: 0 }];
+  assert.deepEqual(ledCounts(lit, shape), { lit: 1, dark: 2, open: 2 });
+  assert.deepEqual(ledCounts(), { lit: 0, dark: 0, open: 0 });
+  assert.deepEqual(ledCounts([], shape), { lit: 0, dark: 3, open: 2 });
+  assert.equal(litCount([{ s: 1, f: 1 }, { s: 1, f: 0 }, { s: 2, f: 1 }]), 2);
 });

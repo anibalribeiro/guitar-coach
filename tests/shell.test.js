@@ -765,6 +765,31 @@ test('LOOK-03: board states differ by shape or stroke, not colour alone', () => 
   assert.match(rule(css, '.cell:focus-visible'), /outline: 3px solid var\(--cobalt\); outline-offset: -4px;/);
 });
 
+test('NECK-01: the vertical board CSS', () => {
+  const css = style();
+  const board = rule(css, '#board');
+  assert.ok(board.includes('grid-template-columns: 32px repeat(6, minmax(0, 1fr))'), 'seven columns: fret numbers + six strings');
+  assert.ok(board.includes('grid-auto-rows: var(--fret-row)'), 'one row per fret');
+  assert.ok(!board.includes('max-content'), 'the board shrinks to fit its column');
+  assert.ok(!css.includes('repeat(19'), 'no 19-column override remains');
+  const wrap = rule(css, '.board-wrap');
+  assert.ok(wrap.includes('overflow: auto'));
+  assert.ok(wrap.includes('max-height: calc(28px + var(--fret-row) * 13.5)'), 'frets 0-12 fit the box');
+  const coarse = [...css.matchAll(/@media \(pointer: coarse\) \{([^@]*)/g)].map(m => m[1]).join('\n');
+  assert.ok(coarse.includes('--fret-row: 44px'), 'coarse pointers get 44px rows');
+  assert.ok(rule(css, '.num.head').includes('position: sticky'));
+  assert.ok(rule(css, '.cell').includes('border-bottom: 3px solid var(--fret)'));
+});
+
+test('WR-03: focus-driven scrolling reserves the sticky string header so a focused cell is never under it', () => {
+  const css = style();
+  const head = rule(css, '.num.head').match(/height: (\d+)px/);
+  assert.ok(head, 'the sticky header has a fixed height');
+  const wrap = rule(css, '.board-wrap');
+  assert.ok(wrap.includes(`scroll-padding-top: ${head[1]}px`), 'scroll-padding-top equals the header height');
+  assert.ok(wrap.includes('scroll-padding-bottom:'), 'a bottom margin for focus moving down the neck');
+});
+
 test('LOOK-03: a legend under the neck names the four states with the real note classes', () => {
   const source = html();
   const start = source.indexOf('<div class="p-neck">');
@@ -783,17 +808,19 @@ test('LOOK-03: a legend under the neck names the four states with the real note 
   }
 });
 
-test('NAV-02: Practice is one column below 1024px and a centred named-grid stage at 1024px+', () => {
+test('NAV-02: Practice is one column below 1024px and coach | vertical neck | controls at 1024px+', () => {
   const css = style();
   assert.match(css, /\n#view-practice \{ display: grid; grid-template-columns: minmax\(0, 1fr\); gap: var\(--space-6\); \}/);
   const media = [...css.matchAll(/@media \(min-width: 1024px\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).find(body => body.includes('grid-template-areas'));
   assert.ok(media, 'a 1024px rule holds the stage');
-  assert.ok(media.includes('grid-template-areas: "head head" "lesson lesson" "neck neck" "coach ctl" "out out";'));
+  assert.ok(media.includes('grid-template-areas: "head head head" "lesson lesson lesson" "coach neck ctl" "out out out";'));
   assert.ok(media.includes('max-width: 1120px; margin: 0 auto;'));
-  assert.ok(media.includes('grid-template-columns: minmax(0, 360px) minmax(0, 1fr);'));
+  assert.ok(media.includes('grid-template-columns: minmax(0, 1fr) minmax(320px, 380px) minmax(0, 1fr);'));
   for (const [selector, area] of [['.p-head', 'head'], ['#lessonPanel', 'lesson'], ['.p-neck', 'neck'], ['.p-ctl', 'ctl'], ['.p-coach', 'coach'], ['.p-out', 'out']]) {
     assert.ok(media.includes(`${selector} { grid-area: ${area}; }`), `${selector} -> ${area}`);
   }
+  // The desktop neck box grows toward the viewport height; the 13.5-row box stays the floor.
+  assert.match(media, /\.p-neck \.board-wrap \{ max-height: max\([^;]*100dvh[^;]*\); \}/);
 });
 
 // ---------- LOOK-01: the type scale and the lesson diagrams (06-04) ----------
@@ -1025,8 +1052,8 @@ test('LOOK-03 contrast: the forbidden pairs never appear in a rule', () => {
   }
 });
 
-test('KEEP-04: the offline release is v25, bumped once after the final shell change', () => {
+test('KEEP-04: the offline release is v27, bumped once after the final shell change', () => {
   const sw = fs.readFileSync(fileURLToPath(new URL('../app/sw.js', import.meta.url)), 'utf8');
-  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v25';/);
-  assert.ok(!sw.includes("CACHE_PREFIX + 'v24'"), 'the v24 release is gone');
+  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v27';/);
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v26'"), 'the v26 release is gone');
 });

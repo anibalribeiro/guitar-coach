@@ -5,7 +5,7 @@
 // Bump the release on shell changes. A waiting worker activates after old tabs close,
 // so an open page never receives a different release halfway through its imports.
 const CACHE_PREFIX = 't2coach:' + encodeURIComponent(new URL('./', self.location.href).pathname) + ':';
-const CACHE = CACHE_PREFIX + 'v25';
+const CACHE = CACHE_PREFIX + 'v27';
 
 const SHELL = [
   './',

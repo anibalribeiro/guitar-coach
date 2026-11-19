@@ -834,3 +834,19 @@ test('KEEP-03: schema versions stay 2 and 3 and the settings keys are v1 minus t
   const expected = new Set([...V1_SETTINGS_KEYS.filter(key => key !== 'theme'), 'view']);
   assert.deepEqual(new Set(Object.keys(DEFAULT_SETTINGS)), expected);
 });
+
+test('Phase 7 keeps the storage contract: schema 2, backup 3, stored levels unchanged', () => {
+  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(BACKUP_SCHEMA_VERSION, 3);
+  const progress = {
+    version: 1,
+    skills: { 'scaleRun:minPent:9:s6f5': { bestLevel: 2, cleanPasses: 4 } },
+    sessions: [],
+    totals: { totalMs: 12000, unguidedMs: 6000, sessionCount: 1 },
+  };
+  const storage = createFakeStorage({
+    [STORAGE_KEY]: JSON.stringify({ schemaVersion: 2, settings: DEFAULT_SETTINGS, progress }),
+  });
+  const store = createSettingsStore(storage, CONTENT);
+  assert.equal(store.getProgress().skills['scaleRun:minPent:9:s6f5'].bestLevel, 2, 'no migration lowers a stored level');
+});

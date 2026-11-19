@@ -1233,11 +1233,35 @@ export function reduce(state, event = {}) {
   return { state: next, effects };
 }
 
+// A cell the T2 can light: unmuted, strings 1-6, frets 1-24 (there is no LED at the nut).
+// drills.js cannot import leds.js, so this copies leds.js `lightable` verbatim; the
+// FADE-12 sweep in tests/drills.test.js asserts every led and flash cell passes lightable.
+const fretted = n => !!n && !n.muted
+  && Number.isInteger(n.s) && n.s >= 1 && n.s <= 6
+  && Number.isInteger(n.f) && n.f >= 1 && n.f <= 24;
+
 // Screen frame for the current position, plus the LED set the same frame owns. One
 // matrix per family decides both, so the composition root never filters notes itself.
 // Completed non-root targets are dimmed on screen; a root stays lit; an open target
 // never blinks and is never substituted.
+// FADE-12: fret 0 leaves the lit set here and only here (led and flashNotes); `notes`
+// keeps open cells so the screen still draws them as rings. drills.js cannot import
+// leds.js, so tests/leds.test.js and this filter state the same rule at both tier-1
+// boundaries.
+// `hasFlashSet` says whether the family names its own flash set (chord destination, next
+// play-along chord), so the composition root's whole-shape fallback depends on the family,
+// never on a filtered set that happened to hold only open cells.
 export function frameAt(state, position = {}) {
+  const frame = frameCore(state, position);
+  return {
+    ...frame,
+    led: (frame.led || []).filter(fretted),
+    flashNotes: (frame.flashNotes || []).filter(fretted),
+    hasFlashSet: (frame.flashNotes || []).length > 0,
+  };
+}
+
+function frameCore(state, position) {
   const chart = state.chart;
   const totalSteps = chart.steps.length;
   const shape = chart.shape || [];
@@ -1245,6 +1269,10 @@ export function frameAt(state, position = {}) {
   const level = clampLevel(state.hintLevel === undefined ? 0 : state.hintLevel);
   const anchors = anchorNotes(shape, { rootsOnly: chart.anchorMode === 'roots' });
   const isAnchor = new Set(anchors.map(n => n.s + ':' + n.f));
+  // The screen keeps open roots as rings at Anchors (the one cue the guitar cannot give);
+  // anchorNotes drops fret 0 for the LEDs, and frameAt strips fret 0 from led, so this
+  // flag never reaches the guitar.
+  for (const n of shape) if (n && n.iv === 0 && n.f === 0 && !n.muted) isAnchor.add(n.s + ':' + n.f);
   const base = { stepNumber: 0, totalSteps, target: null, blink: false, flash: false, led: [], flashNotes: [] };
   // The Hint-on-demand flash is a one-beat window: it is true only while a finite
   // position beat is still below flashUntilBeat and false in every other branch.
@@ -1337,7 +1365,10 @@ export function frameAt(state, position = {}) {
       union.push(entry);
     }
     const destinationCells = chordCells(destination);
-    const destinationRoot = destinationCells.find(entry => entry.iv === 0) || null;
+    // Hint on demand lights the destination's first FRETTED root: an open root has no LED,
+    // so taking it would leave open chords (D, A, E) dark at level 2. The fretted root is
+    // the same cell the Anchors set already lights, never a substitute note.
+    const destinationRoot = destinationCells.find(entry => entry.iv === 0 && Number.isInteger(entry.f) && entry.f >= 1) || null;
     // The Screen-fade column: the current bar's shape in the Chord tab's dot language
     // (finger numbers for fretted notes, `0` open, `×` muted), the same shape with no
     // finger numbers at Anchors, and no dot at all from Hint on demand on.
@@ -1356,7 +1387,8 @@ export function frameAt(state, position = {}) {
     }));
     let led = [];
     if (level === 0) led = union;
-    else if (level === 1) led = destinationCells;
+    // FADE-11: Anchors lights the destination's roots plus its bass, not the whole shape.
+    else if (level === 1) led = anchorNotes(destinationCells, { chord: true });
     else if (level === 2 && onBeat && destinationRoot) led = [destinationRoot];
     const notes = level === 0
       ? screenNotes
@@ -1399,6 +1431,10 @@ export function frameAt(state, position = {}) {
     const step = chart.steps[nextIndex] || null;
     const cells = step && Array.isArray(step.cells) ? step.cells.map(n => ({ ...n })) : [];
     const roots = cells.filter(n => n.iv === 0);
+    // FADE-11: the LED set at Anchors is the chord's roots plus its bass (fretted only); the
+    // screen keeps the roots, and for every curated chord the bass is a root, so the screen
+    // already shows roots plus bass with open roots as rings.
+    const chordAnchors = anchorNotes(cells, { chord: true });
     const ending = !!(chart.steps[barIndex] && chart.steps[barIndex].ending);
     return {
       ...base,
@@ -1410,7 +1446,7 @@ export function frameAt(state, position = {}) {
       // deliberate — the sink dedupes identical scenes, so a held scene costs one write.
       blink: false,
       notes: level === 0 ? cells : level === 1 ? roots : [],
-      led: level === 0 ? cells : level === 1 ? roots : [],
+      led: level === 0 ? cells : level === 1 ? chordAnchors : [],
       // `Blink chord` flashes the next chord's full shape, one beat, exactly as the chord
       // family flashes its destination.
       flashNotes: cells,

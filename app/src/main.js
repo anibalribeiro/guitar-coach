@@ -1328,11 +1328,13 @@ function drillSceneAt(position) {
     frame,
     // The sink already prefers a flash set over the lit set, so the one-beat Hint
     // on demand window sends exactly one full-pattern frame and then returns. A family
-    // that names its own flash set (the chord destination shape) wins over the shape.
+    // that names its own flash set (the chord destination shape) wins over the shape, even
+    // when frameAt filtered that set down to nothing (all open). The shape fallback keeps
+    // its open cells; ledFrame's lightable check drops them from the frame bits.
     scene: sceneFromNotes(frame.led, {
       target: frame.target,
       blink: frame.blink,
-      flash: frame.flash ? (frame.flashNotes && frame.flashNotes.length ? frame.flashNotes : run.chart.shape) : [],
+      flash: frame.flash ? (frame.hasFlashSet ? frame.flashNotes : run.chart.shape) : [],
     }),
   };
 }

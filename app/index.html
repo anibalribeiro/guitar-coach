@@ -90,24 +90,19 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 .chip b { font-size: 16px; font-weight: 700; line-height: 1.3; }
 .chip span { font-size: 12px; font-weight: 500; color: var(--muted); line-height: 1.3; }
 .chip.root { border-color: var(--rasp); }
-.board-wrap {
-  overflow-x: auto; border-radius: 12px; -webkit-overflow-scrolling: touch;
-  background: var(--wood);
-  box-shadow: inset -16px 0 16px -16px rgba(19,35,58,.25), inset 16px 0 16px -16px rgba(19,35,58,.25);
-}
+.board-wrap { --fret-row: 36px; overflow: auto; max-height: calc(28px + var(--fret-row) * 13.5); border-radius: 12px; -webkit-overflow-scrolling: touch; background: var(--wood); scroll-behavior: smooth; scroll-padding-top: 28px; scroll-padding-bottom: var(--space-2); box-shadow: inset 0 16px 16px -16px rgba(19,35,58,.25), inset 0 -16px 16px -16px rgba(19,35,58,.25); }
 .board-stage { position: relative; min-width: 0; padding: var(--space-4); background: var(--surface); border-radius: 24px; box-shadow: var(--shadow-2); }
-#board { display: grid; background: var(--wood); border-radius: 12px; padding: var(--space-2) var(--space-3) var(--space-1); min-width: max-content; }
-.cell { position: relative; height: 38px; border-right: 3px solid var(--fret); }
+/* Vertical neck, headstock up: a fret-number column plus six strings (low E left); one row per fret. */
+#board { display: grid; grid-template-columns: 32px repeat(6, minmax(0, 1fr)); grid-template-rows: 28px; grid-auto-rows: var(--fret-row); background: var(--wood); border-radius: 12px; padding: 0 var(--space-3) var(--space-2); }
+.cell { position: relative; border-bottom: 3px solid var(--fret); }
 .cell:focus-visible { outline: 3px solid var(--cobalt); outline-offset: -4px; z-index: 2; }
-.cell.open { border-right: 7px solid var(--nut); }
-.cell::before {
-  content: ""; position: absolute; left: 0; right: 0; top: 50%;
-  height: var(--thick, 1px); transform: translateY(-50%); background: var(--string);
-}
+.cell.open { border-bottom: 7px solid var(--nut); }
+.cell::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: var(--thick, 1px); transform: translateX(-50%); background: var(--string); }
 .cell.open::before { opacity: .5; }
-.cell.marker { background: radial-gradient(circle at 50% 100%, var(--marker) 0 7px, transparent 8px); }
-.num { text-align: center; font-size: 12px; color: var(--muted); background: var(--bg); padding: var(--space-1) 0; font-variant-numeric: tabular-nums; }
+.cell.marker { background: radial-gradient(circle at 0 50%, var(--marker) 0 7px, transparent 8px); }
+.num { display: grid; place-items: center; text-align: center; font-size: 12px; color: var(--muted); background: var(--bg); padding: var(--space-1) 0; font-variant-numeric: tabular-nums; }
 .num.mk { color: var(--ink); font-weight: 700; }
+.num.head { position: sticky; top: 0; z-index: 3; height: 28px; font-weight: 700; color: var(--ink); }
 .note {
   position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
   width: 30px; height: 30px; border-radius: 50%;
@@ -127,7 +122,8 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 .note.muted { background: transparent; border: 0; color: var(--muted); box-shadow: none; }
 #board.disabled .cell { cursor: default; }
 @media (prefers-reduced-motion: reduce) { #board.pulse-on .note.target { transform: translate(-50%, -50%); } }
-@media (pointer: coarse) { .cell { height: 44px; } }
+@media (pointer: coarse) { .board-wrap { --fret-row: 44px; } }
+@media (prefers-reduced-motion: reduce) { .board-wrap { scroll-behavior: auto; } }
 .chord-detail { font-size: 16px; color: var(--ink); }
 .chart { display: grid; gap: var(--space-3); }
 .chart section { display: grid; gap: var(--space-2); }
@@ -173,7 +169,7 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 .count-in-overlay {
   position: absolute; inset: 0; display: grid; place-items: center; align-content: center; gap: var(--space-1);
   padding: var(--space-6); border-radius: 12px; background: color-mix(in srgb, var(--surface) 96%, transparent);
-  pointer-events: none; text-align: center;
+  pointer-events: none; text-align: center; z-index: 4;
 }
 .count-numeral { font-size: 40px; font-weight: 700; line-height: 1.1; color: var(--cobalt); }
 .count-label, .count-go { font-size: 12px; font-weight: 700; line-height: 1.3; text-transform: uppercase; letter-spacing: .08em; color: var(--ink); }
@@ -642,17 +638,20 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
   background: var(--bg); color: var(--ink); font-size: 12px; font-weight: 700; white-space: nowrap;
 }
 .rail-title { margin: 0; padding: 0 var(--space-1); font-size: 12px; font-weight: 700; line-height: 1.3; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
-/* Practice stage (06-04): named grid areas. Below 1024px one column in DOM order; at 1024px+ a centred
-   stage with the full-width horizontal neck on top and coach | controls beneath. Phase 7 swaps only
-   grid-template-columns and grid-template-areas for the three-column vertical-neck stage. */
+/* Practice stage: named grid areas. Below 1024px one column in DOM order (head, lesson, neck, controls,
+   coach, results). At 1024px+ a centred three-column stage, coach notes | vertical neck | controls, with
+   header, lesson and results full width; flexible side tracks keep 1024px from overflowing, and the neck
+   box grows toward the viewport height (100dvh) with the 13.5-row box as its floor. */
 #view-practice { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-6); }
 .p-head, .p-neck, .p-ctl, .p-coach, .p-out { min-width: 0; display: grid; gap: var(--space-3); align-content: start; }
 /* The lesson is an area of the stage, never the desktop overlay its .progress-panel class once gave it. */
 #view-practice #lessonPanel { position: static; width: auto; max-width: none; max-height: none; margin: 0; overflow: visible; box-shadow: none; }
 @media (min-width: 1024px) {
-  #view-practice { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); grid-template-areas: "head head" "lesson lesson" "neck neck" "coach ctl" "out out"; column-gap: 32px; row-gap: 24px; }
+  #view-practice { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 380px) minmax(0, 1fr); grid-template-areas: "head head head" "lesson lesson lesson" "coach neck ctl" "out out out"; column-gap: 32px; row-gap: 24px; }
   .p-head { grid-area: head; } #lessonPanel { grid-area: lesson; } .p-neck { grid-area: neck; }
   .p-ctl { grid-area: ctl; } .p-coach { grid-area: coach; } .p-out { grid-area: out; }
+  .p-coach, .p-ctl, .p-ctl .drill-stage, .p-ctl .hint-strip { grid-template-columns: minmax(0, 1fr); } .p-ctl .hint-row { flex-wrap: wrap; } .p-ctl .hint-sep { display: none; }
+  .p-neck .board-wrap { max-height: max(calc(28px + var(--fret-row) * 13.5), calc(100dvh - 160px)); }
 }
 .board-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); align-items: center; margin: 0; font-size: 12px; font-weight: 700; line-height: 1.3; color: var(--ink-2); }
 .legend-item { display: inline-flex; gap: var(--space-2); align-items: center; }
@@ -686,8 +685,6 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 @media (min-width: 1180px) {
   #drillStage { position: static; max-height: none; overflow: visible; align-content: start; }
   .drill-stage .backing-cluster { display: grid; }
-  #board { grid-template-columns: 30px repeat(19, minmax(0, 1fr)) !important; width: 100%; min-width: 0; }
-  #board .note { width: 26px; height: 26px; font-size: 12px; }
   .drill-stage .hint-row { flex-wrap: wrap; }
   .drill-stage .hint-row .hint-level { flex-basis: 100%; }
   .drill-stage .hint-sep { display: none; }
@@ -1021,7 +1018,7 @@ header.appbar > *, .more-head > *, .more-list > * { min-width: 0; }
           </div>
 
           <div class="board-stage">
-            <p class="board-help">Scroll the neck sideways · keyboard: arrows to move, Enter to play.</p>
+            <p class="board-help">Scroll the neck up and down · arrows move along strings and frets, Enter plays.</p>
             <div class="board-wrap"><div id="board" role="group" aria-label="Guitar fretboard"></div></div>
             <div class="count-in-overlay" id="countInOverlay" aria-hidden="true" hidden>
               <div class="count-numeral" id="countNumeral">1</div>

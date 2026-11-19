@@ -136,21 +136,45 @@ test('every decision is a fresh object and the inputs are not mutated', () => {
   assert.equal(JSON.stringify({ fade, pass }), snapshot);
 });
 
-test('anchorNotes returns roots plus the per-string box edges, deduped in shape order', () => {
+test("anchorNotes returns roots plus each string's lowest-fret note, never fret 0", () => {
   const shape = [
-    { s: 6, f: 0, midi: 40, iv: 4 },
+    { s: 6, f: 0, midi: 40, iv: 0 },
     { s: 6, f: 3, midi: 43, iv: 0 },
     { s: 6, f: 5, midi: 45, iv: 2 },
-    { s: 5, f: 2, midi: 47, iv: 1 },
-    { s: 5, f: 4, midi: 49, iv: 3 },
+    { s: 5, f: 2, midi: 47, iv: 7 },
+    { s: 5, f: 4, midi: 49, iv: 9 },
     { s: 5, f: 7, midi: 52, iv: 0 },
     { s: 6, f: 3, midi: 43, iv: 0 },
   ];
   assert.deepEqual(
     anchorNotes(shape).map(n => n.s + ':' + n.f),
-    ['6:0', '6:3', '6:5', '5:2', '5:7'],
-    'fret 0 stays, a middle non-root drops, a duplicate collapses',
+    ['6:3', '5:2', '5:7'],
+    'the open root drops, the old top edge 6:5 is no anchor, a middle non-root drops, a duplicate collapses',
   );
+});
+
+test('anchorNotes drops an open lowest note without substituting the next fret', () => {
+  const shape = [
+    { s: 4, f: 0, midi: 50, iv: 5 },
+    { s: 4, f: 2, midi: 52, iv: 7 },
+    { s: 4, f: 4, midi: 54, iv: 9 },
+    { s: 3, f: 1, midi: 56, iv: 11 },
+    { s: 3, f: 2, midi: 57, iv: 0 },
+  ];
+  assert.deepEqual(anchorNotes(shape).map(n => n.s + ':' + n.f), ['3:1', '3:2'], 'string 4 contributes no anchor');
+});
+
+test('anchorNotes ignores muted notes and notes without an integer fret', () => {
+  const shape = [
+    { s: 6, f: 0, midi: null, iv: 0, muted: true },
+    { s: 6, f: null, midi: null, iv: 0 },
+    { s: 6, f: 2.5, midi: 42, iv: 0 },
+    null,
+    { s: 6, f: 3, midi: 43, iv: 4 },
+    { s: 5, f: 3, midi: 48, iv: 0 },
+  ];
+  assert.deepEqual(anchorNotes(shape).map(n => n.s + ':' + n.f), ['6:3', '5:3']);
+  assert.deepEqual(anchorNotes(shape, { rootsOnly: true }).map(n => n.s + ':' + n.f), ['5:3']);
 });
 
 test('anchorNotes roots-only keeps roots and an empty shape returns empty', () => {
@@ -160,9 +184,50 @@ test('anchorNotes roots-only keeps roots and an empty shape returns empty', () =
     { s: 5, f: 7, midi: 52, iv: 0 },
   ];
   assert.deepEqual(anchorNotes(shape, { rootsOnly: true }).map(n => n.s + ':' + n.f), ['6:3', '5:7']);
+  const openRoot = [{ s: 4, f: 0, midi: 50, iv: 0 }, { s: 2, f: 3, midi: 62, iv: 0 }, { s: 2, f: 3, midi: 62, iv: 0 }];
+  assert.deepEqual(anchorNotes(openRoot, { rootsOnly: true }).map(n => n.s + ':' + n.f), ['2:3'], 'an open root drops and a duplicate collapses');
   assert.deepEqual(anchorNotes([], { rootsOnly: true }), []);
   assert.deepEqual(anchorNotes(), []);
   assert.deepEqual(anchorNotes(null), []);
+});
+
+test('anchorNotes chord: roots plus the bass note, open strings dropped, never substituted', () => {
+  // D open: 4:0 D (root, bass), 3:2 A, 2:3 D (root), 1:2 F#.
+  const d = [
+    { s: 4, f: 0, midi: 50, iv: 0 },
+    { s: 3, f: 2, midi: 57, iv: 7 },
+    { s: 2, f: 3, midi: 62, iv: 0 },
+    { s: 1, f: 2, midi: 66, iv: 4 },
+  ];
+  assert.deepEqual(anchorNotes(d, { chord: true }).map(n => n.s + ':' + n.f), ['2:3'], 'the open bass and root drop');
+  // C open: 5:3 C (root, bass), 4:2 E, 3:0 G, 2:1 C (root), 1:0 E.
+  const c = [
+    { s: 5, f: 3, midi: 48, iv: 0 },
+    { s: 4, f: 2, midi: 52, iv: 4 },
+    { s: 3, f: 0, midi: 55, iv: 7 },
+    { s: 2, f: 1, midi: 60, iv: 0 },
+    { s: 1, f: 0, midi: 64, iv: 4 },
+  ];
+  const roots = c.filter(n => n.iv === 0 && n.f > 0).map(n => n.s + ':' + n.f);
+  assert.deepEqual(anchorNotes(c, { chord: true }).map(n => n.s + ':' + n.f), roots, 'the bass is a root, so roots plus bass is the roots');
+  // G over B: the bass is the third, so it joins the roots.
+  const gOverB = [
+    { s: 5, f: 2, midi: 47, iv: 4 },
+    { s: 4, f: 0, midi: 50, iv: 7 },
+    { s: 3, f: 0, midi: 55, iv: 0 },
+    { s: 2, f: 0, midi: 59, iv: 4 },
+    { s: 1, f: 3, midi: 67, iv: 0 },
+    { s: 6, f: 0, midi: null, iv: 0, muted: true },
+  ];
+  assert.deepEqual(anchorNotes(gOverB, { chord: true }).map(n => n.s + ':' + n.f), ['5:2', '1:3']);
+  // A midi tie goes to the thicker (higher-numbered) string.
+  const tie = [
+    { s: 3, f: 4, midi: 59, iv: 4 },
+    { s: 4, f: 9, midi: 59, iv: 4 },
+    { s: 2, f: 1, midi: 60, iv: 0 },
+  ];
+  assert.deepEqual(anchorNotes(tie, { chord: true }).map(n => n.s + ':' + n.f), ['4:9', '2:1']);
+  assert.deepEqual(anchorNotes([], { chord: true }), []);
 });
 
 test('totalPassesFor counts the clean reps left at every remaining level and grows on a hold', () => {

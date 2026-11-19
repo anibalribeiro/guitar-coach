@@ -1,14 +1,46 @@
 // ---------- LED frame codec ----------
 // See PROTOCOL.md: write F1 + 18-byte fret bitmap to characteristic 0xDC86 of service 0xFFA0.
+// One predicate decides what the T2 can light: a fretted, unmuted cell on strings 1-6,
+// frets 1-24. Open strings have no LED (there is none at the nut), so fret 0 is never
+// lightable. The string check keeps a bad `s` from writing outside the 18 bitmap bytes
+// (it would overwrite the F1 command byte). The fret cap stays at the protocol's 24
+// bitmap bits so pinned frames stay byte-identical; the app never builds a cell above
+// theory.js FRETS (19), the T2's last LED.
+export const lightable = n => !!n && !n.muted
+  && Number.isInteger(n.s) && n.s >= 1 && n.s <= 6
+  && Number.isInteger(n.f) && n.f >= 1 && n.f <= 24;
+
 export function ledFrame(notes) {
   const b = new Uint8Array(19);
   b[0] = 0xF1;
-  for (const { s, f } of notes) {
-    if (f < 1 || f > 24) continue; // open strings have no LED
+  for (const n of notes) {
+    if (!lightable(n)) continue; // open strings have no LED
+    const { s, f } = n;
     b[(6 - s) * 3 + Math.ceil(f / 8)] |= 0x80 >> ((f - 1) % 8);
   }
   return b;
 }
+
+// Honest counts: the distinct cells the T2 can actually light. Phase 8's readout and any
+// guided-credit logic must count with these, never with `led.length`. `lit` counts the
+// lightable cells of the lit set, `dark` the lightable shape cells left unlit, and `open`
+// every open or muted cell from either list, which is never counted as lit or dark.
+export function ledCounts(lit = [], shape = []) {
+  const on = new Set(), off = new Set(), open = new Set();
+  for (const n of lit || []) {
+    if (!n) continue;
+    (lightable(n) ? on : open).add(n.s + ':' + n.f);
+  }
+  for (const n of shape || []) {
+    if (!n) continue;
+    const key = n.s + ':' + n.f;
+    if (!lightable(n)) open.add(key);
+    else if (!on.has(key)) off.add(key);
+  }
+  return { lit: on.size, dark: off.size, open: open.size };
+}
+
+export const litCount = notes => ledCounts(notes).lit;
 
 export function frameHex(frame) {
   return Array.from(frame, x => x.toString(16).padStart(2, '0')).join(' ');

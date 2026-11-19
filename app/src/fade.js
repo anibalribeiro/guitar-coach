@@ -29,37 +29,36 @@ export const REASON = {
 
 export const clampLevel = n => Math.max(0, Math.min(3, Number.isFinite(n) ? Math.trunc(n) : 0));
 
-// D-23: H1 anchors are every root plus, on each string, the first and last note of
-// the position box. Whole-neck runs have no box, so they pass rootsOnly. Fret 0 is
-// kept for the screen (the LED codec filters it; D-05). Insertion order is preserved
-// and duplicates collapse by "string:fret".
-export function anchorNotes(shape = [], { rootsOnly = false } = {}) {
-  const notes = Array.isArray(shape) ? shape : [];
+// FADE-11: Anchors are every root plus, on each string, the lowest-fret note of the
+// shape; a whole-neck run has no box, so it passes rootsOnly (roots only). Fret 0 is
+// never an anchor because the T2 has no LED at the nut: the lowest fret is measured
+// with open notes included, so an open lowest note drops that string's anchor and is
+// never replaced by the next fret. Muted and non-integer frets are ignored. Shape
+// order is preserved and duplicates collapse by "string:fret".
+// A chord shape (chord: true) anchors on its roots plus the bass note: the lowest midi,
+// a tie going to the thicker string; an open bass or root drops, never substituted.
+export function anchorNotes(shape = [], { rootsOnly = false, chord = false } = {}) {
+  const notes = (Array.isArray(shape) ? shape : [])
+    .filter(n => n && typeof n === 'object' && Number.isInteger(n.f) && !n.muted);
   const seen = new Set();
-  if (rootsOnly) {
-    return notes.filter(n => {
-      if (n.iv !== 0) return false;
-      const key = n.s + ':' + n.f;
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-  const bounds = new Map();
-  for (const n of notes) {
-    const b = bounds.get(n.s) || { lo: n.f, hi: n.f };
-    if (n.f < b.lo) b.lo = n.f;
-    if (n.f > b.hi) b.hi = n.f;
-    bounds.set(n.s, b);
-  }
-  return notes.filter(n => {
-    const b = bounds.get(n.s);
-    if (n.iv !== 0 && n.f !== b.lo && n.f !== b.hi) return false;
+  const keep = n => {
     const key = n.s + ':' + n.f;
-    if (seen.has(key)) return false;
+    if (n.f === 0 || seen.has(key)) return false;
     seen.add(key);
     return true;
-  });
+  };
+  if (rootsOnly) return notes.filter(n => n.iv === 0 && keep(n));
+  if (chord) {
+    let bass = null;
+    for (const n of notes) {
+      if (!Number.isFinite(n.midi)) continue;
+      if (!bass || n.midi < bass.midi || (n.midi === bass.midi && n.s > bass.s)) bass = n;
+    }
+    return notes.filter(n => (n.iv === 0 || n === bass) && keep(n));
+  }
+  const lowest = new Map();
+  for (const n of notes) if (!lowest.has(n.s) || n.f < lowest.get(n.s)) lowest.set(n.s, n.f);
+  return notes.filter(n => (n.iv === 0 || n.f === lowest.get(n.s)) && keep(n));
 }
 
 // The pass plan is a live estimate, never a fixed four (D-35). Each remaining hint

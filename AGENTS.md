@@ -213,6 +213,10 @@ A one-way tier rule, not a literal file chain. No module may import a module in 
 - DOM lookups go through `$ = id => document.getElementById(id)`; use `querySelector` only for descendant lookup inside a cached cell. Cached DOM nodes live in `cells` keyed by `"s:f"`.
 - New controls need: markup in the relevant section, a `$('id')` listener in `panels.wire()`, a settings field plus persistence if applicable, and a render path. New colors go into the single `:root` block.
 - The board is built once and diff-rendered; never clear every cell on a tick.
+- The neck is vertical (`app/src/fretboard.js`): a header row of string names, then per fret one fret number and six cells, low E on the left. It scrolls only its own box (`.board-wrap`) with `wrap.scrollTo({ top })`; never scroll the page from the board. Practice is one column below 1024px and coach notes | vertical neck | controls at 1024px+ (grid template only; DOM order is fixed).
+- Board keyboard map is `nextCell` (ArrowUp/Down along the string, ArrowLeft/Right to the lower/higher-pitched string, Home/End to fret 0/19); every cell label comes from `cellLabel` (fret 0 reads "open string, no LED").
+- Anchors (FADE-11, `anchorNotes` in `fade.js`) = every root plus each string's lowest-fret note of the box; whole neck = roots only; chords = roots plus the bass note. Fret 0 is never an anchor and is dropped, never substituted by the next fret.
+- `ledFrame`/`lightable` in `leds.js` is the hardware choke point: no unlightable cell (fret 0, muted, string outside 1-6) ever sets a frame bit, whatever set reaches it. `frameAt` in `drills.js` is the drill-set filter: it strips fret 0 from `led` and `flashNotes` and reports `hasFlashSet`, so `main` falls back to the whole shape only for families that name no flash set. The browse scene (`sceneFromNotes(view.notes)`) and the shape flash fallback stay unfiltered by design and rely on `ledFrame`; screen `notes` keep open cells as rings. `ledFrame` and `ledCounts` share the `lightable` predicate; any lit/dark readout or guided credit must count with `ledCounts`, never `led.length` or `scene.lit`.
 
 ## Documentation Conventions
 
@@ -243,7 +247,7 @@ A one-way tier rule, not a literal file chain. No module may import a module in 
 | `buildPositions(root, base)` | Derive 2- or 3-notes-per-string position boxes along the neck | `app/index.html:221–241` |
 | `state` + persistence | Single source of truth for selection/run state; `localStorage` round-trip | `app/index.html:243–266` |
 | `computeNotes()` | Expand scale across 6 strings × frets 0–19, filter by position, build practice order | `app/index.html:268–298` |
-| `buildBoard()` | One-time DOM construction of 6×20 fret cells + fret numbers, caches `cells` map | `app/index.html:301–324` |
+| `createFretboard()` | One-time vertical board: header row of string names, then per fret 0–19 one fret number and six cells (low E left); cells cached by `"s:f"`, diff-rendered | `app/src/fretboard.js` |
 | `label`, `currentTarget`, `render` | Full redraw of note dots, scale chips, then LED push | `app/index.html:326–354` |
 | `fillSelects`, `fillPositions`, `refresh` | Populate option lists; orchestrate recompute → positions → render → save | `app/index.html:356–382` |
 | `ledFrame(notes)` | Encode notes into `F1` + 18-byte fret bitmap | `app/index.html:386–394` |

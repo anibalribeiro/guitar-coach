@@ -7,11 +7,11 @@ import {
   createRun, reduce, frameAt, summarize, summarizeDrill, resumeFromBeat, stepIndexFor,
   CHANGE_WINDOW, CHART_CHANGES, songSectionBars, sectionAtBar, playAlongIdleFrame,
 } from '../app/src/drills.js';
-import { CHORD_PAIRS, chordById, chordPairById, PROGRESSIONS, progressionById, SONGS, songById } from '../app/src/content.js';
+import { CHORD_FAMILIES, CHORD_PAIRS, chordById, chordPairById, PROGRESSIONS, progressionById, SONGS, songById } from '../app/src/content.js';
 import { anchorNotes } from '../app/src/fade.js';
-import { expandChord, expandProgression, expandSongSection } from '../app/src/theory.js';
+import { expandChord, expandProgression, expandSongSection, voiceChord } from '../app/src/theory.js';
 import { applyResult, emptyProgress } from '../app/src/progress.js';
-import { sceneFromNotes, frameForScene, frameHex } from '../app/src/leds.js';
+import { sceneFromNotes, frameForScene, frameHex, ledCounts, ledFrame, lightable } from '../app/src/leds.js';
 
 const instance = {
   scaleId: 'minPent', keyPc: 9, positionId: 's6f0', direction: 'up', bpm: 80,
@@ -45,6 +45,11 @@ function syntheticChart(steps) {
 
 // A play-along chart from the curated table: one bar per `degrees` entry plus the ending
 // step, built through the same `expandProgression` the composition root uses.
+// FADE-12: the LED set never holds fret 0, so expectations built from a shape or a chord's
+// cells drop the open cells the T2 cannot light (Pitfall 10: fix the expectation, not the code).
+const litOnly = cells => cells.filter(n => n.f >= 1);
+const litKeys = keys => keys.filter(key => !key.endsWith(':0'));
+
 function syntheticPlayChart({ id = 'I-IV-V', keyPc = 0, bpm = 80, meter = [4, 4], startLevel = 0 } = {}) {
   const prog = progressionById[id] || PROGRESSIONS[0];
   return buildPlayAlongChart({
@@ -720,23 +725,23 @@ test('frameAt filters notes by hint level, marks anchors and keeps the result sh
   c.anchorMode = 'box';
   const startedState = reduce(createRun(c), { type: 'START' }).state;
 
-  // H1 at count-in: anchors (root / string edges) plus no target outside them.
+  // H1 at count-in: anchors (roots / each string's lowest fret) plus no target outside them.
   let frame = frameAt({ ...startedState, hintLevel: 1 }, { phase: 'countIn', beat: 0, activeStartBeat: 4 });
   assert.deepEqual(frame.target, root);
-  assert.deepEqual(frame.notes.map(n => n.s + ':' + n.f), ['5:3', '5:5', '4:2']);
+  assert.deepEqual(frame.notes.map(n => n.s + ':' + n.f), ['5:3', '4:2']);
   assert.equal(frame.notes.every(n => n.anchor), true);
 
   // H1 while the target is a middle note: anchors plus that target only.
   frame = frameAt({ ...startedState, hintLevel: 1 }, { phase: 'active', beat: 5, activeStartBeat: 4 });
   assert.deepEqual(frame.target, middle);
-  assert.deepEqual(frame.notes.map(n => n.s + ':' + n.f), ['5:3', '5:4', '5:5', '4:2']);
+  assert.deepEqual(frame.notes.map(n => n.s + ':' + n.f), ['5:3', '5:4', '4:2']);
   assert.equal(frame.notes.find(n => n.f === 4).anchor, false);
 
   // H2: every shape note, anchors marked, target kept.
   frame = frameAt({ ...startedState, hintLevel: 2 }, { phase: 'active', beat: 5, activeStartBeat: 4 });
   assert.equal(frame.notes.length, 4);
   assert.equal(frame.target, middle);
-  assert.deepEqual(frame.notes.filter(n => n.anchor).map(n => n.s + ':' + n.f), ['5:3', '5:5', '4:2']);
+  assert.deepEqual(frame.notes.filter(n => n.anchor).map(n => n.s + ':' + n.f), ['5:3', '4:2']);
 
   // H3: no notes, no target, no blink.
   frame = frameAt({ ...startedState, hintLevel: 3 }, { phase: 'active', beat: 5, activeStartBeat: 4 });
@@ -757,6 +762,27 @@ test('frameAt filters notes by hint level, marks anchors and keeps the result sh
   assert.equal(frame.target, null);
 });
 
+test('FADE-11 tracer: minPent A s6f5 at Anchors lights 7 where Full lights 12, and frame, bits and count agree', () => {
+  const c = buildScaleRunChart({ scaleId: 'minPent', keyPc: 9, positionId: 's6f5', direction: 'up', bpm: 70 });
+  const firstActive = startLevel => {
+    const run = createRun({ ...c, startLevel });
+    const s = reduce(reduce(run, { type: 'START', at: 1000 }).state, { type: 'TICK', beat: c.countInBeats }).state;
+    return frameAt(s, { phase: 'active', beat: c.countInBeats });
+  };
+  const anchors = firstActive(1);
+  const keys = new Set(anchors.led.map(n => n.s + ':' + n.f));
+  assert.ok(anchors.target);
+  assert.ok(keys.has(anchors.target.s + ':' + anchors.target.f), 'the first target is itself an anchor');
+  assert.equal(keys.size, 7);
+  assert.equal(anchors.led.length, 7);
+  const bits = frame => { let n = 0; for (let i = 1; i <= 18; i++) for (let x = frame[i]; x; x >>= 1) n += x & 1; return n; };
+  assert.equal(bits(frameForScene(sceneFromNotes(anchors.led), 0, 70)), 7);
+  assert.equal(bits(ledFrame(anchors.led)), 7);
+  assert.deepEqual(ledCounts(anchors.led, c.shape), { lit: 7, dark: 5, open: 0 });
+  const full = firstActive(0);
+  assert.equal(ledCounts(full.led, c.shape).lit, 12);
+});
+
 test('whole-neck runs anchor on roots only and open notes keep their open flag', () => {
   const c = buildScaleRunChart({ scaleId: 'minPent', keyPc: 9, positionId: 'all', direction: 'up', bpm: 80 });
   assert.equal(c.anchorMode, 'roots');
@@ -767,6 +793,26 @@ test('whole-neck runs anchor on roots only and open notes keep their open flag',
   assert.equal(anchors.every(n => n.iv === 0), true, 'roots only on a whole-neck run');
   assert.equal(frame.notes.every(n => n.anchor || n.target), true);
   for (const n of frame.notes) assert.equal(n.open, n.f === 0);
+});
+
+test('CR-01: Anchors keeps open roots on screen as rings while the LEDs stay fretted', () => {
+  for (const positionId of ['s6f0', 'all']) {
+    const c = buildScaleRunChart({ scaleId: 'minPent', keyPc: 4, positionId, direction: 'up', bpm: 80 });
+    const live = { ...reduce(createRun(c), { type: 'START', at: 1000 }).state, hintLevel: 1 };
+    const frames = [frameAt(live, { phase: 'countIn', beat: 0, activeStartBeat: c.countInBeats })];
+    for (let beat = c.countInBeats; beat < c.countInBeats + c.steps.length; beat++) {
+      frames.push(frameAt({ ...live, phase: 'active', beat }, { phase: 'active', beat }));
+    }
+    for (const frame of frames) {
+      const keys = frame.notes.map(n => n.s + ':' + n.f);
+      for (const key of ['6:0', '1:0']) assert.ok(keys.includes(key), `${positionId} screen keeps open root ${key}`);
+      for (const n of frame.notes.filter(n => n.f === 0 && n.iv === 0)) {
+        assert.equal(n.open, true);
+        assert.equal(n.anchor, true);
+      }
+      assert.equal(frame.led.some(n => n.f === 0), false, `${positionId} led never holds fret 0`);
+    }
+  }
 });
 
 test('summarize returns the one RunSummary shape with explicit nulls', () => {
@@ -1684,8 +1730,8 @@ test('the level-4 recall frame is empty in both quiz directions', () => {
 test('a Find-mode quiz frame lights the pool, the roots, then nothing', () => {
   const c = quizChart();
   const state = startQuiz(c);
-  const pool = c.shape.map(ledCell);
-  const roots = c.shape.filter(n => n.iv === 0).map(ledCell);
+  const pool = litOnly(c.shape).map(ledCell);
+  const roots = litOnly(c.shape).filter(n => n.iv === 0).map(ledCell);
   assert.ok(roots.length > 0 && roots.length < pool.length, 'the fixture pool has roots and non-roots');
   const frameAtLevel = level => frameAt({ ...state, hintLevel: level }, { phase: 'active', beat: 0, mode: 'find' });
   assert.deepEqual(frameAtLevel(0).led, pool, 'Full pattern lights the whole pool');
@@ -1742,6 +1788,14 @@ const cellsOf = id => expandChord(chordById[id].voicings[0])
   .filter(n => !n.muted)
   .map(n => `${n.s}:${n.f}`);
 const keysOf = notes => (notes || []).map(n => `${n.s}:${n.f}`);
+// FADE-11: a chord's Anchors LED set is its roots plus its bass, open strings dropped.
+const chordAnchorKeys = id => {
+  const chord = chordById[id];
+  const cells = expandChord(chord.voicings[0])
+    .filter(n => !n.muted)
+    .map(n => ({ s: n.s, f: n.f, midi: n.midi, iv: ((n.pc - chord.rootPc) % 12 + 12) % 12 }));
+  return keysOf(anchorNotes(cells, { chord: true }));
+};
 
 const freshChangeRecord = planned => ({
   planned, counted: 0, clean: 0, missed: 0, perBar: [], onsetCounted: false,
@@ -1941,8 +1995,8 @@ test('the chord frame carries the LED column and the screen column, never one ma
   const current = c.steps[0].chordId;
   const destinationCells = cellsOf(destination);
   const currentCells = cellsOf(current);
-  const destinationOnly = destinationCells.filter(key => !currentCells.includes(key));
-  assert.ok(destinationOnly.length > 0, 'the pair has a cell only the destination chord owns');
+  const destinationOnly = litKeys(destinationCells.filter(key => !currentCells.includes(key)));
+  assert.ok(destinationOnly.length > 0, 'the pair has a fretted cell only the destination chord owns');
 
   // step/target bookkeeping is the bar the transport is in.
   for (const frame of frames) {
@@ -1954,13 +2008,14 @@ test('the chord frame carries the LED column and the screen column, never one ma
   // Level 0 (Full pattern): the union of the current and the next chord's shape.
   assert.deepEqual(
     [...new Set(keysOf(frames[0].led))].sort(),
-    [...new Set([...currentCells, ...destinationCells])].sort(),
+    [...new Set(litKeys([...currentCells, ...destinationCells]))].sort(),
   );
   assert.equal(frames[0].blink, true, 'the change beat blinks the current root');
   assert.equal(at(0, 5).blink, false, 'and holds solid inside the bar');
 
-  // Level 1 (Anchors): the destination shape on its own.
-  assert.deepEqual(keysOf(frames[1].led), destinationCells);
+  // Level 1 (Anchors): the destination chord's roots plus its bass, fretted cells only (FADE-11).
+  assert.deepEqual(keysOf(frames[1].led), chordAnchorKeys(destination));
+  assert.ok(frames[1].led.length < litKeys(destinationCells).length, 'sparser than the destination shape');
   assert.equal(frames[1].blink, true, 'the destination shape blinks on the change beat');
   assert.equal(at(1, 5).blink, false);
 
@@ -1997,12 +2052,12 @@ test('the chord frame carries the LED column and the screen column, never one ma
   // The second bar swaps the two columns over.
   const second = at(1, 8);
   assert.equal(second.stepNumber, 2);
-  assert.deepEqual(keysOf(second.led), currentCells, 'bar 2 blinks the cell of C again');
+  assert.deepEqual(keysOf(second.led), chordAnchorKeys(current), 'bar 2 blinks the anchors of C again');
   assert.deepEqual(keysOf(second.notes), cellsOf('G'), 'and shows the G shape on screen');
 
   // `Blink chord` flashes exactly the destination shape at every level.
   for (const level of [0, 1, 2, 3]) {
-    assert.deepEqual(keysOf(frames[level].flashNotes), destinationCells, `level ${level} flash set`);
+    assert.deepEqual(keysOf(frames[level].flashNotes), litKeys(destinationCells), `level ${level} flash set`);
   }
 });
 
@@ -2014,7 +2069,7 @@ test('the Flash event turns the chord destination shape into the one-beat LED se
   assert.equal(flashed.flashUntilBeat, 5, 'exactly one beat');
   const frame = frameAt(flashed, { phase: 'active', beat: 4 });
   assert.equal(frame.flash, true);
-  assert.deepEqual(keysOf(frame.flashNotes), cellsOf(c.steps[1].chordId));
+  assert.deepEqual(keysOf(frame.flashNotes), litKeys(cellsOf(c.steps[1].chordId)));
   assert.equal(frameAt(flashed, { phase: 'active', beat: 5 }).flash, false);
 });
 
@@ -2166,20 +2221,20 @@ test('the family × level matrix is one table for scaleRun, findNote and chordCh
   // anchors plus the target, No lights is the held zero frame.
   const scaleAnchors = new Set(anchorNotes(scaleChart.shape).map(cellKey));
   const scaleTarget = scaleChart.steps[0].target;
-  const scaleHints = scaleChart.shape
+  const scaleHints = litOnly(scaleChart.shape)
     .filter(n => scaleAnchors.has(cellKey(n)) || (n.s === scaleTarget.s && n.f === scaleTarget.f))
     .map(cellKey);
   const scaleBlink = !(scaleTarget && scaleTarget.f === 0);
 
   // Find the note in Find form: the whole pool, then the roots, then nothing.
-  const findPool = findChart.shape.map(cellKey);
-  const findRoots = findChart.shape.filter(n => n.iv === 0).map(cellKey);
+  const findPool = litOnly(findChart.shape).map(cellKey);
+  const findRoots = litOnly(findChart.shape).filter(n => n.iv === 0).map(cellKey);
 
   // Chord changes: the union of both shapes, then the destination shape, then the
   // destination root on beat 1 only, then the held zero frame.
   const currentCells = cellsOf(chord.steps[0].chordId);
   const destinationCells = cellsOf(chord.steps[1].chordId);
-  const union = [...new Set([...currentCells, ...destinationCells])];
+  const union = litKeys([...new Set([...currentCells, ...destinationCells])]);
   const destinationRoot = ledCell(chord.steps[1].target);
 
   const frameFor = (family, level, beat = 4) => {
@@ -2193,7 +2248,7 @@ test('the family × level matrix is one table for scaleRun, findNote and chordCh
   };
 
   const rows = [
-    { family: 'scaleRun', level: 0, led: scaleChart.shape.map(cellKey), blink: scaleBlink },
+    { family: 'scaleRun', level: 0, led: litOnly(scaleChart.shape).map(cellKey), blink: scaleBlink },
     { family: 'scaleRun', level: 1, led: scaleHints, blink: scaleBlink },
     { family: 'scaleRun', level: 2, led: scaleHints, blink: scaleBlink },
     { family: 'scaleRun', level: 3, led: [], blink: false },
@@ -2202,7 +2257,7 @@ test('the family × level matrix is one table for scaleRun, findNote and chordCh
     { family: 'findNote', level: 2, led: [], blink: false },
     { family: 'findNote', level: 3, led: [], blink: false },
     { family: 'chordChanges', level: 0, led: union, blink: true },
-    { family: 'chordChanges', level: 1, led: destinationCells, blink: true },
+    { family: 'chordChanges', level: 1, led: chordAnchorKeys(chord.steps[1].chordId), blink: true },
     { family: 'chordChanges', level: 2, led: [cellKey(destinationRoot)], blink: false },
     { family: 'chordChanges', level: 3, led: [], blink: false },
   ];
@@ -2226,7 +2281,7 @@ test('the family × level matrix is one table for scaleRun, findNote and chordCh
   for (const level of [0, 1, 2, 3]) {
     assert.deepEqual(
       keysOf(frameFor('chordChanges', level).flashNotes),
-      destinationCells,
+      litKeys(destinationCells),
       `chord level ${level} flashes the destination shape`,
     );
     assert.deepEqual(frameFor('scaleRun', level).flashNotes, [], `scale level ${level} has no flash set`);
@@ -2539,8 +2594,11 @@ test('the play-along frame carries the NEXT chord at every level and never blink
   assert.deepEqual(full.target, c.steps[1].target);
 
   // L2 Anchors: that chord's own root cells, never the whole shape and never bar 1's root.
+  // The LED set is FADE-11's chord anchors (roots plus bass, fretted only); the screen keeps
+  // the roots, open ones included as rings.
   const anchors = frameFor(1);
-  assert.deepEqual(anchors.led, nextRoots);
+  assert.deepEqual(anchors.led, anchorNotes(next, { chord: true }));
+  assert.deepEqual(anchors.led, litOnly(nextRoots), 'every curated bass is a root');
   assert.deepEqual(anchors.notes, nextRoots);
   assert.ok(nextRoots.length > 0 && nextRoots.length < next.length);
 
@@ -2561,20 +2619,20 @@ test('the idle stage and the count-in preview bar 1, and the ending is never bar
   // Idle: no run has started, and the stage still previews the bar the pass will open on
   // (A-52) instead of the whole pass's union.
   const idle = frameAt(createRun(c), {});
-  assert.deepEqual(idle.led, c.steps[0].cells);
+  assert.deepEqual(idle.led, litOnly(c.steps[0].cells));
   assert.equal(idle.stepNumber, 1);
   assert.equal(idle.totalSteps, 12);
   // The count-in previews the same bar, from the resume anchor rather than the raw beat.
   const started = reduce(createRun(c), { type: 'START', at: 1000 }).state;
   const countIn = frameAt(started, { phase: 'countIn', beat: 1, activeStartBeat: 4 });
-  assert.deepEqual(countIn.led, c.steps[0].cells);
+  assert.deepEqual(countIn.led, litOnly(c.steps[0].cells));
   assert.equal(countIn.ending, false);
   // The last chart bar's next chord is the ending's, which holds that same chord.
   const lastBar = frameAt(
     { ...started, phase: 'active', hintLevel: 0 },
     { phase: 'active', beat: 4 + 11 * 4 },
   );
-  assert.deepEqual(lastBar.led, c.steps[12].cells);
+  assert.deepEqual(lastBar.led, litOnly(c.steps[12].cells));
   assert.equal(lastBar.stepNumber, 12);
   assert.equal(lastBar.ending, false);
   // The ending step is named, never numbered: `stepNumber` is bars + 1 while `totalSteps`
@@ -2586,7 +2644,7 @@ test('the idle stage and the count-in preview bar 1, and the ending is never bar
   assert.equal(ending.ending, true);
   assert.equal(ending.stepNumber, 13);
   assert.equal(ending.totalSteps, 12);
-  assert.deepEqual(ending.led, c.steps[12].cells);
+  assert.deepEqual(ending.led, litOnly(c.steps[12].cells));
 });
 
 test('the play-along frame is held, not animated: the same state and beat render twice', () => {
@@ -2598,7 +2656,7 @@ test('the play-along frame is held, not animated: the same state and beat render
   // the branch's next bar — a union on the board would print the whole progression.
   const nextKeys = new Set(c.steps[1].cells.map(n => n.s + ':' + n.f));
   assert.ok(c.shape.some(n => !nextKeys.has(n.s + ':' + n.f)), 'the union spans more than one bar');
-  assert.deepEqual(frameAt(state, position).led, c.steps[1].cells);
+  assert.deepEqual(frameAt(state, position).led, litOnly(c.steps[1].cells));
 });
 
 test('a 3/4 play-along frame reports its own meter and its own bar lines', () => {
@@ -2609,7 +2667,7 @@ test('a 3/4 play-along frame reports its own meter and its own bar lines', () =>
   const bar2 = frameAt(state, { phase: 'active', beat: 6 });
   assert.equal(bar2.barIndex, 1);
   assert.equal(bar2.beatInBar, 0);
-  assert.deepEqual(bar2.led, c.steps[2].cells);
+  assert.deepEqual(bar2.led, litOnly(c.steps[2].cells));
   assert.equal(frameAt(state, { phase: 'active', beat: 8 }).beatInBar, 2, 'three beats to the bar');
 });
 
@@ -2807,7 +2865,7 @@ test('each section bar carries its own sectionId and barId, and the boundary nam
   const boundaryBeat = chart.countInBeats + (verse.length - 1) * chart.beatsPerBar;
   const frame = frameAt(state, { phase: 'active', beat: boundaryBeat });
   assert.equal(frame.barIndex, verse.length - 1);
-  assert.deepEqual(frame.led, chart.steps[verse.length].cells);
+  assert.deepEqual(frame.led, litOnly(chart.steps[verse.length].cells));
   assert.deepEqual(frame.target, chart.steps[verse.length].target);
   assert.notEqual(chart.steps[verse.length].chordName, chart.steps[verse.length - 1].chordName);
 
@@ -2815,7 +2873,7 @@ test('each section bar carries its own sectionId and barId, and the boundary nam
   const lastBeat = chart.countInBeats + (chart.bars - 1) * chart.beatsPerBar;
   const last = frameAt(state, { phase: 'active', beat: lastBeat });
   assert.equal(last.barIndex, chart.bars - 1);
-  assert.deepEqual(last.led, chart.steps[chart.bars].cells);
+  assert.deepEqual(last.led, litOnly(chart.steps[chart.bars].cells));
   assert.equal(chart.steps[chart.bars].chordName, chorus[chorus.length - 1].name);
   // The ending belongs to the section that just played.
   assert.equal(last.led.length > 0, true);
@@ -2925,7 +2983,7 @@ test('WR-02: the idle play-along preview paints bar 1 on the board and the guita
   const c = syntheticPlayChart({ id: '12-bar-blues', bpm: 80 });
   const idle = playAlongIdleFrame(c, 0);
   assert.deepEqual(idle.notes, c.steps[0].cells, 'the board shows bar 1, not the union of the pass');
-  assert.deepEqual(idle.led, c.steps[0].cells, 'the guitar shows the same bar');
+  assert.deepEqual(idle.led, litOnly(c.steps[0].cells), 'the guitar shows the same bar, fretted cells only');
   assert.deepEqual(idle.target, c.steps[0].target);
   assert.equal(idle.stepNumber, 1);
   assert.equal(idle.totalSteps, 12);
@@ -2977,4 +3035,144 @@ test('IN-04: an ending-bar strum at its own time counts nothing even when the la
   }).state;
   assert.equal(onTime.changes.perBar[11], 'clean');
   assert.equal(onTime.changes.counted, 12);
+});
+
+// ---------- Phase 7: open strings never lit (07-01 Task 2) ----------
+test('FADE-12: no family, level or phase lights fret 0', () => {
+  const charts = [
+    ['scaleRun open box', buildScaleRunChart({ scaleId: 'minPent', keyPc: 9, positionId: 's6f0', direction: 'up', bpm: 80 })],
+    ['findNote', quizChart()],
+    ['findNote name', nameQuizChart()],
+    ['chordChanges', chordChart()],
+    ['progression', syntheticPlayChart({ id: 'I-IV-V', keyPc: 0 })],
+  ];
+  // IN-02: the sweep checks with leds.js `lightable` itself, so drills.js `fretted` can never
+  // drift from the codec's rule.
+  const fretted = lightable;
+  let sawOpenScreen = false;
+  for (const [name, c] of charts) {
+    const countIn = Number.isFinite(c.countInBeats) ? c.countInBeats : 4;
+    for (let level = 0; level <= 3; level++) {
+      const run = createRun({ ...c, startLevel: Math.min(level, 2) });
+      const idle = { ...run, hintLevel: level, flashUntilBeat: Infinity };
+      const live = { ...reduce(run, { type: 'START', at: 1000 }).state, hintLevel: level, flashUntilBeat: Infinity };
+      const frames = [
+        ['idle', frameAt(idle, { phase: 'idle', beat: 0 })],
+        ['countIn', frameAt(live, { phase: 'countIn', beat: 0, activeStartBeat: countIn })],
+        ['finished', frameAt(live, { phase: 'finished', beat: countIn + 8 })],
+        ['result', frameAt({ ...live, phase: 'result', stepIndex: 1 }, { phase: 'finished', beat: countIn + 8 })],
+      ];
+      for (let beat = countIn; beat < countIn + 24; beat += 0.5) {
+        const activeState = { ...live, phase: 'active', beat, questionIndex: Math.floor(beat - countIn) % Math.max(1, (c.questions || []).length || 1) };
+        frames.push([`active ${beat}`, frameAt(activeState, { phase: 'active', beat, activeStartBeat: countIn })]);
+      }
+      for (const [phase, frame] of frames) {
+        for (const n of frame.led || []) assert.ok(fretted(n), `${name} L${level} ${phase} led ${n.s}:${n.f}`);
+        for (const n of frame.flashNotes || []) assert.ok(fretted(n), `${name} L${level} ${phase} flash ${n.s}:${n.f}`);
+        if (name === 'scaleRun open box' && level === 0 && phase === 'idle') {
+          sawOpenScreen = (frame.notes || []).some(n => n.f === 0 && n.open === true);
+        }
+      }
+    }
+  }
+  assert.ok(sawOpenScreen, 'the open box at Full keeps its fret-0 notes on screen, flagged open');
+  for (let level = 0; level <= 3; level++) {
+    const idle = playAlongIdleFrame(syntheticPlayChart({ id: 'I-IV-V', keyPc: 0 }), level);
+    assert.equal(idle.led.some(n => n.f === 0), false, `idle preview L${level}`);
+  }
+});
+
+test('FADE-11: play-along Anchors light the chord anchors while the screen keeps the roots', () => {
+  for (const keyPc of [0, 2, 7, 9]) {
+    const c = syntheticPlayChart({ id: 'I-IV-V', keyPc });
+    const state = active(c, 4);
+    for (let bar = 0; bar < c.bars; bar++) {
+      const beat = c.countInBeats + bar * c.beatsPerBar;
+      const frame = frameAt({ ...state, phase: 'active', hintLevel: 1 }, { phase: 'active', beat });
+      const next = c.steps[Math.min(bar + 1, c.bars - 1)].cells;
+      assert.deepEqual(frame.led, anchorNotes(next, { chord: true }), `key ${keyPc} bar ${bar} led`);
+      assert.deepEqual(frame.notes, next.filter(n => n.iv === 0), `key ${keyPc} bar ${bar} screen roots`);
+    }
+  }
+});
+
+test('WR-01: Hint on demand lights the destination\'s first fretted root, so open chords never go dark', () => {
+  for (const pair of CHORD_PAIRS) {
+    const c = buildChordChangeChart({ pairId: pair.id, bpm: 80 });
+    const state = active(c, c.countInBeats);
+    for (let bar = 0; bar < c.chords.length; bar++) {
+      const beat = c.countInBeats + bar * c.beatsPerBar;
+      const l1 = frameAt({ ...state, phase: 'active', beat, hintLevel: 1 }, { phase: 'active', beat });
+      const l2 = frameAt({ ...state, phase: 'active', beat, hintLevel: 2 }, { phase: 'active', beat });
+      assert.equal(l2.led.length, 1, `${pair.id} bar ${bar + 1}: level 2 lights one root on the beat`);
+      const [root] = l2.led;
+      assert.equal(root.iv, 0);
+      assert.ok(root.f >= 1, `${pair.id} bar ${bar + 1}: the level-2 root is fretted`);
+      const anchors = new Set(l1.led.map(n => n.s + ':' + n.f));
+      assert.ok(anchors.has(root.s + ':' + root.f), `${pair.id} bar ${bar + 1}: the level-2 cue is part of Anchors`);
+    }
+  }
+  // D → A: the destination A's root 5:0 is open, so level 2 lights its fretted root 3:2.
+  const da = buildChordChangeChart({ pairId: 'D-A', bpm: 80 });
+  const beat = da.countInBeats;
+  const frame = frameAt({ ...active(da, beat), phase: 'active', beat, hintLevel: 2 }, { phase: 'active', beat });
+  assert.deepEqual(frame.led.map(n => n.s + ':' + n.f), ['3:2']);
+});
+
+test('IN-01: hasFlashSet follows the family, not a flash set filtered down to nothing', () => {
+  const scale = buildScaleRunChart({ scaleId: 'minPent', keyPc: 4, positionId: 's6f0', direction: 'up', bpm: 80 });
+  const scaleFrame = frameAt({ ...active(scale, 4), hintLevel: 2, flashUntilBeat: Infinity }, { phase: 'active', beat: 4 });
+  assert.equal(scaleFrame.hasFlashSet, false, 'a scale run flashes the whole shape');
+  const chordFrame = frameAt({ ...active(chordChart(), 4), hintLevel: 2 }, { phase: 'active', beat: 4 });
+  assert.equal(chordFrame.hasFlashSet, true);
+  assert.ok(chordFrame.flashNotes.length > 0);
+  // A play-along whose next chord is all open strings: the family still names its set, so
+  // the composition root must not fall back to some other, whole-shape set.
+  const play = syntheticPlayChart({ id: 'I-IV-V', keyPc: 0 });
+  const steps = play.steps.map(step => ({ ...step, cells: (step.cells || []).map(n => ({ ...n, f: 0 })) }));
+  const openPlay = { ...play, steps };
+  const beat = openPlay.countInBeats;
+  const frame = frameAt({ ...active(openPlay, beat), phase: 'active', hintLevel: 2, flashUntilBeat: Infinity }, { phase: 'active', beat });
+  assert.deepEqual(frame.flashNotes, []);
+  assert.equal(frame.hasFlashSet, true);
+});
+
+// Muted cells never reach a scale shape (the chord families drop them before building cells),
+// so this pins the fret and string halves of the rule; leds.test.js pins the muted half.
+test('IN-02: frameAt drops off-neck and bad-string cells, so led.length equals ledCounts lit', () => {
+  const good = { s: 5, f: 3, midi: 48, iv: 0 };
+  const odd = [
+    { s: 3, f: 25, midi: 80, iv: 0 },
+    { s: 7, f: 2, midi: 40, iv: 0 },
+  ];
+  const c = syntheticChart([good, ...odd]);
+  const frame = frameAt({ ...createRun(c), hintLevel: 0 }, { phase: 'idle', beat: 0 });
+  assert.deepEqual(frame.led.map(n => n.s + ':' + n.f), ['5:3']);
+  assert.equal(frame.led.length, ledCounts(frame.led).lit);
+  assert.equal(frame.led.every(lightable), true);
+});
+
+// The play-along screen shows `roots` at Anchors while the LEDs show roots plus bass; the two
+// agree only while every voicing's bass is a root. A slash chord or inversion added later
+// must fail here rather than let the screen and the guitar disagree.
+test('IN-05: every curated and movable voicing has a root as its bass', () => {
+  const bassIsRoot = (voicing, label) => {
+    const sounding = expandChord(voicing).filter(n => !n.muted);
+    assert.ok(sounding.length > 0, `${label} sounds`);
+    const bass = sounding.reduce((low, n) => (n.midi < low.midi ? n : low));
+    assert.equal(bass.root, true, `${label}: bass ${bass.s}:${bass.f} is a root`);
+  };
+  let checked = 0;
+  for (const family of CHORD_FAMILIES) {
+    for (const voicing of family.voicings) { bassIsRoot(voicing, `${family.id} ${voicing.id}`); checked += 1; }
+  }
+  for (const quality of ['maj', 'min', '7']) {
+    for (let rootPc = 0; rootPc < 12; rootPc++) {
+      const voicing = voiceChord(rootPc, quality, null, []);
+      assert.ok(voicing, `movable ${quality} on ${rootPc}`);
+      bassIsRoot(voicing, `movable ${quality} ${rootPc}`);
+      checked += 1;
+    }
+  }
+  assert.equal(checked, 24 + 36);
 });

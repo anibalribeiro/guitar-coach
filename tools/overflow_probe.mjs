@@ -10,8 +10,15 @@
 // port Chrome itself picks (read from DevToolsActivePort in a fresh temporary profile: a reused
 // profile could answer from a cached service worker and measure an old shell, and a fixed port
 // could attach to someone else's server or browser), and prints one JSON line per measurement.
-// Exit 0 = clean, 1 = a positive scrollWidth - clientWidth somewhere, 2 = Chrome, the server or
-// the app shell did not start. Both child processes and the temporary profile are always cleaned up.
+// Two layout checks ride on the Practice view (each prints one JSON row with diff 0 or 1):
+//   - check 'neck' (NECK-01, 360 and 390px, coarse-pointer touch emulation so rows are 44px): the
+//     neck box (.board-wrap) never scrolls sideways, and at its top scroll position the
+//     "String 6, fret 12" cell is fully inside the box.
+//   - check 'stage' (NAV-02, 1024 and 1440px): .p-coach, .p-neck and .p-ctl share a top edge
+//     (within 1px) and sit left to right in coach | neck | controls order.
+// Exit 0 = clean, 1 = a positive scrollWidth - clientWidth somewhere or a failed layout check,
+// 2 = Chrome, the server or the app shell did not start. Both child processes are always stopped (SIGTERM,
+// then SIGKILL) and the temporary profile removed; a profile that cannot be removed is reported.
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -30,12 +37,25 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 const children = [];
 let profile = '';
 
-function cleanup() {
+// Synchronous best effort, for signal handlers and uncaught errors that must exit now.
+function cleanupNow() {
   for (const child of children) { try { child.kill('SIGKILL'); } catch {} }
-  if (profile) { try { fs.rmSync(profile, { recursive: true, force: true }); } catch {} }
+  if (profile) { try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); } catch {} }
+}
+// The normal exit path: SIGTERM lets Chrome stop its helper processes (which outlive a SIGKILL of
+// the browser and keep writing into --user-data-dir), a bounded wait, then SIGKILL for anything
+// left and a retried remove. A profile that still cannot be removed is reported, never silent.
+async function cleanup() {
+  const running = children.filter(child => child.exitCode === null && child.signalCode === null);
+  for (const child of running) { try { child.kill('SIGTERM'); } catch {} }
+  await Promise.race([Promise.all(running.map(exited)), sleep(3000)]);
+  for (const child of running) { if (child.exitCode === null && child.signalCode === null) { try { child.kill('SIGKILL'); } catch {} } }
+  if (!profile) return;
+  try { fs.rmSync(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }); }
+  catch (e) { console.error(`The temporary profile ${profile} could not be removed: ${e.message}`); }
 }
 for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143], ['SIGHUP', 129]]) {
-  process.on(signal, () => { cleanup(); process.exit(code); });
+  process.on(signal, () => { cleanupNow(); process.exit(code); });
 }
 
 // A port the OS just handed out on HOST, so the server never shares one with a stranger.
@@ -64,7 +84,7 @@ async function devToolsPort(dir, ms) {
   }
   return null;
 }
-process.on('uncaughtException', e => { console.error(e.message); cleanup(); process.exit(2); });
+process.on('uncaughtException', e => { console.error(e.message); cleanupNow(); process.exit(2); });
 
 // Poll a local URL until it answers, or give up after `ms`. The body is always read to the end:
 // an unread body on a socket the server then closes trips an assertion inside Node's fetch.
@@ -142,6 +162,44 @@ const MEASURE = `(() => {
   return { diff, offenders };
 })()`;
 
+// Runs in the page: shared helpers for the two Practice layout checks. A cell label is
+// "String 6, fret 12" optionally followed by ", <note text>", so match the exact prefix plus comma.
+const NECK_HELPERS = `
+  const wrap = document.querySelector('#view-practice .board-wrap');
+  wrap.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  const cell = label => [...wrap.querySelectorAll('[aria-label]')].find(el => { const a = el.getAttribute('aria-label'); return a === label || a.startsWith(label + ','); });
+  const w = wrap.getBoundingClientRect();
+  const inside = el => { const b = el.getBoundingClientRect(); return b.top >= w.top - 0.5 && b.bottom <= w.bottom + 0.5; };
+  const visibleFrets = [...wrap.querySelectorAll('[aria-label^="String 6,"]')].filter(inside).length;`;
+
+// NECK-01: no sideways scroll inside the neck box, fret 12 visible at scrollTop 0, and the
+// coarse-pointer rows really are 44px: the box always fits frets 0-12 at any row height, so
+// without the row check a touch emulation that failed to switch (pointer: coarse) on would
+// silently pass on the 36px desktop layout. A missing cell is a failed check (exit 1), never
+// an exception inside evaluate (which would read as a failed start, exit 2).
+const NECK_MIN_ROW = 44;
+const NECK = `(() => {${NECK_HELPERS}
+  const f1 = cell('String 6, fret 1');
+  const f12 = cell('String 6, fret 12');
+  if (!f1 || !f12) return { check: 'neck', missing: [f1 ? null : 'String 6, fret 1', f12 ? null : 'String 6, fret 12'].filter(Boolean), diff: 1 };
+  const f12Box = f12.getBoundingClientRect();
+  const wrapDiff = wrap.scrollWidth - wrap.clientWidth;
+  const fret12Visible = f12Box.top >= w.top && f12Box.bottom <= w.bottom + 0.5;
+  const rowHeight = f1.getBoundingClientRect().height;
+  const coarseRows = Math.round(rowHeight) >= ${NECK_MIN_ROW};
+  const ok = wrapDiff <= 0 && fret12Visible && coarseRows;
+  return { check: 'neck', wrapDiff, rowHeight, coarseRows, fret12Visible, visibleFrets, diff: ok ? 0 : 1 };
+})()`;
+
+// NAV-02: the three stage columns share a top edge in coach | neck | controls order.
+const STAGE = `(() => {${NECK_HELPERS}
+  const rect = sel => { const b = document.querySelector('#view-practice ' + sel).getBoundingClientRect(); return { top: Math.round(b.top), left: Math.round(b.left), width: Math.round(b.width) }; };
+  const coach = rect('.p-coach'), neck = rect('.p-neck'), ctl = rect('.p-ctl');
+  const tops = [coach.top, neck.top, ctl.top];
+  const ok = Math.max(...tops) - Math.min(...tops) <= 1 && coach.left < neck.left && neck.left < ctl.left;
+  return { check: 'stage', coach, neck, ctl, wrapHeight: Math.round(w.height), visibleFrets, diff: ok ? 0 : 1 };
+})()`;
+
 async function evaluate(cdp, expression) {
   const { result, exceptionDetails } = await cdp.send('Runtime.evaluate', { expression, awaitPromise: true, returnByValue: true });
   if (exceptionDetails) throw new Error(exceptionDetails.exception?.description || exceptionDetails.text);
@@ -159,7 +217,7 @@ async function main() {
   let chrome;
   try {
     chrome = spawn(CHROME, ['--headless=new', '--remote-debugging-port=0', `--remote-debugging-address=${HOST}`,
-      '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
+      '--no-first-run', '--no-default-browser-check', '--disable-crash-reporter', '--disable-breakpad', `--user-data-dir=${profile}`, 'about:blank'], { stdio: 'ignore' });
     children.push(chrome);
   } catch (e) { console.error(`Chrome did not start: ${e.message}. Set CHROME to its path.`); return 2; }
   const CDP_PORT = await Promise.race([devToolsPort(profile, 15000), exited(chrome)]);
@@ -178,6 +236,8 @@ async function main() {
   try {
     for (const width of WIDTHS) {
       await cdp.send('Emulation.setDeviceMetricsOverride', { width, height: 800, deviceScaleFactor: 1, mobile: width < 1024 });
+      // Phones get a coarse pointer (44px fret rows, as on a real handset); desktop stays fine (36px).
+      await cdp.send('Emulation.setTouchEmulationEnabled', width < 1024 ? { enabled: true, maxTouchPoints: 5 } : { enabled: false });
       const loaded = cdp.once('Page.loadEventFired');
       await cdp.send('Page.navigate', { url: `http://${HOST}:${APP_PORT}/` });
       await loaded;
@@ -194,6 +254,8 @@ async function main() {
         await sleep(300);
         const m = clicked ? await evaluate(cdp, MEASURE) : { diff: 1, offenders: ['no visible tab'] };
         report({ width, view, ...m });
+        if (clicked && view === 'practice' && (width === 360 || width === 390)) report({ width, ...await evaluate(cdp, NECK) });
+        if (clicked && view === 'practice' && width >= 1024) report({ width, ...await evaluate(cdp, STAGE) });
       }
       await evaluate(cdp, `document.getElementById('moreBtn').click()`);
       await sleep(300);
@@ -208,5 +270,5 @@ async function main() {
 
 let code = 2;
 try { code = await main(); } catch (e) { console.error(e.message); code = 2; }
-cleanup();
+await cleanup();
 process.exit(code);

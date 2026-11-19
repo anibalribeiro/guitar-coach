@@ -253,7 +253,8 @@ test('the fretboard caches cells by "s:f" and diff-renders dots', () => {
   const source = read('fretboard.js');
   assert.match(source, /cells\[s \+ ':' \+ f\] = c/);
   assert.match(source, /dots\.get\(key\)/);
-  assert.match(source, /wrap\.scrollTo\(\{ left:/);
+  assert.match(source, /wrap\.scrollTo\(\{ top:/);
+  assert.ok(!/scrollIntoView/.test(source), 'the target scrolls the neck box, never the page');
   assert.ok(!/innerHTML\s*=\s*''/.test(source), 'no full teardown on render');
 });
 
@@ -948,8 +949,9 @@ test('the confirm never dispatches before confirmation and focus lands on Pause'
 test('the flash reaches the LED scene as one full-pattern set and reconnect uses zero at a boundary', () => {
   const main = read('main.js');
   // 03-02: a family may name its own flash set (the chord destination shape); the scale
-  // and quiz families still flash the whole pattern through `run.chart.shape`.
-  assert.match(main, /flash: frame\.flash \? \(frame\.flashNotes && frame\.flashNotes\.length \? frame\.flashNotes : run\.chart\.shape\) : \[\]/);
+  // and quiz families still flash the whole pattern through `run.chart.shape`. 07 IN-01: the
+  // fallback keys on the family (`hasFlashSet`), not on a filtered set left empty.
+  assert.match(main, /flash: frame\.flash \? \(frame\.hasFlashSet \? frame\.flashNotes : run\.chart\.shape\) : \[\]/);
   assert.match(main, /run\.phase === 'passReview' \|\| run\.phase === 'result'/);
   const reconnect = main.slice(main.indexOf("run.phase === 'passReview' || run.phase === 'result'"), main.indexOf('// A result keeps the LEDs off'));
   assert.match(reconnect, /sink\.reset\(\)/);
@@ -2638,7 +2640,7 @@ test('main builds the LED scene from the frame the engine chose', () => {
   assert.match(main, /sceneFromNotes\(frame\.led/, "the lit set is the frame's own set");
   assert.match(
     main,
-    /flash: frame\.flash \? \(frame\.flashNotes && frame\.flashNotes\.length \? frame\.flashNotes : run\.chart\.shape\) : \[\]/,
+    /flash: frame\.flash \? \(frame\.hasFlashSet \? frame\.flashNotes : run\.chart\.shape\) : \[\]/,
     'the hint flash prefers the frame flash set and still covers the whole shape',
   );
   assert.match(main, /const mode = drillQuestionMode\(\);/);
@@ -5407,4 +5409,31 @@ test('new lesson openers expose their relationship and return focus to the opene
   for (const id of ['familyLearn', 'startHere', 'powerChordLearn', 'workspaceWatch', 'pathMaterials']) {
     assert.match(panels, new RegExp(`lessonReturnFocus = \\$\\('${id}'\\)`), `${id} is not tracked as an opener`);
   }
+});
+
+// ---------- tools/overflow_probe.mjs (07 review fixes) ----------
+const OVERFLOW_PROBE_PATH = fileURLToPath(new URL('../tools/overflow_probe.mjs', import.meta.url));
+
+test('WR-05: the overflow probe stops Chrome gracefully and retries the profile remove', () => {
+  const probe = fs.readFileSync(OVERFLOW_PROBE_PATH, 'utf8');
+  const body = probe.slice(probe.indexOf('async function cleanup()'), probe.indexOf('for (const [signal, code]'));
+  assert.ok(body.includes("kill('SIGTERM')"), 'SIGTERM first');
+  assert.ok(body.indexOf("kill('SIGTERM')") < body.indexOf("kill('SIGKILL')"), 'SIGKILL only after the bounded wait');
+  assert.match(body, /Promise\.race\(\[Promise\.all\(running\.map\(exited\)\), sleep\(\d+\)\]\)/, 'a bounded wait for exit');
+  assert.match(body, /maxRetries: \d+, retryDelay: \d+/, 'the remove retries');
+  assert.match(body, /console\.error\(`The temporary profile/, 'a leftover profile is reported, not swallowed');
+  assert.match(probe, /^await cleanup\(\);$/m, 'the normal exit path awaits the graceful cleanup');
+  for (const flag of ['--disable-crash-reporter', '--disable-breakpad']) assert.ok(probe.includes(`'${flag}'`), flag);
+});
+
+test('WR-06: the NECK-01 probe check fails on rows under 44px and on a missing cell', () => {
+  const probe = fs.readFileSync(OVERFLOW_PROBE_PATH, 'utf8');
+  assert.match(probe, /const NECK_MIN_ROW = 44;/);
+  const neck = probe.slice(probe.indexOf('const NECK = `'), probe.indexOf('const STAGE = `'));
+  const guard = neck.indexOf('if (!f1 || !f12) return');
+  assert.ok(guard > 0, 'a missing cell returns a failed row');
+  assert.ok(guard < neck.indexOf('.getBoundingClientRect()'), 'the guard runs before any measurement');
+  assert.match(neck, /const coarseRows = Math\.round\(rowHeight\) >= \$\{NECK_MIN_ROW\};/);
+  assert.match(neck, /const ok = wrapDiff <= 0 && fret12Visible && coarseRows;/, 'the row height is part of diff');
+  assert.match(neck, /diff: ok \? 0 : 1/);
 });
