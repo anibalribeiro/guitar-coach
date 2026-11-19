@@ -17,7 +17,7 @@ import {
   spotLineText, syncScoreOf, tempoLineText, unguidedText, weakestString,
   LOOP_OPTIONS, SESSION_BLOCK_NAMES, SESSION_REASONS, blinkActionLabel, loopOptionValues,
   openStringCue, recommendationNeedsButton, sessionAnnouncementText, sessionNextText,
-  sessionButtonLabel, sessionReasonText,
+  todayTabLabel, sessionReasonText,
   LESSON_LABELS, NOT_WRITTEN, lessonBlocksText, lessonLinkView,
   lessonGuideView, chordPlacementText, lessonFinger, lessonVideosView, lessonDemoView,
   CAPABILITIES_READY, CAPABILITY_ITEMS, capabilityLineText,
@@ -261,7 +261,12 @@ test('the fretboard caches cells by "s:f" and diff-renders dots', () => {
 test('the shell has the four-tab tablist, one labelled tabpanel and the lights toggle', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   assert.match(html, /role="tablist"/);
-  assert.equal((html.match(/role="tab"/g) || []).length, 4);
+  // Phase 6 adds two main-navigation tablists (Pitfall 6): the content tablist keeps its four
+  // tabs, and the eight nav tabs are the ones carrying `data-view`.
+  const tabsList = html.slice(html.indexOf('id="tabs"'), html.indexOf('</div>', html.indexOf('id="tabs"')));
+  assert.equal((tabsList.match(/role="tab"/g) || []).length, 4);
+  assert.equal((html.match(/<button [^>]*role="tab"[^>]*data-view="/g) || []).length, 8);
+  assert.equal((html.match(/role="tab"/g) || []).length, 12);
   assert.match(html, /role="tabpanel"/);
   assert.match(html, /aria-labelledby="tab-scales"/);
   for (const label of ['Scales', 'Chords', 'Progressions', 'Songs']) {
@@ -571,15 +576,17 @@ test('the pass review renders the post-decision streak counts', () => {
 });
 
 // ---------- Phase 2: screen fade and stage mode (02-01 Task 3) ----------
-test('the header carries the stage-mode toggle between the connection cluster and the lights', () => {
+test('More › Settings carries the guitar-lights toggle, then the stage-mode toggle', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   assert.match(html, /id="stageBtn" aria-pressed="false"/);
   assert.match(html, /<span>Stage mode<\/span>/);
   assert.match(html, /id="stageState">Off</);
-  const conn = html.indexOf('id="conn"');
-  const stage = html.indexOf('id="stageBtn"');
+  // Phase 6 (06-03): both toggles left the header for the More sheet's Settings section.
+  const sheet = html.indexOf('<dialog id="moreSheet"');
+  const end = html.indexOf('</dialog>', sheet);
   const lights = html.indexOf('id="lightsBtn"');
-  assert.ok(conn >= 0 && stage > conn && lights > stage, 'DOM order is connection, stage mode, lights');
+  const stage = html.indexOf('id="stageBtn"');
+  assert.ok(sheet >= 0 && lights > sheet && stage > lights && end > stage, 'DOM order in the sheet is lights, then stage mode');
 });
 
 test('stage mode hides exactly the note cues through one class', () => {
@@ -597,10 +604,10 @@ test('stage mode hides exactly the note cues through one class', () => {
 
 test('the hint pips and the stage glyph map to accent when current or on', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  assert.match(html, /\.hint-pip \{ width: 10px; height: 10px; border-radius: 50%; background: var\(--border\); flex: none; \}/);
-  assert.match(html, /\.hint-pip\.current \{ background: var\(--accent\); \}/);
+  assert.match(html, /\.hint-pip \{ width: 10px; height: 10px; border-radius: 50%; background: var\(--line\); flex: none; \}/);
+  assert.match(html, /\.hint-pip\.current \{ background: var\(--cobalt\); \}/);
   assert.match(html, /\.stage-glyph \{ width: 10px; height: 10px; border-radius: 50%; background: var\(--muted\); flex: none; \}/);
-  assert.match(html, /\.stage-toggle\[aria-pressed="true"\] \.stage-glyph \{ background: var\(--accent\); \}/);
+  assert.match(html, /\.stage-toggle\[aria-pressed="true"\] \.stage-glyph \{ background: var\(--cobalt\); \}/);
 });
 
 test('the level-driven guidance classes hide the scale chips from Anchors', () => {
@@ -617,6 +624,8 @@ test('the responsive rules wrap the hint strip and header below 640px and settle
   assert.match(html, /@media \(max-width: 639px\)/);
   assert.match(html, /@media \(min-width: 640px\) \{[\s\S]*?\.hint-row \{ flex-wrap: nowrap; \}/);
   assert.match(html, /@media \(max-width: 639px\) \{[\s\S]*?\.header-actions \{ display: contents; \}/);
+  // The More button keeps its glyph and drops the visible word below 420px (UI-SPEC Appbar).
+  assert.match(html, /@media \(max-width: 419px\) \{ \.more-label \{ position: absolute;/);
   assert.match(html, /@media \(max-width: 639px\) \{[\s\S]*?\.pass-actions \{ flex-direction: column; \}/);
   assert.match(html, /@media \(min-width: 640px\) \{[\s\S]*?\.pass-report \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
 });
@@ -903,7 +912,7 @@ test('the show-hint confirm replaces the transport row with the fixed copy', () 
   assert.match(panels, /This pass ends now and restarts at \$\{HINT_LEVEL_NAMES\[to\]/);
   assert.match(panels, /Restart at \$\{HINT_LEVEL_NAMES\[to\]/);
   assert.match(panels, /'Keep playing'/);
-  assert.match(html, /\.hint-confirm \{ display: grid; gap: var\(--space-2\); background: var\(--bg\); border: 1px solid var\(--border\);/);
+  assert.match(html, /\.hint-confirm \{ display: grid; gap: var\(--space-2\); background: var\(--bg\); border: 1px solid var\(--line\);/);
 });
 
 test('the pass-asked announcement names the lower level exactly', () => {
@@ -1245,40 +1254,47 @@ test('the entry document declares a default-deny CSP with one official embed fra
 
 
 // ---------- Phase 2: progress panel, export/import and storage status (02-03) ----------
-test('the header carries Session and Progress between the connection cluster and stage mode', () => {
+test('the appbar runs title, pill tabs, connection cluster, then the More button', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  const conn = html.indexOf('id="conn"');
-  const session = html.indexOf('id="sessionBtn"');
-  const progress = html.indexOf('id="progressBtn"');
-  const stage = html.indexOf('id="stageBtn"');
-  const lights = html.indexOf('id="lightsBtn"');
-  assert.ok(conn >= 0 && session > conn && progress > session && stage > progress && lights > stage,
-    'DOM order is connection, Session, Progress, stage mode, lights');
-  // 05-01: one new header control, first, with its own panel and its hidden count chip (A-69).
-  assert.match(
-    html,
-    /<button type="button" id="sessionBtn" aria-expanded="false" aria-controls="sessionPanel">Session <span class="session-badge" id="sessionBadge" aria-hidden="true">0<\/span><\/button>/,
-  );
-  assert.match(html, /<button type="button" id="progressBtn" aria-expanded="false" aria-controls="progressPanel">Progress<\/button>/);
+  const header = html.slice(html.indexOf('<header'), html.indexOf('</header>'));
+  // 06-05: the h1 is the logo (mark + wordmark), so it is found by its class.
+  const h1 = header.indexOf('<h1 class="logo">');
+  const pills = header.indexOf('class="pills"');
+  const conn = header.indexOf('id="conn"');
+  const more = header.indexOf('id="moreBtn"');
+  assert.ok(h1 >= 0 && pills > h1 && conn > pills && more > conn,
+    'DOM order is title, pills, connection, More');
+  // Phase 6 (06-03): the toggles live in the More sheet, not the header.
+  assert.ok(!header.includes('id="stageBtn"') && !header.includes('id="lightsBtn"'));
+  // Phase 6: Today and Progress are tabs, so the header carries no Session or Progress button.
+  assert.ok(!html.includes('id="sessionBtn"'), 'no header Session button');
+  assert.ok(!html.includes('id="sessionBadge"'), 'the count chip moved to the Today tab');
+  assert.ok(!html.includes('id="progressBtn"'), 'no header Progress button');
 });
 
-test('the four panels sit between the header and main in one slot, each with its own head', () => {
+test('the four panels sit in their views, each with its own head', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const header = html.indexOf('</header>');
-  const sessionPanel = html.indexOf('id="sessionPanel"');
-  const panel = html.indexOf('id="progressPanel"');
   const calibration = html.indexOf('id="calibrationPanel"');
-  const lesson = html.indexOf('id="lessonPanel"');
   const main = html.indexOf('<main>');
-  assert.ok(header >= 0 && sessionPanel > header && sessionPanel < panel && panel < calibration && calibration < lesson && lesson < main,
-    'Session, Progress, Calibration and the lesson live between the header and main, never inside main');
-  assert.match(html, /<section class="progress-panel" id="sessionPanel" aria-labelledby="sessionTitle" hidden>/);
+  // Phase 6: Session and Progress are views of their own and the lesson is a Practice panel;
+  // Calibration moved into the More sheet (06-03), after the sheet's list.
+  assert.ok(header >= 0 && main > header && calibration > html.indexOf('id="moreList"')
+    && calibration < html.indexOf('</dialog>'), 'Calibration lives inside the More sheet, never inside main');
+  const view = name => {
+    const start = html.indexOf(`id="view-${name}"`);
+    const next = html.indexOf('id="view-', start + 1);
+    return html.slice(start, next > start ? next : html.indexOf('</main>'));
+  };
+  assert.ok(view('today').includes('id="sessionPanel"'), 'the Session panel lives in the Today view');
+  assert.ok(view('progress').includes('id="progressPanel"'), 'the Progress panel lives in the Progress view');
+  assert.ok(view('practice').includes('id="lessonPanel"'), 'the lesson lives in the Practice view');
+  assert.match(html, /<section class="progress-panel" id="sessionPanel" aria-labelledby="sessionTitle">/);
   assert.match(html, /<h2 id="sessionTitle" tabindex="-1">Session<\/h2>/);
-  assert.match(html, /<button type="button" id="hideSession">Hide session<\/button>/);
+  assert.ok(!/id="hide(Session|Progress)"/.test(html), 'the views have no Hide buttons');
   assert.match(html, /<span class="session-total" id="sessionTotal">13 min<\/span>/);
-  assert.match(html, /<section class="progress-panel" id="progressPanel" aria-labelledby="progressTitle" hidden>/);
+  assert.match(html, /<section class="progress-panel" id="progressPanel" aria-labelledby="progressTitle">/);
   assert.match(html, /<h2 id="progressTitle" tabindex="-1">Progress<\/h2>/);
-  assert.match(html, /<button type="button" id="hideProgress">Hide progress<\/button>/);
   assert.match(html, /Everything stays in this browser\./);
   // 05-02 Task 1 makes the slot four-way: the lesson panel copies the Session panel's open tag and
   // head shape exactly, so one geometry rule covers all four surfaces (D-75).
@@ -1310,8 +1326,11 @@ test('the history chart is aria-hidden with an ordered-list text equivalent', ()
   assert.match(panels, /Session \$\{index \+ 1\}: \$\{durationText\(total\)\}, \$\{durationText\(unguided\)\} unguided\./);
   assert.match(html, /\.history \{ display: flex; align-items: flex-end; gap: var\(--space-1\); height: 96px; \}/);
   assert.match(html, /\.history-bar \{ display: flex; flex-direction: column-reverse; flex: 1 1 0; max-width: 24px; height: 100%; \}/);
-  assert.match(html, /\.history-guided \{ background: color-mix\(in srgb, var\(--muted\) 45%, transparent\); \}/);
-  assert.match(html, /\.history-unguided \{ background: var\(--accent\); \}/);
+  // 06-05 (UI-SPEC "Progress view"): guided bars --line-2, unguided --mint; the legend swatches match.
+  assert.match(html, /\.history-guided \{ background: var\(--line-2\); \}/);
+  assert.match(html, /\.history-unguided \{ background: var\(--mint\); \}/);
+  assert.match(html, /\.legend-swatch\.guided \{ background: var\(--line-2\); \}/);
+  assert.match(html, /\.legend-swatch\.unguided \{ background: var\(--mint\); \}/);
 });
 
 test('the due list, skill rows, state chips and all-skills scroller carry the fixed copy', () => {
@@ -1328,9 +1347,10 @@ test('the due list, skill rows, state chips and all-skills scroller carry the fi
   assert.match(panels, /Nothing due\. Play a new skill or repeat your weakest\./);
   assert.match(panels, /button\.textContent = 'Practise'/);
   assert.match(panels, /if \(index === 0\) button\.className = 'accent-outline'/);
-  assert.match(html, /\.accent-outline \{ border-color: var\(--accent\); color: var\(--accent\); \}/);
+  // 06-05: controls carry an inset ring instead of a border, so the accent lives in the ring.
+  assert.match(html, /\.accent-outline \{ box-shadow: inset 0 0 0 1\.5px var\(--cobalt\); color: var\(--cobalt\); \}/);
   assert.match(panels, /SKILL_STATE_LABELS = \{ mastered: 'Recalled', due: 'Due', learning: 'Learning', lapsed: 'Lapsed' \}/);
-  assert.match(html, /\.state-chip\.mastered \{ background: var\(--ok\); color: var\(--ok-text\); border-color: var\(--ok\); \}/);
+  assert.match(html, /\.state-chip\.mastered \{ background: var\(--mint\); color: var\(--surface\); border-color: var\(--mint\); \}/);
   assert.match(panels, /due today/);
   assert.match(panels, /due in \$\{countText\(days, 'day', 'days'\)\}/);
   assert.match(panels, /overdue by \$\{countText\(-days, 'day', 'days'\)\}/);
@@ -1364,7 +1384,8 @@ test('the import confirmation is inline, destructive and uses the only danger fi
   assert.match(html, /id="importReplace" class="danger-fill">Replace data</);
   assert.match(html, /id="importKeep">Keep my data</);
   assert.match(html, /\.import-confirm \{ display: grid; gap: var\(--space-2\); background: var\(--bg\); border-left: 4px solid var\(--danger\); border-radius: 8px; padding: var\(--space-3\); \}/);
-  assert.match(html, /\.danger-fill \{ background: var\(--danger\); color: var\(--danger-text\); border-color: var\(--danger\); font-weight: 600; \}/);
+  // 06-05: the danger fill has the .cta box (48px, radius 16) with the danger fill and no ring.
+  assert.match(html, /\.danger-fill \{ min-height: 48px; padding: 0 var\(--space-6\); border-radius: 16px; background: var\(--danger\); color: var\(--surface\); box-shadow: none; font-size: 16px; font-weight: 700; \}/);
   assert.match(main, /store\.replaceAll\(pendingImport\)/);
   assert.match(main, /validateBackup\(parsed, \{ validateSettings \}\)/);
   assert.match(main, /file\.size > 1024 \* 1024/);
@@ -1390,7 +1411,7 @@ test('every import, export and storage message is a fixed problem-plus-next-step
     assert.ok(panels.includes(copy), `missing message: ${copy}`);
   }
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  assert.match(html, /\.backup-status\.ok \{ color: var\(--ok\); \}/);
+  assert.match(html, /\.backup-status\.ok \{ color: var\(--mint\); \}/);
   assert.match(html, /\.backup-status\.danger \{ color: var\(--danger\); \}/);
   assert.match(panels, /el\.classList\.toggle\('ok', tone === 'ok'\)/);
   assert.match(panels, /el\.classList\.toggle\('danger', tone === 'danger'\)/);
@@ -1398,11 +1419,12 @@ test('every import, export and storage message is a fixed problem-plus-next-step
   assert.match(panels, /el\.classList\.toggle\('danger', tone === 'danger'\)/);
 });
 
-test('--danger-text is declared in both root blocks and the panel is not a live region', () => {
+test('--danger is declared once in the light root and the panel is not a live region', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  assert.equal((html.match(/--danger-text: #ffffff;/g) || []).length, 1, 'light danger text');
-  assert.equal((html.match(/--dark-danger-text: #1b1815;/g) || []).length, 1, 'dark danger text is defined once');
-  assert.equal((html.match(/--danger-text: var\(--dark-danger-text\);/g) || []).length, 2, 'both dark selectors map the token');
+  // LOOK-02: the app is light only, so the token has one declaration and no dark mapping.
+  assert.equal((html.match(/--danger: #b3261e;/g) || []).length, 1, 'light danger token');
+  assert.ok(!html.includes('--danger-text'), 'text on a danger fill is var(--surface), no separate token');
+  assert.ok(!html.includes('--dark-'), 'no dark token remains');
   const start = html.indexOf('id="progressPanel"');
   const panel = html.slice(start, html.indexOf('</section>', start));
   assert.ok(!/aria-live/.test(panel), 'the panel is not a live region');
@@ -1410,15 +1432,16 @@ test('--danger-text is declared in both root blocks and the panel is not a live 
   assert.equal((html.match(/aria-live=/g) || []).length, 1, 'still exactly one live region');
 });
 
-test('the progress panel is built with textContent only and closes on Escape', () => {
+test('the progress panel is built with textContent only and its tab locks with the stage', () => {
   const panels = read('panels.js');
   assert.ok(!/innerHTML/.test(panels), 'panels never parse markup');
   assert.match(panels, /el\.textContent = text \|\| ''/);
   assert.match(panels, /replaceChildren\(\.\.\.rows\.map\(row => skillRowNode\(row, now\)\)\)/);
-  assert.match(panels, /\$\('progressBtn'\)\.disabled = lockedForProgress/);
-  assert.match(panels, /if \(lockedForProgress\) setProgressOpen\(false\)/);
-  assert.match(panels, /e\.key !== 'Escape' \|\| !isProgressOpen\(\)/);
-  assert.match(panels, /onProgressClose\(\)/);
+  // Phase 6: Progress is a view reached by its tab; the tab locks with the stage and there is no
+  // panel left to close, so the document-level Escape listener for Progress is gone.
+  assert.match(panels, /setNavLocked\(lockedForProgress\);/);
+  assert.ok(!/e\.key !== 'Escape' \|\| !isProgressOpen\(\)/.test(panels), 'no Progress Escape listener');
+  assert.ok(!/onProgressClose/.test(panels), 'no Progress close handler');
   assert.match(panels, /function focusProgressHead\(\) \{ \$\('progressTitle'\)\.focus\(\); \}/);
 });
 
@@ -1427,7 +1450,7 @@ test('the progress panel is built with textContent only and closes on Escape', (
 test('Progress is locked at the pass review and Practise closes a finished result', () => {
   const panels = read('panels.js');
   assert.match(panels, /const lockedForProgress = playing \|\| passReview;/);
-  assert.match(panels, /\$\('progressBtn'\)\.disabled = lockedForProgress;/);
+  assert.match(panels, /setNavLocked\(lockedForProgress\);/);
   const main = read('main.js');
   assert.match(main, /isRunning\(\) \|\| \(run && run\.phase === 'passReview'\)/);
   const practise = main.slice(main.indexOf('function practiseSkill'), main.indexOf('function exportBackup'));
@@ -1446,6 +1469,9 @@ test('a parsed import is disarmed when the panel closes or a new file is chosen'
   assert.match(setOpen, /if \(!on\) \{/);
   assert.match(setOpen, /showImportConfirm\(false\)/);
   assert.match(setOpen, /onImportReset\(\)/);
+  // Phase 6 (Pitfall 4): a drill start disarms it directly in the lock branch of `setDrill`, now
+  // that no Progress panel close happens there, and closes the More sheet that holds it (06-03).
+  assert.match(panels, /if \(lockedForProgress && !wasLocked\) \{\s*showImportConfirm\(false\);\s*onImportReset\(\);\s*(\/\/[^\n]*\n\s*)*closeMore\(\);\s*\}/);
   assert.match(panels, /onImportReset = \(\) => \{\}/);
 
   const main = read('main.js');
@@ -1460,8 +1486,9 @@ test('main re-reads the store on every open and wires Practise without starting 
   const main = read('main.js');
   assert.match(main, /const persisted = store\.getProgress\(\);/);
   assert.match(main, /const status = store\.status;/);
-  assert.match(main, /onProgressOpen: openProgress/);
-  assert.match(main, /onProgressClose: closeProgress/);
+  // Phase 6: Progress is a view, re-read from the store by its enter hook on every switch.
+  assert.match(main, /else if \(name === 'progress'\) enterProgress\(\);/);
+  assert.match(main.slice(main.indexOf('function enterProgress'), main.indexOf('function enterProgress') + 400), /panels\.setProgressPanel\(progressView\(\)\);/);
   assert.match(main, /onPractiseSkill: practiseSkill/);
   const practise = main.slice(main.indexOf('function practiseSkill'), main.indexOf('function exportBackup'));
   assert.match(practise, /patch = \{ tab: 'scales' \}/);
@@ -1550,14 +1577,14 @@ const calibrationPanelOf = html => html.slice(
   html.indexOf('id="calibrationPanel"'), html.indexOf('</section>', html.indexOf('id="calibrationPanel"')),
 );
 
-test('the header carries the mic cluster after the guitar-lights toggle', () => {
+test('More › Microphone carries the mic cluster, before the Settings toggles', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const sheet = html.indexOf('<dialog id="moreSheet"');
   const lights = html.indexOf('id="lightsBtn"');
   const cluster = html.indexOf('id="micCluster"');
-  const header = html.indexOf('</header>');
-  assert.ok(lights >= 0 && cluster > lights, 'the cluster follows the guitar-lights toggle');
-  assert.ok(header > cluster, 'the cluster is inside the header');
-  assert.ok(cluster < html.indexOf('id="progressPanel"'), 'and before the panels under it');
+  assert.ok(sheet >= 0 && cluster > sheet, 'the cluster is inside the More sheet');
+  assert.ok(lights > cluster, 'the Microphone section precedes the Settings toggles');
+  assert.ok(cluster < html.indexOf('</dialog>'), 'and inside the dialog');
   assert.match(html, /<div class="mic-cluster" id="micCluster">/);
   assert.match(
     html,
@@ -1566,11 +1593,11 @@ test('the header carries the mic cluster after the guitar-lights toggle', () => 
   // A 10px CSS-drawn glyph, the stable visible label and the visible state word. None of
   // them is `aria-hidden`: the word is the state, not decoration.
   assert.match(html, /<span class="mic-glyph" aria-hidden="true"><\/span>\s*<span>Mic<\/span>\s*<span id="micState">Off<\/span>/);
-  assert.match(html, /<button type="button" id="micCalibrate">Calibrate<\/button>/);
+  assert.match(html, /<button type="button" id="micCalibrate">Calibrate timing<\/button>/);
   assert.match(html, /\.mic-glyph \{ width: 10px; height: 10px;/);
   // The glyph is muted at rest and the accent only while armed or listening.
   assert.match(html, /\.mic-glyph \{[^}]*background: var\(--muted\);[^}]*\}/);
-  assert.match(html, /\.mic-toggle\[data-mic="accent"\] \.mic-glyph \{ background: var\(--accent\); \}/);
+  assert.match(html, /\.mic-toggle\[data-mic="accent"\] \.mic-glyph \{ background: var\(--cobalt\); \}/);
   assert.ok(!/aria-hidden="true"[^>]*>Off</.test(html), 'the state word is never hidden from a screen reader');
 });
 
@@ -1579,7 +1606,7 @@ test('the five state words and the one action are the only thing setMic writes',
   assert.deepEqual(MIC_WORDS, {
     off: 'Off', on: 'On', listening: 'Listening', calibrating: 'Calibrating', denied: 'Denied',
   });
-  assert.deepEqual(MIC_ACTIONS, { calibrate: 'Calibrate', retry: 'Try again' });
+  assert.deepEqual(MIC_ACTIONS, { calibrate: 'Calibrate timing', retry: 'Try again' });
   assert.equal(micView({ state: 'off' }).word, 'Off');
   assert.equal(micView({ state: 'on' }).word, 'On');
   assert.equal(micView({ state: 'listening' }).word, 'Listening');
@@ -1589,7 +1616,7 @@ test('the five state words and the one action are the only thing setMic writes',
     { word: micView({ state: 'denied' }).word, action: micView({ state: 'denied' }).action },
     { word: 'Denied', action: 'Try again' },
   );
-  assert.equal(micView({ state: 'off' }).action, 'Calibrate');
+  assert.equal(micView({ state: 'off' }).action, 'Calibrate timing');
   assert.equal(micView({ state: 'on' }).pressed, true, 'aria-pressed is true while armed');
   assert.equal(micView({ state: 'listening' }).pressed, true);
   assert.equal(micView({ state: 'off' }).pressed, false);
@@ -1625,17 +1652,15 @@ test('the five state words and the one action are the only thing setMic writes',
   assert.ok(!/micToggle'\)\.disabled = locked/.test(panels), 'the mic toggle is never locked by a pass');
 });
 
-test('the calibration panel sits between the header and main with all of its copy', () => {
+test('the calibration panel sits inside the More sheet with all of its copy', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  const header = html.indexOf('</header>');
-  const progress = html.indexOf('id="progressPanel"');
+  const sheet = html.indexOf('<dialog id="moreSheet"');
   const panel = html.indexOf('id="calibrationPanel"');
-  const main = html.indexOf('<main>');
-  assert.ok(header >= 0 && progress > header, 'Progress keeps the first slot under the header');
-  assert.ok(panel > progress && main > panel, 'Calibration sits between </header> and <main>, beside Progress');
+  // Phase 6 (06-03): Calibration swaps in for the More sheet's list instead of a slot under the header.
+  assert.ok(sheet >= 0 && panel > html.indexOf('id="moreList"') && html.indexOf('</dialog>') > panel, 'Calibration sits in the sheet, after its list');
   assert.match(html, /<section class="calibration-panel" id="calibrationPanel" aria-labelledby="calibrationTitle" hidden>/);
   assert.match(html, /<h2 id="calibrationTitle" tabindex="-1">Calibrate timing<\/h2>/);
-  assert.match(html, /<button type="button" id="closeCalibration">Close<\/button>/);
+  assert.match(html, /<button type="button" id="closeCalibration">Close calibration<\/button>/);
   const copy = [
     CALIBRATION.intro,
     CALIBRATION.tap,
@@ -1659,7 +1684,7 @@ test('the calibration panel sits between the header and main with all of its cop
   assert.match(html, /<span class="microcopy" id="calibTaps">3 taps heard<\/span>/);
   assert.match(html, /<p id="calibResult">Offset 24 ms · Saved for this device\.<\/p>/);
   assert.match(html, /\.calibration-count \{[^}]*font-variant-numeric: tabular-nums;[^}]*\}/);
-  assert.match(html, /#calibTap\.tap-tick \{ background: var\(--ok\); color: var\(--ok-text\); border-color: var\(--ok\); \}/);
+  assert.match(html, /#calibTap\.tap-tick \{ background: var\(--mint\); color: var\(--surface\); box-shadow: none; \}/);
   // The tap flash keeps its colour under reduced motion and loses only the transition.
   assert.match(html, /@media \(prefers-reduced-motion: reduce\) \{ #calibTap \{ transition: none; \} \}/);
   // The panel is not a modal: no overlay, no focus trap, no scroll lock, no live region.
@@ -1767,7 +1792,7 @@ test('the mic cluster keeps its state word below 640px', () => {
   const mobile = html.slice(html.indexOf('@media (max-width: 639px)', html.indexOf('.mic-cluster {')));
   assert.match(mobile, /\.mic-cluster \{ order: 3; flex-basis: 100%; \}/, 'the cluster takes the third row');
   assert.match(mobile, /\.mic-cluster > button \{ flex: 1 1 auto; white-space: nowrap; \}/, 'buttons wrap, never truncate');
-  assert.match(html, /#micState \{ font-weight: 600; white-space: nowrap; \}/);
+  assert.match(html, /#micState \{ font-weight: 700; white-space: nowrap; \}/);
   assert.match(html, /\.mic-toggle \{[^}]*white-space: nowrap;[^}]*\}/);
 });
 
@@ -1906,51 +1931,57 @@ test('calibration, progress, the session and the lesson share one slot and Escap
   assert.match(calibrationSetter, /setProgressOpen\(false\)/);
   assert.match(calibrationSetter, /setSessionOpen\(false\)/);
   assert.match(calibrationSetter, /setLessonOpen\(false\)/);
+  // Phase 6: Session and Progress are views, so their setters only close the two overlays that can
+  // sit above any view; which view is on screen belongs to `setView`.
   const progressSetter = panels.slice(panels.indexOf('function setProgressOpen('), panels.indexOf('const isProgressOpen'));
   assert.match(progressSetter, /setCalibrationOpen\(false\)/);
-  assert.match(progressSetter, /setSessionOpen\(false\)/);
   assert.match(progressSetter, /setLessonOpen\(false\)/);
   const sessionSetter = panels.slice(panels.indexOf('function setSessionOpen('), panels.indexOf('const isSessionOpen'));
-  assert.match(sessionSetter, /setProgressOpen\(false\)/);
   assert.match(sessionSetter, /setCalibrationOpen\(false\)/);
   assert.match(sessionSetter, /setLessonOpen\(false\)/);
   const lessonSetter = panels.slice(panels.indexOf('function setLessonOpen('), panels.indexOf('const isLessonOpen'));
   assert.match(lessonSetter, /setSessionOpen\(false\)/);
   assert.match(lessonSetter, /setProgressOpen\(false\)/);
   assert.match(lessonSetter, /setCalibrationOpen\(false\)/);
-  // The Session panel follows the same stage lock the other two do, and the header control goes
-  // inert with it rather than disappearing from the tab order.
-  assert.match(panels, /if \(lockedForProgress\) setSessionOpen\(false\);/);
-  assert.match(panels, /\$\('sessionBtn'\)\.disabled = lockedForProgress;/);
+  // Phase 6: Today follows the same stage lock as Progress, and both tabs go `aria-disabled`
+  // rather than disappearing from the tab order.
+  assert.match(panels, /setNavLocked\(lockedForProgress\);/);
+  assert.match(panels, /if \(locked\) tab\.setAttribute\('aria-disabled', 'true'\);\s*else tab\.removeAttribute\('aria-disabled'\);/);
+  assert.ok(!/\$\('sessionBtn'\)/.test(panels), 'no header Session button is painted');
   // The lesson is locked at exactly the phases `#drillStage` hides, so it can never cover a pass.
   assert.match(panels, /\$\('familyLearn'\)\.disabled = playing;/);
   assert.match(panels, /\$\('startHere'\)\.disabled = playing;/);
   assert.match(panels, /if \(lockedForProgress\) setLessonOpen\(false\);/);
   assert.match(panels, /function focusCalibrationHead\(\) \{ \$\('calibrationTitle'\)\.focus\(\); \}/);
-  assert.match(panels, /function focusMicCluster\(\) \{ \$\('micToggle'\)\.focus\(\); \}/);
+  // 06-03: the way back from calibration lands on `Calibrate timing`, or the toggle when it is locked.
+  assert.match(panels, /function focusMicCluster\(\) \{ \(\$\('micCalibrate'\)\.disabled \? \$\('micToggle'\) : \$\('micCalibrate'\)\)\.focus\(\); \}/);
   assert.match(panels, /function focusCalibrationTap\(\) \{ \$\('calibTap'\)\.focus\(\); \}/);
   assert.match(panels, /function focusSessionHead\(\) \{ \$\('sessionTitle'\)\.focus\(\); \}/);
-  assert.match(panels, /function focusSessionToggle\(\) \{ \$\('sessionBtn'\)\.focus\(\); \}/);
+  assert.ok(!/function focusSessionToggle/.test(panels), 'no toggle to return focus to; closeSession focuses the head');
   assert.match(panels, /function focusLessonHead\(\) \{ \$\('lessonTitle'\)\.focus\(\); \}/);
   // Closing the lesson hands focus straight back to the button that opened it, like the other three.
-  assert.match(panels, /const returnTo = lessonReturnFocus && typeof lessonReturnFocus\.focus === 'function'\s*\? lessonReturnFocus : \$\('familyLearn'\);/);
+  assert.match(panels, /const returnTo = canFocus\(lessonReturnFocus\) \? lessonReturnFocus\s*: canFocus\(\$\('familyLearn'\)\) \? \$\('familyLearn'\) : \$\('workspaceTitle'\);/);
+  // WR-01: an opener in a hidden view (Today, Library) is not rendered, so it is never the target.
+  assert.match(panels, /const canFocus = el => !!el && typeof el\.focus === 'function' && !el\.disabled\s*&& \(typeof el\.getClientRects !== 'function' \|\| el\.getClientRects\(\)\.length > 0\);/);
   assert.match(panels, /returnTo\.focus\(\);/);
-  assert.match(panels, /if \(e\.key !== 'Escape' \|\| !isCalibrationOpen\(\)\) return;\s*e\.preventDefault\(\);\s*onCalibrationSkip\(\);/);
+  // 06-03 (Pitfall 5): calibration lives in the modal sheet, whose own Esc close runs its close path,
+  // so a document-level calibration Escape listener would fire a second handler on one key press.
+  assert.ok(!/isCalibrationOpen\(\)\) return;\s*e\.preventDefault\(\);\s*onCalibrationSkip\(\);/.test(panels), 'no calibration Escape listener');
   // Focus starts on the tap button, and closing hands it back to the mic cluster.
   assert.match(main, /panels\.focusCalibrationHead\(\);/);
   assert.match(main, /panels\.focusCalibrationTap\(\);/);
-  assert.match(main, /panels\.setCalibrationOpen\(false\);\s*if \(focus\) panels\.focusMicCluster\(\);/);
+  assert.match(main, /syncMicChip\(\);\s*panels\.setCalibrationOpen\(false\);\s*if \(focus\) panels\.focusMicCluster\(\);/);
   assert.match(main, /onCalibrationSkip: \(\) => closeCalibration\(\{ announceSkip: true \}\)/);
   assert.match(main, /onCalibrationDone: \(\) => closeCalibration\(\)/);
   assert.match(main, /onCalibrationAgain: \(\) => startCalibration\(\)/);
   // Opening any of the three closes the others, so the shell shows one panel there.
-  const openProgress = main.slice(main.indexOf('function openProgress'), main.indexOf('function closeProgress'));
-  assert.match(openProgress, /panels\.setProgressOpen\(true\);/);
-  assert.match(main, /onSession: openSession/);
+  const enterProgress = main.slice(main.indexOf('function enterProgress'), main.indexOf('function enterProgress') + 400);
+  assert.match(enterProgress, /panels\.setProgressOpen\(true\);/);
+  assert.match(main, /onSession: \(\) => switchView\('today'\)/);
   assert.match(main, /onSessionClose: closeSession/);
   assert.match(main, /onSessionStart: startSession/);
   const closeSession = main.slice(main.indexOf('function closeSession'), main.indexOf('function startSession'));
-  assert.match(closeSession, /panels\.setSessionOpen\(false\);\s*panels\.focusSessionToggle\(\);/);
+  assert.match(closeSession, /enterToday\(\);\s*panels\.focusSessionHead\(\);/);
   // The lesson's own route: one press opens it, one press closes it, and `Close` is its only exit.
   assert.match(main, /onLearn: openLesson/);
   assert.match(main, /onLessonClose: closeLesson/);
@@ -1999,7 +2030,8 @@ test('the drill stage carries the five-segment family picker', () => {
   assert.match(panels, /One section at a time, with the band\. Loop it or play on\./);
   assert.match(panels, /progression: 'Progression play-along'/);
   assert.match(panels, /song: 'Song play-along'/);
-  assert.match(html, /\.family-picker \[role=radio\]\[aria-checked="true"\] \{ background: var\(--accent\); color: var\(--accent-text\)/);
+  // 06-05: segmented controls select in ink (UI-SPEC "Controls"), not the cobalt action colour.
+  assert.match(html, /\.family-picker \[role=radio\]\[aria-checked="true"\] \{ background: var\(--ink\); color: var\(--surface\)/);
   // A-53: below 640px the picker is a six-column grid — three segments of two columns and
   // two of three — so five segments wrap three + two and never four + one.
   assert.match(html, /\.family-picker \{ display: grid; grid-template-columns: repeat\(6, minmax\(0, 1fr\)\); overflow-x: visible; \}/);
@@ -2012,13 +2044,14 @@ test('the drill stage carries the five-segment family picker', () => {
 test('the family row carries Learn and the lesson panel carries the four labelled blocks', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const panels = read('panels.js');
-  // The description is unchanged and now shares its row with the button, so the picker pin above
-  // still matches and the lesson is one press from the family it explains (F3: a reuse, not a new
-  // layout object — `.stage-row` already carries the transport row and the family controls row).
+  // The description is unchanged; since 06-02 Learn sits beside New? Start here in the Practice
+  // coach area (`#coachTools`), which mirrors the drill stage's visibility.
+  assert.match(html, /<div class="stage-row">\s*<p class="microcopy family-desc" id="familyDesc">Count-in, metronome, and a fade to no lights\.<\/p>\s*<\/div>/);
   assert.match(
     html,
-    /<div class="stage-row">\s*<p class="microcopy family-desc" id="familyDesc">Count-in, metronome, and a fade to no lights\.<\/p>\s*<button type="button" id="familyLearn" aria-expanded="false" aria-controls="lessonPanel">Learn this drill<\/button>\s*<\/div>/,
+    /<div class="coach-tools" id="coachTools">\s*<button type="button" class="start-here" id="startHere" aria-expanded="false" aria-controls="lessonPanel">New\? Start here<\/button>\s*<button type="button" id="familyLearn" aria-expanded="false" aria-controls="lessonPanel">Learn this drill<\/button>\s*<\/div>/,
   );
+  assert.match(panels, /if \(\$\('coachTools'\)\) \$\('coachTools'\)\.hidden = !available \|\| result \|\| passReview;/);
   assert.equal((html.match(/id="familyLearn"/g) || []).length, 1, 'exactly one Learn control, so no second entry point');
   assert.equal((html.match(/id="lessonPanel"/g) || []).length, 1, 'exactly one lesson panel');
   // Four blocks, always four: the labels are shell markup in the documented order, so a missing
@@ -2051,7 +2084,8 @@ test('the family row carries Learn and the lesson panel carries the four labelle
   assert.match(panels, /link\.append\(' ', glyph\);/);
   // Two self-hosted videos (the generated demo and the real reference) and one real photo.
   // No third-party preview, frame or remote media element is allowed.
-  const panelMarkup = html.slice(html.indexOf('id="lessonPanel"'), html.indexOf('<main>'));
+  // Phase 6 moved the lesson into the Practice view, so the slice ends at the panel's own close.
+  const panelMarkup = html.slice(html.indexOf('id="lessonPanel"'), html.indexOf('</section>', html.indexOf('id="lessonLinkEmpty"')));
   const media = panelMarkup.match(/<(img|video|iframe|embed|object|source)\b[^>]*>/gi) || [];
   assert.equal(media.filter(tag => /^<video\b/i.test(tag)).length, 2, 'two self-hosted videos');
   assert.equal(media.filter(tag => /^<img\b/i.test(tag)).length, 1, 'one real reference photo');
@@ -2243,8 +2277,9 @@ test('the watch-and-read list only exposes complete https links and ships inline
   assert.equal((html.match(/class="lesson-basics-card"/g) || []).length, 3, 'three visual cards');
   assert.match(html, /Fingers 1–4/);
   assert.match(html, /Thumb behind, fingers arched/);
-  assert.match(html, /Orange root · number = finger/);
-  const panelMarkup = html.slice(html.indexOf('id="lessonPanel"'), html.indexOf('<main>'));
+  assert.match(html, /Raspberry root · number = finger/);
+  // Phase 6 moved the lesson into the Practice view, so the slice ends at the panel's own close.
+  const panelMarkup = html.slice(html.indexOf('id="lessonPanel"'), html.indexOf('</section>', html.indexOf('id="lessonLinkEmpty"')));
   const media = panelMarkup.match(/<(img|video|iframe|embed|object|source)\b[^>]*>/gi) || [];
   assert.equal(media.filter(tag => /^<video\b/i.test(tag)).length, 2, 'two self-hosted videos');
   assert.equal(media.filter(tag => /^<img\b/i.test(tag)).length, 1, 'one real reference photo');
@@ -2370,7 +2405,8 @@ test('the tuner is a local mic reading and closes on every non-tuner path', () =
   for (const id of ['tunerBtn', 'tunerCard', 'tunerNote', 'tunerCents', 'tunerClose']) {
     assert.match(html, new RegExp(`id="${id}"`), `${id} is missing`);
   }
-  assert.match(html, /<button type="button" class="tuner-toggle" id="tunerBtn" aria-expanded="false" aria-controls="tunerCard">Tuner<\/button>/);
+  assert.match(html, /<button type="button" class="tuner-toggle" id="tunerBtn" aria-expanded="false" aria-controls="tunerCard">Start tuner<\/button>/);
+  assert.match(html, /<button type="button" id="tunerClose">Stop tuner<\/button>/);
   const panels = read('panels.js');
   assert.match(panels, /function setTunerOpen\(open\) \{/);
   assert.match(panels, /function setTunerReading\(reading\) \{/);
@@ -2615,7 +2651,7 @@ test('the Name-mode question is a 3px accent ring, not a note dot', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const main = stripComments(read('main.js'));
   const fretboard = stripComments(read('fretboard.js'));
-  assert.match(html, /\.note\.question \{ box-shadow: inset 0 0 0 3px var\(--accent\); \}/, 'the ring is the accent in 3px');
+  assert.match(html, /\.note\.question \{ box-shadow: inset 0 0 0 3px var\(--cobalt\); \}/, 'the ring is the accent in 3px');
   // The cue fade drops guidance chrome only; the ring stands in for the LED and stays.
   for (const rule of html.match(/[^\n{}]*\.cue-(?:fade|dark)[^\n{}]*\{[^}]*\}/g) || []) {
     assert.ok(!/\.note\b/.test(rule), `the cue fade must not remove the question ring: ${rule}`);
@@ -2910,8 +2946,8 @@ test('the chord stage carries the pair strip, the Changes select and Mark change
   assert.match(html, /@media \(min-width: 640px\) \{[\s\S]*?\.pair-strip \{ grid-template-columns: repeat\(auto-fit, minmax\(150px, 1fr\)\); \}/);
   assert.match(html, /@media \(max-width: 639px\) \{[\s\S]*?\.pair-strip \{ grid-template-columns: minmax\(0, 1fr\); \}/);
   // The current card is the accent: a 2px border plus the accent name, never colour alone.
-  assert.match(html, /\.pair-card\[aria-current="step"\] \{ border: 2px solid var\(--accent\); \}/);
-  assert.match(html, /\.pair-card\[aria-current="step"\] \.pair-name \{ color: var\(--accent\); \}/);
+  assert.match(html, /\.pair-card\[aria-current="step"\] \{ border: 2px solid var\(--cobalt\); \}/);
+  assert.match(html, /\.pair-card\[aria-current="step"\] \.pair-name \{ color: var\(--cobalt\); \}/);
   assert.match(html, /\.pair-card \{[^}]*display: grid;/);
 });
 
@@ -3101,8 +3137,8 @@ test('the result offers Practise weakest pair between Repeat drill and Back to b
   assert.ok(repeat >= 0 && weakest > repeat && back > weakest, 'the seed action sits between Repeat drill and Back to browse');
   assert.match(html, /<button type="button" id="practiseWeakestPair" hidden>Practise weakest pair<\/button>/);
   // Secondary, never a fill: the accent lives in the border and the background stays the panel.
-  assert.match(html, /#practiseWeakestPair \{ border-color: var\(--accent\); color: var\(--accent\); background: var\(--panel\); \}/);
-  assert.ok(!/#practiseWeakestPair \{[^}]*background: var\(--accent\)/.test(html), 'never an accent fill');
+  assert.match(html, /#practiseWeakestPair \{ box-shadow: inset 0 0 0 1\.5px var\(--cobalt\); color: var\(--cobalt\); background: var\(--surface\); \}/);
+  assert.ok(!/#practiseWeakestPair \{[^}]*background: var\(--cobalt\)/.test(html), 'never an accent fill');
 
   const panels = read('panels.js');
   assert.match(panels, /const offerWeakest = !!weakest && typeof weakest\.pairId === 'string' && weakest\.pairId !== playedPairId/);
@@ -3190,7 +3226,7 @@ test('the four Next rep forms are fixed templates with the number supplied by te
   assert.match(panels, /setPairStrip, setChangesSelect, setTempoSuggestion,/, 'setTempoSuggestion is part of the panel API');
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   assert.match(html, /<p class="tempo-line" id="tempoLine" hidden><\/p>/);
-  assert.match(html, /\.pass-review \.tempo-line \{ margin: 0; font-weight: 600; \}/, 'Body weight 600');
+  assert.match(html, /\.pass-review \.tempo-line \{ margin: 0; font-weight: 700; \}/, 'Body weight 700');
   // The review sits inside the pass-review region, after the decision line.
   const review = html.indexOf('id="passReview"');
   const decision = html.indexOf('id="passReviewDecision"');
@@ -3394,16 +3430,18 @@ test('the Progressions tab carries a secondary Play seed and the play-along’s 
   const panels = read('panels.js');
   const main = read('main.js');
   // A-54: Play seeds the stage, it is never the accent action — `Start drill` stays the CTA.
-  assert.match(html, /<button type="button" id="playProgression">Play<\/button>/);
+  assert.match(html, /<button type="button" id="playProgression">Play progression<\/button>/);
+  assert.match(html, /<button type="button" id="playSong">Play song<\/button>/);
   assert.ok(!/id="playProgression"[^>]*class="[^"]*cta/.test(html), 'Play never carries class="cta"');
-  assert.match(html, /#playProgression, #playSong \{ background: var\(--panel\); border: 1px solid var\(--border\); color: var\(--text\); min-height: 44px; \}/);
+  assert.match(html, /#playProgression, #playSong \{ background: var\(--surface\); color: var\(--ink\); min-height: 44px; \}/);
   assert.match(html, /#playProgression, #playSong \{ width: 100%; \}/);
   // The play-along's Key select sits in the family controls row, before the direction field.
   assert.match(html, /<label id="playKeyField" hidden>Key\s*<select id="playKey"><\/select>/);
   assert.ok(html.indexOf('id="playKeyField"') < html.indexOf('id="directionField"'), 'Key precedes Direction');
   assert.match(panels, /\$\('playKey'\)\.addEventListener\('change', e => onChange\('keyPc', \+e\.target\.value\)\)/);
   // The accessible name names the item it will seed.
-  assert.match(panels, /\$\('playProgression'\)\.setAttribute\('aria-label', 'Play ' \+ playProg\.name \+ ' in the drill stage'\)/);
+  assert.match(panels, /\$\('playProgression'\)\.setAttribute\('aria-label', 'Play progression ' \+ playProg\.name \+ ' in the drill stage'\)/);
+  assert.match(panels, /\$\('playSong'\)\.setAttribute\('aria-label', 'Play song ' \+ chosenSong\.title \+ ' in the drill stage'\)/);
   assert.match(panels, /\$\('playProgression'\)\.addEventListener\('click', \(\) => onPlay\('progression', \$\('progression'\)\.value\)\)/);
   assert.match(main, /onPlay: seedPlayAlong,/);
   // The fourth segment's copy rows and the tab's sentence; 04-03 finishes A-56 so both
@@ -3691,10 +3729,10 @@ test('the stage chart is an ordered list inside a Chart region with no button in
   // The block is one `--bg` inset on the existing tokens: no new colour token is invented.
   const rootBlocks = [...html.matchAll(/:root \{[\s\S]*?\}/g)].map(m => m[0]).join('\n');
   assert.ok(!/--[a-z-]*(play|chart)/.test(rootBlocks), 'the stage chart adds no token');
-  assert.match(html, /\.play-chart \{ display: grid; gap: 12px; background: var\(--bg\); border: 1px solid var\(--border\); border-radius: 12px; padding: var\(--space-4\); \}/);
+  assert.match(html, /\.play-chart \{ display: grid; gap: 12px; background: var\(--bg\); border: 1px solid var\(--line\); border-radius: 12px; padding: var\(--space-4\); \}/);
   assert.match(html, /\.play-chart-bars \{ display: grid; grid-template-columns: repeat\(auto-fit, minmax\(96px, 1fr\)\); gap: 8px;/);
   assert.match(html, /\.play-chart-bar \{ display: grid; gap: 4px; align-content: start; min-height: 56px; padding: 8px 12px;/);
-  assert.match(html, /\.play-chart-bar\[aria-current="step"\] \{ outline: 2px solid var\(--accent\); outline-offset: 1px; \}/);
+  assert.match(html, /\.play-chart-bar\[aria-current="step"\] \{ outline: 2px solid var\(--cobalt\); outline-offset: 1px; \}/);
   assert.match(html, /@media \(max-width: 639px\) \{[\s\S]*?\.play-chart-bars \{ grid-template-columns: repeat\(2, minmax\(0, 1fr\)\); \}/);
   assert.match(html, /@media \(max-width: 639px\) \{[\s\S]*?\.play-chart-primary \{ font-size: 16px; \}/);
   // The stage chart stays in stage mode: it is structure, not a note cue.
@@ -4385,23 +4423,24 @@ test('the plan view renders the five approved block names, the total and the ele
   assert.equal(sessionReasonText({ reasonKey: 'nope' }), 'Unavailable — skipped.');
   assert.equal(sessionReasonText({ reasonKey: 'constructor' }), 'Unavailable — skipped.');
   assert.equal(sessionReasonText(), 'Unavailable — skipped.');
-  // The header's three accessible names (A-69); `index` is the session's zero-based block index.
-  assert.equal(sessionButtonLabel({ dueCount: 3 }), 'Session — 3 skills due');
-  assert.equal(sessionButtonLabel({ dueCount: 1 }), 'Session — 1 skill due');
-  assert.equal(sessionButtonLabel({ dueCount: 0 }), 'Session — no skills due');
-  assert.equal(sessionButtonLabel({ dueCount: 3, running: true, index: 1, total: 5 }), 'Session — block 2 of 5');
-  assert.equal(sessionButtonLabel({ dueCount: 0, running: true, index: 0, total: 5 }), 'Session — block 1 of 5');
-  assert.equal(sessionButtonLabel({ dueCount: 0, running: true, index: 9, total: 5 }), 'Session — block 5 of 5');
+  // The Today tab's accessible names (A-69, Phase 6); `index` is the session's zero-based block index.
+  assert.equal(todayTabLabel({ dueCount: 3 }), 'Today, 3 due');
+  assert.equal(todayTabLabel({ dueCount: 1 }), 'Today, 1 due');
+  assert.equal(todayTabLabel({ dueCount: 0 }), 'Today');
+  assert.equal(todayTabLabel({ dueCount: 3, running: true, index: 1, total: 5 }), 'Today, block 2 of 5');
+  assert.equal(todayTabLabel({ dueCount: 0, running: true, index: 0, total: 5 }), 'Today, block 1 of 5');
+  assert.equal(todayTabLabel({ dueCount: 0, running: true, index: 9, total: 5 }), 'Today, block 5 of 5');
   // The shell carries the panel, the note, the always-present intro and the one filled action.
-  for (const id of ['sessionPanel', 'sessionTitle', 'hideSession', 'sessionTotal', 'sessionPlan',
-    'sessionPlanNote', 'sessionBlocks', 'startSession', 'sessionBadge']) {
+  // Phase 6: the Hide button and the header chip are gone; the badge lives on the Today tabs.
+  for (const id of ['sessionPanel', 'sessionTitle', 'sessionTotal', 'sessionPlan',
+    'sessionPlanNote', 'sessionBlocks', 'startSession', 'pillTodayBadge', 'barTodayBadge']) {
     assert.match(html, new RegExp(`id="${id}"`), `missing #${id}`);
   }
   assert.match(html, /<p class="microcopy session-intro">A 13-minute session in five blocks, each with the reason it was chosen\.<\/p>/);
   assert.match(html, /No history yet — the session starts with the curated defaults\./);
   assert.match(html, /<button type="button" class="cta" id="startSession">Start session<\/button>/);
   assert.match(html, />Session</);
-  assert.match(html, /<button type="button" id="hideSession">Hide session<\/button>/);
+  assert.ok(!html.includes('id="hideSession"'), 'Today is left through the tabs, never a Hide button');
   // The intro is the second child of #sessionPlan, after the note and before the five rows.
   const plan = html.slice(html.indexOf('id="sessionPlan"'), html.indexOf('id="sessionBlocks"'));
   assert.ok(plan.indexOf('id="sessionPlanNote"') >= 0 && plan.indexOf('session-intro') > plan.indexOf('id="sessionPlanNote"'),
@@ -4416,7 +4455,10 @@ test('the plan view renders the five approved block names, the total and the ele
   // No new live region and no alert role: the one announcer still carries every message.
   assert.equal((html.match(/aria-live=/g) || []).length, 1, 'still exactly one live region');
   assert.ok(!/role="alert"/.test(html), 'no alert role');
-  assert.match(panels, /function announce\(text\) \{ \$\('announcer'\)\.textContent = text; \}/);
+  // The one announcer node is written by one function; 06-03 only defers a write that follows its
+  // move into or out of the More sheet.
+  assert.equal((panels.match(/function announce\(/g) || []).length, 1);
+  assert.match(panels, /function announce\(text\) \{\s*const node = \$\('announcer'\);/);
 });
 
 test('the Session button has one writer and the panel owns the only fill while it is open', () => {
@@ -4433,8 +4475,9 @@ test('the Session button has one writer and the panel owns the only fill while i
   assert.match(drillState, /total: SESSION_BLOCKS\.length,/);
   assert.match(drillState, /disabled: isRunning\(\) \|\| !!\(run && run\.phase === 'passReview'\),/);
   // Correction 3: both halves of the narrowed accent rule.
-  assert.match(panels, /\$\('appShell'\)\.classList\.toggle\('session-open', on\);/);
-  assert.match(html, /#appShell\.session-open #startDrill \{[^}]*background: var\(--panel\);[^}]*\}/);
+  // Phase 6: the Today view owns the fill while it is on screen, so `setView` toggles the class.
+  assert.match(panels, /\$\('appShell'\)\.classList\.toggle\('session-open', name === 'today'\);/);
+  assert.match(html, /#appShell\.session-open #startDrill \{[^}]*background: var\(--surface\);[^}]*\}/);
   assert.match(html, /id="startDrill" class="cta">Start drill<\/button>/);
   assert.match(html, /class="cta" id="startSession">Start session</);
 });
@@ -4443,13 +4486,15 @@ test('WR-02: the Session chip and its accessible name follow a running session, 
   // The real setter, through the stub document: a free-choice drill with no session must never
   // claim a five-block position, because no plan exists and nothing is being counted (A-69).
   withStubPanels(({ panels, byId }) => {
+    // Phase 6: the chip is the Today tab's badge, written in both bars.
     panels.setSessionButton({ dueCount: 4, running: false, index: 0, total: 5 });
-    assert.equal(byId.get('sessionBadge').textContent, '4', 'a free-choice run keeps the due count');
-    assert.equal(byId.get('sessionBtn').getAttribute('aria-label'), 'Session — 4 skills due');
+    assert.equal(byId.get('barTodayBadge').textContent, '4', 'a free-choice run keeps the due count');
+    assert.equal(byId.get('bar-today').getAttribute('aria-label'), 'Today, 4 due');
     // A session that really runs names its block, and only then.
     panels.setSessionButton({ dueCount: 4, running: true, index: 1, total: 5 });
-    assert.equal(byId.get('sessionBadge').textContent, '2 / 5');
-    assert.equal(byId.get('sessionBtn').getAttribute('aria-label'), 'Session — block 2 of 5');
+    assert.equal(byId.get('barTodayBadge').textContent, '2 / 5');
+    assert.equal(byId.get('pillTodayBadge').textContent, '2 / 5');
+    assert.equal(byId.get('bar-today').getAttribute('aria-label'), 'Today, block 2 of 5');
   });
   // And the one caller derives that flag from the reducer, not from `!!run`.
   const drillState = read('main.js').slice(
@@ -4506,7 +4551,9 @@ test('a free-choice seed closes the Session panel and clears the block marker', 
   const beforeStart = seedBlock.slice(0, seedBlock.indexOf('await startDrill('));
   assert.ok(beforeStart.length > 0, 'seedBlock awaits the one start path');
   assert.ok(!/await /.test(beforeStart), 'nothing is awaited before the one start path');
-  assert.match(seedBlock, /panels\.setSessionOpen\(false\);\s*await startDrill\(\{ recall: block\.kind === 'recall' \|\| block\.reasonKey === 'due' \}\);/);
+  // Phase 6: the block lands on the Practice view, synchronously, right before the one start path.
+  assert.match(seedBlock, /switchView\('practice', \{ scroll: false \}\);\s*await startDrill\(\{ recall: block\.kind === 'recall' \|\| block\.reasonKey === 'due' \}\);/);
+  assert.match(closeAll, /switchView\('practice', \{ scroll: false \}\);/, 'a seed lands on the Practice view');
   for (const body of ['practiseSkill', 'seedPair', 'seedPlayAlong', 'focusDrillStage', 'backToBrowse', 'applyTab', 'onPairChange', 'applyChange']) {
     const start = main.indexOf(`function ${body}(`);
     assert.ok(start >= 0, `missing ${body}`);
@@ -4811,7 +4858,9 @@ test('exactly one boundary action carries the fill, and a stop recommendation fi
   assert.equal((setter.match(/classList\.toggle\('cta'/g) || []).length, 2, 'one toggle per container');
   assert.ok(!/'stop'/.test(setter), 'a stop recommendation matches no accent key');
   // The boundary is force-hidden while the panel is open and while a pass owns the stage (A-73).
-  assert.match(panels, /function paintBoundary\(\) \{\s*\n\s*\$\('sessionBoundary'\)\.hidden = !boundaryVisible \|\| !\$\('sessionPanel'\)\.hidden;/);
+  // Phase 6: "the panel is open" means the Today view is on screen.
+  assert.match(panels, /function paintBoundary\(\) \{\s*\n\s*\$\('sessionBoundary'\)\.hidden = !boundaryVisible \|\| isSessionOpen\(\);/);
+  assert.match(panels, /const isSessionOpen = \(\) => currentView === 'today';/);
   assert.match(panels, /visible: !!\(sessionBoundary && sessionBoundary\.visible\) && !lockedForProgress && !sessionOpen,/);
   assert.match(panels, /function setSessionSummary\(/);
   // The new panel functions land after `setSelfReport`, so the two slice pins keep their meaning.
@@ -5005,7 +5054,7 @@ test('the four session announcements ride the one live region, and a block resul
   // The summary opens the panel and focuses its head; the reducer's own effect is the one voice.
   const summary = main.slice(main.indexOf('function openSessionSummary'), main.indexOf('function applySessionEffects'));
   assert.match(summary, /panels\.setSessionSummary\(\{/);
-  assert.match(summary, /panels\.setSessionOpen\(true\);/);
+  assert.match(summary, /switchView\('today', \{ scroll: false \}\);/, 'the summary opens on the Today view');
   assert.match(summary, /panel\.scrollIntoView\(\{ block: 'start', behavior: still \? 'auto' : 'smooth' \}\);/);
   assert.match(summary, /panels\.focusSessionHead\(\);/);
   assert.ok(!/panels\.announce/.test(summary), 'the summary never announces twice');
@@ -5037,21 +5086,22 @@ test('the Practise view lists five family rows and its seeds never start a pass'
 });
 
 // ---------- Phase 5, 05-02 Task 2: the capability preflight and the wake lock (D-76, D-77) ----------
-test('#capabilities is the first visible child of main, between the announcer and the tabs', () => {
+test('#capabilities heads More › Settings, and only the announcer sits before the views', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const main = html.indexOf('<main>');
   const announcer = html.indexOf('id="announcer"', main);
-  const capabilities = html.indexOf('id="capabilities"', main);
-  const tabs = html.indexOf('id="tabs"', main);
-  assert.ok(main >= 0 && announcer > main && capabilities > announcer && tabs > capabilities,
-    'the order is announcer, capability line, tabs');
-  // The live region keeps position zero and nothing else sits between it and the line, so the
-  // preflight is the first visible row of `main` and never a fourth sticky header row (A-80).
+  const tabs = html.indexOf('id="view-', main);
+  // Phase 6 (06-03): the line moved to the top of More › Settings, visible in every connection
+  // state and never a row of the sticky header (A-80); the live region keeps position zero.
   assert.deepEqual(
     [...html.slice(main, tabs).matchAll(/<(\w+)[^>]*id="([^"]+)"/g)].map(match => match[2]),
-    ['announcer', 'capabilities'],
-    'no other element sits between the live region and the line',
+    ['announcer'],
+    'nothing else sits between main and the views',
   );
+  const settings = html.indexOf('id="moreSettings"');
+  const capabilities = html.indexOf('id="capabilities"');
+  assert.ok(announcer > main && settings > html.indexOf('<dialog id="moreSheet"') && capabilities > settings
+    && capabilities < html.indexOf('id="lightsBtn"'), 'the line is the first row of Settings');
   assert.match(html, /<p id="capabilities">All capabilities ready\.<\/p>/);
   // A 12px muted paragraph in the flow: the long form wraps, it never grows the sticky header.
   assert.match(html, /#capabilities, #wakeNote \{ margin: 0; font-size: 12px; color: var\(--muted\); \}/);
@@ -5059,14 +5109,15 @@ test('#capabilities is the first visible child of main, between the announcer an
 
 test('the wake note sits inside the transport bar, below the transport row', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  const boardZone = html.indexOf('class="board-zone"');
+  // 06-02: the transport bar and the drill stage share the Practice control area.
+  const boardZone = html.indexOf('class="p-ctl"');
   const bar = html.indexOf('id="transportBar"', boardZone);
   const transport = html.indexOf('id="transportRow"', bar);
   const note = html.indexOf('id="wakeNote"', transport);
   const hint = html.indexOf('id="hintConfirm"', note);
   const stage = html.indexOf('id="drillStage"', note);
   assert.ok(boardZone >= 0 && bar > boardZone && transport > bar && note > transport && note < hint && note < stage,
-    'the wake note is in the board zone, between the transport row and the hint confirm');
+    'the wake note is in the control area, between the transport row and the hint confirm');
   assert.ok(stage > bar, 'the transport bar is outside the coach rail');
   assert.match(html, /<p id="wakeNote" hidden>Screen wake is unavailable — keep the phone awake during a pass\.<\/p>/);
   // Shown, never announced: one hidden flag and nothing else — no dismiss control, no colour.
@@ -5173,13 +5224,15 @@ test('the breakpoint set is unchanged and no viewport-height or posture query ar
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const style = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
   const conditions = [...style.matchAll(/@media ([^{]+)\{/g)].map(match => match[1].trim());
-  // The split-studio desktop band plus the three width bands and the three preference
-  // queries, and nothing else: the landscape phone is covered by the 640/1024 rules.
+  // The split-studio desktop band plus the three width bands and the two preference
+  // queries (LOOK-02 removed the dark colour-scheme query), and nothing else: the landscape phone is covered by the 640/1024 rules.
+  // 06-03 adds the UI-SPEC's 420px appbar threshold (the More word hides below it).
+  // 06-05 adds 480px for the wordmark: between 420 and 479px "Guitar Coach" would truncate next to
+  // the pill and the More word, and the UI-SPEC says titles never truncate.
   assert.deepEqual(
     [...new Set(conditions)].sort(),
-    ['(max-width: 1179px)', '(max-width: 639px)', '(min-width: 1024px)', '(min-width: 1180px)',
-      '(min-width: 640px)', '(pointer: coarse)', '(prefers-color-scheme: dark)',
-      '(prefers-reduced-motion: reduce)'],
+    ['(max-width: 1179px)', '(max-width: 419px)', '(max-width: 479px)', '(max-width: 639px)', '(min-width: 1024px)', '(min-width: 1180px)',
+      '(min-width: 640px)', '(pointer: coarse)', '(prefers-reduced-motion: reduce)'],
   );
   for (const band of ['(max-width: 639px)', '(min-width: 640px)', '(min-width: 1024px)', '(min-width: 1180px)']) {
     assert.ok(conditions.includes(band), `${band} is still a width band`);
@@ -5192,11 +5245,14 @@ test('the breakpoint set is unchanged and no viewport-height or posture query ar
 test('the badge, the two plain lines and the anchor are pinned, and no module keeps a tab scoped store', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const panels = read('panels.js');
-  // 05-01: the count chip is decoration — the button's own label is the accessible name, so a
-  // reader hears `Session` and never a stray digit beside it (A-69).
-  const badge = html.match(/<span[^>]*id="sessionBadge"[^>]*>/);
-  assert.ok(badge, 'the session badge exists in the shell');
-  assert.match(badge[0], /aria-hidden="true"/, 'the badge is hidden from assistive technology');
+  // 05-01, moved to the Today tabs in Phase 6: the count badge is decoration — the tab's own
+  // aria-label carries the count, so a reader never hears a stray digit beside it (A-69).
+  for (const id of ['pillTodayBadge', 'barTodayBadge']) {
+    const badge = html.match(new RegExp(`<span[^>]*id="${id}"[^>]*>`));
+    assert.ok(badge, `the ${id} badge exists in the shell`);
+    assert.match(badge[0], /aria-hidden="true"/, 'the badge is hidden from assistive technology');
+  }
+  assert.match(panels, /\$\(`\$\{prefix\}-today`\)\.setAttribute\('aria-label', label\);/, 'the count is in the tab name');
   // 05-02 Task 2: the capability line and the wake note stay plain paragraphs — the boot line is
   // never announced and the denial note is never focusable, so the document's one live region is
   // still the announcer (D-76, D-77).
@@ -5232,10 +5288,13 @@ test('the Phase 5 residual fixes hold: state-last rows and an inert Start sessio
 });
 
 // ---------- 06: the Field Book two-column hybrid ----------
-test('the Field Book shell is one learning-path rail and one workspace', () => {
+test('the views shell: the learning path lives in Today and the rail is gone', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  assert.match(html, /<aside class="library-rail path-rail" aria-label="Learning path">/);
+  assert.ok(!html.includes('library-rail'), 'the side rail is gone (06-02)');
+  assert.ok(!html.includes('id="pathSession"'), 'Today is a view, so the rail\'s Open session button is gone');
   assert.match(html, /id="learningPath"><\/ol>/);
+  const today = html.slice(html.indexOf('id="view-today"'), html.indexOf('id="view-practice"'));
+  assert.ok(today.includes('id="learningPath"'), 'the learning path sits in Today');
   const panels = read('panels.js');
   for (const step of ['tune', 'find', 'shape', 'blues', 'power', 'changes']) {
     assert.match(panels, new RegExp(`${step}: \{ num: '0[1-6]', label:`), `missing path step ${step}`);
@@ -5244,11 +5303,11 @@ test('the Field Book shell is one learning-path rail and one workspace', () => {
   assert.match(panels, /button\.dataset\.path = key/);
   assert.match(panels, /if \(key !== 'tune'\) \{\s*button\.setAttribute\('aria-expanded', 'false'\);\s*button\.setAttribute\('aria-controls', 'lessonPanel'\);/);
   assert.match(panels, /fillPath\(\);/);
-  for (const id of ['workspaceTitle', 'workspaceSub', 'workspaceStep', 'workspaceWatch', 'pathMaterials', 'pathSession']) {
+  for (const id of ['workspaceTitle', 'workspaceSub', 'workspaceStep', 'workspaceWatch', 'pathMaterials']) {
     assert.match(html, new RegExp(`id="${id}"`), `missing ${id}`);
   }
-  // Two columns, not the old library / board / coach triptych.
-  assert.match(html, /grid-template-columns: 264px minmax\(0, 1fr\)/);
+  // No rail column: the desktop named grid lands in 06-04.
+  assert.ok(!/grid-template-columns: 264px minmax\(0, 1fr\)/.test(html), 'the rail column is gone');
   assert.ok(!/grid-template-columns: 220px minmax\(0, 1fr\) 340px/.test(html), 'the third column is gone');
   const media = html.indexOf('class="workspace-media"');
   const board = html.indexOf('class="board-stage"');
@@ -5263,7 +5322,7 @@ test('the path, session, reference and materials controls are wired', () => {
   assert.match(panels, /onPath = \(\) => \{\}, onLessonSection = \(\) => \{\},/);
   assert.match(panels, /function setPathActive\(name, remember = true\)/);
   assert.match(panels, /document\.querySelectorAll\('\[data-path\]'\)\.forEach\(button => \{/);
-  assert.match(panels, /\$\('pathSession'\)\.addEventListener\('click', \(\) => onSession\(\)\);/);
+  assert.match(panels, /if \(\$\('changeInLibrary'\)\) \$\('changeInLibrary'\)\.addEventListener\('click', \(\) => onView\('library'\)\);/);
   assert.match(panels, /if \(\$\('workspaceWatch'\)\) \$\('workspaceWatch'\)\.addEventListener\('click', \(\) => \{/);
   assert.match(panels, /lessonReturnFocus = \$\('workspaceWatch'\);/);
   assert.match(panels, /onLessonSection\('real'\);/);
@@ -5289,29 +5348,30 @@ test('only licensed local teaching media is pre-cached', () => {
 });
 
 
-test('the More menu carries a persisted System/Light/Dark control', () => {
+test('LOOK-02: no theme control, no dark CSS and no theme plumbing remain', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const panels = read('panels.js');
   const main = read('main.js');
-  assert.match(html, /<label class="theme-field">Theme\s*<select id="theme">\s*<option value="system">System<\/option>\s*<option value="light">Light<\/option>\s*<option value="dark">Dark<\/option>\s*<\/select>\s*<\/label>/);
-  assert.match(html, /html\[data-theme="dark"\]/);
-  assert.match(html, /@media \(prefers-color-scheme: dark\) \{\s*html:not\(\[data-theme="light"\]\)/);
-  assert.match(panels, /\$\('theme'\)\.value = settings\.theme \|\| 'system';/);
-  assert.match(panels, /\$\('theme'\)\.addEventListener\('change', e => onChange\('theme', e\.target\.value\)\);/);
-  assert.match(main, /import \{ createSettingsStore, validateSettings, DRILL_FAMILIES, INTENSITY_STEMS, STEM_KEYS, LOOP_BARS, THEMES \} from '\.\/settings\.js';/);
-  assert.match(main, /function applyTheme\(theme\) \{/);
-  assert.match(main, /document\.documentElement\.dataset\.theme = value;/);
-  assert.match(main, /if \(field === 'theme'\) \{/);
-  assert.match(main, /applyTheme\(settings\.theme\);/);
+  const settings = read('settings.js');
+  assert.ok(!html.includes('id="theme"'), 'no theme select');
+  assert.ok(!/data-theme|prefers-color-scheme|--dark-/.test(html), 'no dark selector, media query or token');
+  assert.match(html, /<meta name="color-scheme" content="light">/);
+  assert.match(html, /<meta name="theme-color" content="#f4f8fc">/);
+  assert.match(html, /:root \{\n  color-scheme: light;/);
+  assert.ok(!/THEMES/.test(settings) && !/THEMES/.test(main), 'no theme allow-list');
+  assert.ok(!/function applyTheme\(/.test(main), 'no theme-apply function');
+  assert.ok(!/field === 'theme'/.test(main));
+  assert.ok(!/\$\('theme'\)/.test(panels), 'no theme projection or listener');
+  assert.match(main, /import \{ createSettingsStore, validateSettings, DRILL_FAMILIES, INTENSITY_STEMS, STEM_KEYS, LOOP_BARS, VIEWS \} from '\.\/settings\.js';/);
 });
 
 // ---------- 06 review fixes: boot shim, network-first worker, focus ----------
-test('the boot shim applies the stored theme before the stylesheet and can recover a stale cache', () => {
+test('the boot shim only recovers a stale cache and no longer reads storage', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const bootstrap = fs.readFileSync(new URL('../app/bootstrap.js', import.meta.url), 'utf8');
-  assert.ok(html.indexOf('bootstrap.js') < html.indexOf('<style>'), 'the theme shim runs before CSS');
-  assert.match(bootstrap, /localStorage\.getItem\('t2coach\.v1'\)/);
-  assert.match(bootstrap, /document\.documentElement\.dataset\.theme = theme/);
+  assert.ok(html.indexOf('bootstrap.js') < html.indexOf('<style>'), 'the shim stays an external classic script before CSS');
+  assert.ok(!/localStorage/.test(bootstrap), 'the shim no longer reads storage (LOOK-02)');
+  assert.ok(!/dataset\.theme/.test(bootstrap), 'the shim no longer sets a theme');
   assert.match(bootstrap, /getElementById\('recoverApp'\)/);
   assert.match(bootstrap, /getRegistrations\(\)/);
   assert.match(bootstrap, /caches\.delete\(key\)/);
@@ -5340,21 +5400,11 @@ test('new lesson openers expose their relationship and return focus to the opene
     assert.match(html, new RegExp(`id="${id}"[^>]*aria-controls="lessonPanel"`), `${id} does not control the lesson panel`);
   }
   assert.match(panels, /if \(key !== 'tune'\) \{\s*button\.setAttribute\('aria-expanded', 'false'\);\s*button\.setAttribute\('aria-controls', 'lessonPanel'\);/);
-  assert.match(html, /id="pathSession" aria-expanded="false" aria-controls="sessionPanel"/);
   assert.match(panels, /let lessonReturnFocus = null;/);
   assert.match(panels, /document\.querySelectorAll\('\[aria-controls="lessonPanel"\]'\)\.forEach/);
-  assert.match(panels, /const returnTo = lessonReturnFocus && typeof lessonReturnFocus\.focus === 'function'/);
+  assert.match(panels, /const returnTo = canFocus\(lessonReturnFocus\) \? lessonReturnFocus/);
   assert.match(panels, /returnTo\.focus\(\);/);
   for (const id of ['familyLearn', 'startHere', 'powerChordLearn', 'workspaceWatch', 'pathMaterials']) {
     assert.match(panels, new RegExp(`lessonReturnFocus = \\$\\('${id}'\\)`), `${id} is not tracked as an opener`);
   }
-});
-
-test('the path Today card follows the real session plan', () => {
-  const html = fs.readFileSync(INDEX_PATH, 'utf8');
-  const panels = read('panels.js');
-  assert.match(html, /id="pathTodayTotal"/);
-  assert.match(html, /id="pathTodaySub"/);
-  assert.match(panels, /\$\('pathTodayTotal'\)\.textContent = durationText\(minutes \* 60000\)/);
-  assert.match(panels, /\$\('pathTodaySub'\)\.textContent = `\$\{count\} block\$\{count === 1 \? '' : 's'\} · curated plan`/);
 });

@@ -12,6 +12,16 @@ import { daysBetween } from './progress.js';
 const $ = id => document.getElementById(id);
 const TABS = ['scales', 'chords', 'progressions', 'songs'];
 const TAB_IDS = { scales: 'tab-scales', chords: 'tab-chords', progressions: 'tab-progressions', songs: 'tab-songs' };
+// The four main views (Phase 6). This tier may not import settings.js, so the list is repeated
+// here and a shell test pins it equal to the settings allow-list `VIEWS`.
+export const NAV_VIEWS = ['today', 'practice', 'progress', 'library'];
+// Both tablists carry the same four tabs: `pill-*` on desktop and `bar-*` on the phone.
+const NAV_PREFIXES = ['pill', 'bar'];
+// The Library's primary action names the family tab it will open in Practice (06-02).
+export const CTA_LABEL = {
+  scales: 'Practise this scale', chords: 'Practise this chord',
+  progressions: 'Practise this progression', songs: 'Practise this song',
+};
 // Imported skill content is data, never trusted to be a real content id (CR-02).
 const ownEntry = (map, key) => (typeof key === 'string' && Object.hasOwn(map, key) ? map[key] : null);
 const keyPcOf = content => (Number.isInteger(content.keyPc) && content.keyPc >= 0 && content.keyPc <= 11
@@ -113,7 +123,7 @@ export const MIC_WORDS = {
   calibrating: 'Calibrating',
   denied: 'Denied',
 };
-export const MIC_ACTIONS = { calibrate: 'Calibrate', retry: 'Try again' };
+export const MIC_ACTIONS = { calibrate: 'Calibrate timing', retry: 'Try again' };
 // The four feedback sentences of the permission and boundary states. Denial is normal:
 // every one of them is neutral copy and none of them is a danger message (D-51).
 export const MIC_FEEDBACK = {
@@ -135,7 +145,7 @@ export const CALIBRATION = {
   tap: 'Tap',
   again: 'Calibrate again',
   done: 'Done',
-  close: 'Close',
+  close: 'Close calibration',
   skip: 'Skip for now',
   helper: 'Timing uses a tolerant default until you calibrate.',
   saved: 'Saved for this device.',
@@ -190,6 +200,7 @@ const DIRECTION = { up: 'Up', down: 'Down', updown: 'Up & down' };
 // plane is its own list because the chord family edits it *at* the boundary (A-38).
 const LOCKED_IDS = ['key', 'scale', 'position', 'direction'];
 const TEMPO_IDS = ['bpm', 'bpmDown5', 'bpmDown1', 'bpmUp1', 'bpmUp5', 'bpmTap'];
+const KEY_PLANE_IDS = ['progressionKey', 'songKey', 'playKey'];
 
 // ---------- Hint ladder copy (fixed, never data-derived) ----------
 export const HINT_LEVEL_NAMES = ['Full pattern', 'Anchors', 'Hint on demand', 'No lights'];
@@ -770,6 +781,7 @@ export const IMPORT_MESSAGE = {
   newer: 'This backup was made by a newer version of Guitar Coach. Update the app, then import again.',
   corrupt: 'The file could not be read. Choose the file again.',
   oversized: 'The file could not be read. Choose the file again.',
+  running: 'Stop the drill or finish this pass, then import.',
 };
 export const EXPORT_FAILED = `Export failed. Try again, or copy your data from the browser's storage.`;
 export const STORAGE_MESSAGE = {
@@ -985,15 +997,15 @@ export function sessionReasonText({ reasonKey = '', values = {} } = {}) {
   return formatter(values && typeof values === 'object' ? values : {});
 }
 
-// The header button's accessible name: the count at idle, the block index while a session runs.
-// `index` is the session's own zero-based block index, so the spoken form is `block 2 of 5` and
-// never `block 1 of 5` for the second block (A-69).
-export function sessionButtonLabel({ dueCount = 0, running = false, index = 0, total = 5 } = {}) {
+// The Today tab's accessible name (Phase 6): the count at idle, the block index while a session
+// runs, and the bare tab name when nothing is due. `index` is the session's own zero-based block
+// index, so the spoken form is `block 2 of 5` and never `block 1 of 5` for the second block (A-69).
+export function todayTabLabel({ dueCount = 0, running = false, index = 0, total = 5 } = {}) {
   const at = (Number.isInteger(index) ? Math.max(0, index) : 0) + 1;
   const size = Number.isFinite(total) && total > 0 ? Math.trunc(total) : 5;
-  if (running) return `Session — block ${Math.min(at, size)} of ${size}`;
+  if (running) return `Today, block ${Math.min(at, size)} of ${size}`;
   const count = Number.isFinite(dueCount) ? Math.max(0, Math.trunc(dueCount)) : 0;
-  return `Session — ${count > 0 ? `${countText(count, 'skill', 'skills')} due` : 'no skills due'}`;
+  return count > 0 ? `Today, ${count} due` : 'Today';
 }
 
 // The session's four announcements, in one table so the one live region can never read a second
@@ -1253,7 +1265,7 @@ export function lessonGuideView(context = {}) {
         title: 'Start with the pentatonic',
         body: root
           ? `Anchor finger ${rootFinger || 1} on ${root.note} at string ${root.s}, fret ${root.f}. The rest of the shape is the minor pentatonic you already know.`
-          : 'The rest of this shape is the minor pentatonic. Find the orange root first.',
+          : 'The rest of this shape is the minor pentatonic. Find the raspberry root first.',
       },
       {
         title: 'Add the blue note',
@@ -1274,9 +1286,9 @@ export function lessonGuideView(context = {}) {
         title: 'Anchor the root',
         body: root
           ? rootFinger > 0
-            ? `Finger ${rootFinger} starts on ${root.note} at string ${root.s}, fret ${root.f}. That orange root is the home note for the whole shape.`
-            : `The open ${root.note} string (string ${root.s}) is the root. That orange note is home for the whole shape.`
-          : 'Find the orange root first. Every other note is measured from it.',
+            ? `Finger ${rootFinger} starts on ${root.note} at string ${root.s}, fret ${root.f}. That raspberry root is the home note for the whole shape.`
+            : `The open ${root.note} string (string ${root.s}) is the root. That raspberry note is home for the whole shape.`
+          : 'Find the raspberry root first. Every other note is measured from it.',
       },
       {
         title: 'Set the shape',
@@ -1455,6 +1467,22 @@ export function lessonGuideView(context = {}) {
 // The five items in the locked order and the only two words the line may ever say. A missing
 // capability is information, never an error: nothing is disabled, nothing turns red and the
 // line is never announced (A-80, A-81).
+// The connection pill (06-03, UI-SPEC "Connection pill"): the visible label and the accessible name
+// for each of the four states, five rows in all because `connected` splits on a known or unknown
+// battery. Battery is a number from a BLE notification, so it is coerced and shown only when
+// finite; anything else reads as unknown.
+export const CONNECTION_STATES = ['disconnected', 'connecting', 'connected', 'unsupported'];
+export function connectionView({ state = 'disconnected', battery = null } = {}) {
+  const key = CONNECTION_STATES.includes(state) ? state : 'disconnected';
+  if (key === 'connecting') return { state: key, label: 'Connecting…', name: 'Connecting to guitar' };
+  if (key === 'unsupported') return { state: key, label: 'No Bluetooth', name: 'Bluetooth unavailable. Open guitar menu' };
+  if (key === 'disconnected') return { state: key, label: 'Connect guitar', name: 'Connect guitar' };
+  const n = battery === null || battery === undefined || battery === '' ? NaN : Number(battery);
+  if (!Number.isFinite(n)) return { state: key, label: 'T2 · —%', name: 'Guitar connected, battery unknown. Open guitar menu' };
+  const pct = Math.round(n);
+  return { state: key, label: `T2 · ${pct}%`, name: `Guitar connected, battery ${pct}%. Open guitar menu` };
+}
+
 export const CAPABILITY_ITEMS = [
   { key: 'browser', label: 'Browser' },
   { key: 'bluetooth', label: 'Bluetooth' },
@@ -1477,7 +1505,7 @@ export function createPanels({
   onChange = () => {}, onTab = () => {}, onBar = () => {}, onTransport = () => {},
   onTempo = () => {}, onTap = () => {}, onSelfReport = () => {}, onBack = () => {},
   onStageMode = () => {}, onHint = () => {}, onHintConfirm = () => {}, onHintCancel = () => {},
-  onRecallReport = () => {}, onProgressOpen = () => {}, onProgressClose = () => {},
+  onRecallReport = () => {},
   onSession = () => {}, onSessionClose = () => {}, onSessionStart = () => {},
   onSessionNext = () => {}, onSessionSkip = () => {}, onSessionRepeat = () => {}, onSessionEnd = () => {},
   onSessionView = () => {}, onPractiseFilter = () => {}, onPractiseFamily = () => {},
@@ -1493,10 +1521,13 @@ export function createPanels({
   onCalibrationSkip = () => {}, onCalibrationDone = () => {}, onCalibrationAgain = () => {},
   onLearn = () => {}, onLessonClose = () => {}, onLessonStart = () => {}, onPowerChord = () => {}, onStartHere = () => {}, onLessonListen = () => {},
   onTunerStart = () => {}, onTunerStop = () => {}, onPowerPractice = () => {},
-  onPath = () => {}, onLessonSection = () => {},
+  onPath = () => {}, onLessonSection = () => {}, onView = () => {}, onPractiseSelection = () => {},
+  onMoreClose = () => {},
 } = {}) {
   const tabs = TABS.map(t => $(TAB_IDS[t]));
   const tabpanel = $('tabpanel');
+  // The view on screen (Phase 6). Declared first so the boundary rule can read it from any setter.
+  let currentView = 'today';
   const dots = [...$('beatDots').children];
   let lastCount = 0;
   let lastBeatText = '';
@@ -1629,6 +1660,7 @@ export function createPanels({
       tabs[i].tabIndex = active ? 0 : -1;
     });
     if (tabpanel) tabpanel.setAttribute('aria-labelledby', TAB_IDS[tab]);
+    if ($('libraryCta')) $('libraryCta').textContent = CTA_LABEL[tab] || CTA_LABEL.scales;
     $('controls-scales').hidden = tab !== 'scales';
     $('controls-chords').hidden = tab !== 'chords';
     $('controls-progressions').hidden = tab !== 'progressions';
@@ -1823,7 +1855,6 @@ export function createPanels({
     $('scale').value = settings.scaleId;
     $('position').value = settings.positionId;
     $('labels').value = settings.labels;
-    if ($('theme')) $('theme').value = settings.theme || 'system';
     $('chord').value = settings.chordId;
     $('voicing').value = settings.voicingId;
     $('progression').value = settings.progressionId;
@@ -1831,7 +1862,7 @@ export function createPanels({
     // The Play button names the item it will seed, so its accessible name is never the
     // bare word on the label (PROG-01, D-59).
     const playProg = ownEntry(progressionById, settings.progressionId) || PROGRESSIONS[0];
-    $('playProgression').setAttribute('aria-label', 'Play ' + playProg.name + ' in the drill stage');
+    $('playProgression').setAttribute('aria-label', 'Play progression ' + playProg.name + ' in the drill stage');
     $('song').value = settings.songId || SONGS[0].id;
     // The Songs tab's `Key` is a real select on the **one** `keyPc` plane the Progressions
     // tab writes (A-56), so a song transposes with the same control the other tabs use.
@@ -1844,7 +1875,7 @@ export function createPanels({
     $('section').value = songSections.some(entry => entry.id === settings.songSectionId)
       ? settings.songSectionId
       : (songSections[0] ? songSections[0].id : '');
-    $('playSong').setAttribute('aria-label', 'Play ' + chosenSong.title + ' in the drill stage');
+    $('playSong').setAttribute('aria-label', 'Play song ' + chosenSong.title + ' in the drill stage');
     $('direction').value = settings.direction;
     $('bpm').value = String(settings.bpm);
     $('sound').checked = !!settings.sound;
@@ -1859,8 +1890,65 @@ export function createPanels({
   }
 
   function setStatus(text) { $('status').textContent = text; }
+
+  // ---------- The connection pill and the guitar menu (06-03) ----------
+  // The pill's one writer: label, accessible name, state class (plus the v1 `on` class), disabled
+  // only while connecting, and Disconnect guitar shown only when connected. textContent and
+  // setAttribute only (T-06-07).
+  function setConnection({ state = 'disconnected', battery = null } = {}) {
+    const view = connectionView({ state, battery });
+    const pill = $('connectBtn');
+    $('connLabel').textContent = view.label;
+    pill.setAttribute('aria-label', view.name);
+    for (const key of CONNECTION_STATES) pill.classList.toggle(`conn-${key}`, key === view.state);
+    pill.classList.toggle('on', view.state === 'connected');
+    pill.disabled = view.state === 'connecting';
+    if (view.state === 'connecting') pill.setAttribute('aria-busy', 'true');
+    else pill.removeAttribute('aria-busy');
+    $('disconnectBtn').hidden = view.state !== 'connected';
+    return view;
+  }
+
+  // `popover="auto"` gives light dismiss and Esc but never moves focus, so focus is placed here:
+  // on Disconnect guitar when it is shown, otherwise on the menu itself (it carries tabindex=-1).
+  function isConnMenuOpen() {
+    const menu = $('connMenu');
+    return !!(menu && typeof menu.matches === 'function' && menu.matches(':popover-open'));
+  }
+  function openConnMenu() {
+    const menu = $('connMenu');
+    if (!menu || typeof menu.showPopover !== 'function') return false;
+    if (!isConnMenuOpen()) menu.showPopover();
+    const disconnect = $('disconnectBtn');
+    if (disconnect && !disconnect.hidden) disconnect.focus();
+    else menu.focus();
+    return true;
+  }
+  function closeConnMenu() {
+    const menu = $('connMenu');
+    if (menu && typeof menu.hidePopover === 'function' && isConnMenuOpen()) menu.hidePopover();
+  }
   function setFeedback(text) { $('feedback').textContent = text; }
-  function announce(text) { $('announcer').textContent = text; }
+  // The one live region. While the More sheet is modal the rest of the page is inert, so the node
+  // moves into the open sheet and back (06-03, Pitfall 2). A write that follows a move lands on the
+  // next frame, so the screen reader sees the node in its new home before its text changes.
+  let announcerMoved = false;
+  function announce(text) {
+    const node = $('announcer');
+    if (announcerMoved && typeof globalThis.requestAnimationFrame === 'function') {
+      globalThis.requestAnimationFrame(() => { node.textContent = text; });
+      return;
+    }
+    node.textContent = text;
+  }
+  function markAnnouncerMoved() {
+    announcerMoved = true;
+    if (typeof globalThis.requestAnimationFrame === 'function') {
+      globalThis.requestAnimationFrame(() => { announcerMoved = false; });
+    } else {
+      announcerMoved = false;
+    }
+  }
   function setLights(on) {
     $('lightsBtn').setAttribute('aria-pressed', on ? 'true' : 'false');
     $('lightsState').textContent = on ? 'On' : 'Off';
@@ -2076,20 +2164,31 @@ export function createPanels({
     // Progress cannot be opened while a pass is live or awaiting its boundary
     // decision; practising another skill there would mutate settings behind the
     // running chart (WR-10).
+    // Phase 6: Today follows the same guard (its five rows describe a stage the live pass already
+    // owns), so both tabs in both bars go `aria-disabled` and stay focusable; the run lives on
+    // Practice, so nothing needs closing.
     const lockedForProgress = playing || passReview;
-    $('progressBtn').disabled = lockedForProgress;
-    if (lockedForProgress) setProgressOpen(false);
-    // The Session panel follows the same guard: its five rows describe a stage the live pass
-    // already owns, and `Start session` would seed a second drill behind the reducer.
-    $('sessionBtn').disabled = lockedForProgress;
-    if (lockedForProgress) setSessionOpen(false);
+    setNavLocked(lockedForProgress);
+    // A drill start still disarms a parsed-but-unconfirmed import, so an old file can never be
+    // applied later (WR-11), now that no Progress panel close carries it. Only the idle -> locked
+    // transition does this: a live pass repaints on every beat, and closing the sheet on each paint
+    // would make More (Stage mode, Lights, the mic) unreachable during a drill (CR-01).
+    if (lockedForProgress && !wasLocked) {
+      showImportConfirm(false);
+      onImportReset();
+      // A drill start never leaves the More sheet open over the stage it owns.
+      closeMore();
+    }
+    wasLocked = lockedForProgress;
     // The lesson is reading material for the drill that is about to run, so its one control is
     // locked while a pass owns the stage and the panel closes with it: a lesson can never cover a
     // live pass (D-75).
     $('familyLearn').disabled = playing;
     $('startHere').disabled = playing;
     $('tunerBtn').disabled = playing;
-    if ($('pathSession')) $('pathSession').disabled = lockedForProgress;
+    // The other Key selects write the same run-guarded `keyPc` plane, so they lock with Key while a
+    // pass plays: a change `applyChange` drops must never sit in a reachable Library picker (WR-04).
+    for (const id of KEY_PLANE_IDS) $(id).disabled = playing;
     if ($('workspaceWatch')) $('workspaceWatch').disabled = playing || passReview;
     if ($('pathMaterials')) $('pathMaterials').disabled = playing || passReview;
     document.querySelectorAll('[data-path]').forEach(button => { button.disabled = playing || passReview; });
@@ -2107,6 +2206,8 @@ export function createPanels({
     // every phase (MIC-01): a change then applies at the next pass boundary.
     setMic({ state: micState || micCurrent, supported: micSupported, passLive: lockedForProgress });
     $('drillStage').hidden = !available || result || passReview;
+    // The coach area's lesson openers left the drill stage (06-02) but keep its visibility.
+    if ($('coachTools')) $('coachTools').hidden = !available || result || passReview;
     $('transportBar').hidden = !available || result || passReview;
     $('passReview').hidden = !available || !passReview;
     $('resultPanel').hidden = !available || !result;
@@ -2583,10 +2684,12 @@ export function createPanels({
       setProgressOpen(false);
       setCalibrationOpen(false);
     }
-    // Closing hands focus back to the button that opened the panel, never to a hidden node.
+    // Closing hands focus back to the button that opened the panel, never to a hidden node: an
+    // opener on Today or Library sits in a view `switchView` has hidden, so it falls back to
+    // Learn, or the workspace title when Learn is locked (WR-01).
     if (!on && wasOpen) {
-      const returnTo = lessonReturnFocus && typeof lessonReturnFocus.focus === 'function'
-        ? lessonReturnFocus : $('familyLearn');
+      const returnTo = canFocus(lessonReturnFocus) ? lessonReturnFocus
+        : canFocus($('familyLearn')) ? $('familyLearn') : $('workspaceTitle');
       returnTo.focus();
     }
     if (!on) {
@@ -2596,6 +2699,9 @@ export function createPanels({
   }
 
   const isLessonOpen = () => !$('lessonPanel').hidden;
+  // Rendered and enabled; a stub without layout counts as rendered.
+  const canFocus = el => !!el && typeof el.focus === 'function' && !el.disabled
+    && (typeof el.getClientRects !== 'function' || el.getClientRects().length > 0);
 
   function focusLessonHead() { $('lessonTitle').focus(); }
 
@@ -2883,43 +2989,41 @@ export function createPanels({
   // The third sibling of the panel setters: Progress, Calibration, Session and the micro-lesson
   // share one slot under the header, so opening any one closes the other three and the shell can
   // never show two of them in the same place.
+  // Phase 6: the panel lives in the Today view and is always shown there, so this setter no longer
+  // toggles visibility; `setView` owns which view is on screen. Opening still closes the two
+  // overlay panels that can sit above any view.
   function setSessionOpen(open) {
     const on = !!open;
-    const wasOpen = !$('sessionPanel').hidden;
-    $('sessionPanel').hidden = !on;
-    document.querySelectorAll('[aria-controls="sessionPanel"]').forEach(button => {
-      button.setAttribute('aria-expanded', on ? 'true' : 'false');
-    });
-    // While the panel is open it owns the only filled action: `Start session` is the accent and
-    // `Start drill` renders neutral, so two primary actions never compete (accent rule 3).
-    $('appShell').classList.toggle('session-open', on);
     if (on) {
-      setProgressOpen(false);
       setCalibrationOpen(false);
       setLessonOpen(false);
     }
-    // Closing hands focus back to the button that opened the panel, never to a hidden node.
-    if (!on && wasOpen) $('sessionBtn').focus();
-    // A-73: the boundary and the panel never show at once, and closing the panel brings the
-    // boundary back without waiting for another drill render.
+    // A-73: the boundary and the panel never show at once; the view decides, so repaint.
     paintBoundary();
   }
 
-  const isSessionOpen = () => !$('sessionPanel').hidden;
+  // The Session panel is "open" exactly when the Today view is the one on screen (A-73).
+  const isSessionOpen = () => currentView === 'today';
 
   function focusSessionHead() { $('sessionTitle').focus(); }
-  function focusSessionToggle() { $('sessionBtn').focus(); }
 
-  // The header's one session control. The visible word never changes; the chip carries the due
-  // count at idle and the block index while a session runs, and the accessible name carries the
-  // meaning the chip cannot, because the chip is hidden from assistive technology (A-69).
-  function setSessionButton({ dueCount = 0, running = false, index = 0, total = 5, disabled = false } = {}) {
+  // The Today tab's badge, in both bars (Phase 6, replaces the header Session chip). The visible
+  // word never changes; the badge carries the due count at idle (hidden at 0, `99+` above 99) and
+  // the block index while a session runs, and the tab's accessible name carries the meaning the
+  // badge cannot, because the badge is hidden from assistive technology (A-69). The run lock is
+  // `setNavLocked`, so the caller's `disabled` flag is no longer read here.
+  function setSessionButton({ dueCount = 0, running = false, index = 0, total = 5 } = {}) {
     const count = Number.isFinite(dueCount) ? Math.max(0, Math.trunc(dueCount)) : 0;
     const size = Number.isFinite(total) && total > 0 ? Math.trunc(total) : 5;
     const position = Number.isInteger(index) ? Math.max(0, Math.min(size - 1, index)) : 0;
-    $('sessionBtn').setAttribute('aria-label', sessionButtonLabel({ dueCount: count, running: !!running, index: position, total: size }));
-    $('sessionBtn').disabled = !!disabled;
-    $('sessionBadge').textContent = running ? `${position + 1} / ${size}` : String(count);
+    const text = running ? `${position + 1} / ${size}` : (count > 99 ? '99+' : String(count));
+    const label = todayTabLabel({ dueCount: count, running: !!running, index: position, total: size });
+    for (const prefix of NAV_PREFIXES) {
+      const badge = $(`${prefix}TodayBadge`);
+      badge.textContent = text;
+      badge.hidden = !running && count === 0;
+      $(`${prefix}-today`).setAttribute('aria-label', label);
+    }
   }
 
   // One plan row, in the approved slot order: name, minutes, the state chip and the reason last,
@@ -2942,6 +3046,8 @@ export function createPanels({
     // only reads `Next` once a session is under way (UI-SPEC "Plan view").
     state.textContent = source.state === 'pending' && !showPending ? '' : label;
     state.hidden = state.textContent === '';
+    // The chip's fill follows its state (sky, cobalt `now`, mint-soft `done`); only known states.
+    if (label) state.dataset.state = source.state;
     const reason = document.createElement('span');
     reason.className = 'session-block-reason';
     reason.textContent = sessionReasonText({ reasonKey: source.reasonKey, values: source.reasonValues });
@@ -2962,11 +3068,6 @@ export function createPanels({
     setSessionSummary({ visible: false });
     $('sessionPlanNote').hidden = !(plan && plan.noHistory);
     $('sessionTotal').textContent = durationText(minutes * 60000);
-    if ($('pathTodayTotal')) $('pathTodayTotal').textContent = durationText(minutes * 60000);
-    if ($('pathTodaySub')) {
-      const count = blocks.length;
-      $('pathTodaySub').textContent = `${count} block${count === 1 ? '' : 's'} · curated plan`;
-    }
     $('sessionBlocks').replaceChildren(...blocks.map(block => sessionBlockNode(block, source.state !== 'idle')));
     // `Start session` exists in exactly one state — an idle plan — because it starts one. A session
     // that is already under way belongs to the panel's four verbs, so `Start session` leaves the
@@ -2997,7 +3098,7 @@ export function createPanels({
   // One flag plus the panel's own state decide the paint, so either close brings the boundary back.
   let boundaryVisible = false;
   function paintBoundary() {
-    $('sessionBoundary').hidden = !boundaryVisible || !$('sessionPanel').hidden;
+    $('sessionBoundary').hidden = !boundaryVisible || isSessionOpen();
   }
 
   // The block boundary: one token naming the block and four neutral verbs, exactly one of which
@@ -3225,18 +3326,36 @@ export function createPanels({
     $('resultNextDrill').classList.toggle('cta', needsButton);
   }
 
+  // ---------- The four views (Phase 6) ----------
+  // One painter over both tablists: exactly one `#view-*` is visible, the matching tab in *both*
+  // bars is selected (so a resize never shows a stale bar), and roving tabindex follows it. A name
+  // outside the closed list changes nothing, so a stored or forged value can never build an id.
+  function setView(name) {
+    if (!NAV_VIEWS.includes(name)) return;
+    for (const v of NAV_VIEWS) {
+      $('view-' + v).hidden = v !== name;
+      for (const prefix of NAV_PREFIXES) {
+        const tab = $(`${prefix}-${v}`);
+        tab.setAttribute('aria-selected', v === name ? 'true' : 'false');
+        tab.tabIndex = v === name ? 0 : -1;
+      }
+    }
+    $('skipLink').setAttribute('href', '#view-' + name);
+    currentView = name;
+    // While Today is on screen its `Start session` owns the only filled action (accent rule 3).
+    $('appShell').classList.toggle('session-open', name === 'today');
+    // A-73: the boundary rule reads the view, so it is re-evaluated on every switch.
+    paintBoundary();
+  }
+
   // ---------- Progress panel ----------
   // Built with createElement/textContent only; no stored or imported string is ever
   // parsed as HTML. Every value arrives in the view model (T-02-10).
+  // Phase 6: the panel lives in the Progress view and is always shown there; `setView` owns the
+  // visibility. Opening still closes the two overlay panels that can sit above any view.
   function setProgressOpen(open) {
     const on = !!open;
-    $('progressPanel').hidden = !on;
-    $('progressBtn').setAttribute('aria-expanded', on ? 'true' : 'false');
-    // Progress and Calibration share one slot under the header: opening one closes the other,
-    // so the shell never shows two panels in the same place. The other two siblings are the
-    // Session panel and the micro-lesson, and every one of the four names the other three.
     if (on) setCalibrationOpen(false);
-    if (on) setSessionOpen(false);
     if (on) setLessonOpen(false);
     // Closing the panel (including the forced close when a drill starts) disarms a
     // parsed-but-unconfirmed import, so an old file can never be applied later (WR-11).
@@ -3246,10 +3365,23 @@ export function createPanels({
     }
   }
 
-  const isProgressOpen = () => !$('progressPanel').hidden;
+  // The Progress panel is "open" exactly when the Progress view is the one on screen.
+  const isProgressOpen = () => currentView === 'progress';
 
   function focusProgressHead() { $('progressTitle').focus(); }
-  function focusProgressToggle() { $('progressBtn').focus(); }
+
+  // The run lock on the tabs (Phase 6): `aria-disabled`, never `disabled`, so a locked tab stays in
+  // the tab order and still explains itself through `onView` when it is activated.
+  const NAV_LOCKED_VIEWS = ['today', 'progress'];
+  function setNavLocked(locked) {
+    for (const v of NAV_LOCKED_VIEWS) {
+      for (const prefix of NAV_PREFIXES) {
+        const tab = $(`${prefix}-${v}`);
+        if (locked) tab.setAttribute('aria-disabled', 'true');
+        else tab.removeAttribute('aria-disabled');
+      }
+    }
+  }
 
   // ---------- The mic cluster (D-45, D-51) ----------
   // The state is handed in on every change; this module keeps only the last word so the
@@ -3263,6 +3395,8 @@ export function createPanels({
   // the two manual controls without `main` re-rendering the whole drill (E34).
   let micPhase = 'idle';
   let micFamily = 'scaleRun';
+  // Whether the last drill paint locked the stage, so the sheet closes on the transition only.
+  let wasLocked = false;
 
   // `Mark hit` lives in a mic-scored scale-run pass only, and `Mark change` only while a
   // chord pass has no listening window: two mutually exclusive manual paths, one rule.
@@ -3295,7 +3429,7 @@ export function createPanels({
     if (view.busy) toggle.setAttribute('aria-busy', 'true');
     else toggle.removeAttribute('aria-busy');
     $('micState').textContent = view.word;
-    // One action at a time: `Calibrate` while the mic is off, on or listening, `Try again`
+    // One action at a time: `Calibrate timing` while the mic is off, on or listening, `Try again`
     // after a denial. Denial is a normal state and never a danger colour (D-51).
     $('micCalibrate').textContent = view.action;
     $('micCalibrate').disabled = view.actionDisabled;
@@ -3328,17 +3462,21 @@ export function createPanels({
     return on;
   }
 
-  function focusMicCluster() { $('micToggle').focus(); }
+  // Calibration's way back lands on the action that opened it; a locked action hands focus to the
+  // toggle beside it, never to a disabled button (06-03).
+  function focusMicCluster() { ($('micCalibrate').disabled ? $('micToggle') : $('micCalibrate')).focus(); }
   function focusCalibrationHead() { $('calibrationTitle').focus(); }
   function focusCalibrationTap() { $('calibTap').focus(); }
 
   // ---------- Calibration panel (D-48) ----------
-  // One slot under the header, shared with Progress, the Session panel and the micro-lesson:
-  // opening any of the others closes this one, so the four can never claim the same space or
-  // both take focus.
+  // Phase 6 (06-03): the panel lives in the More sheet and swaps in for its list. Opening it with the
+  // sheet closed opens the sheet first. It still closes Progress, the Session panel and the lesson,
+  // so no two panels ever both take focus.
   function setCalibrationOpen(open) {
     const on = !!open;
+    if (on && !isMoreOpen()) openMore();
     $('calibrationPanel').hidden = !on;
+    if ($('moreList')) $('moreList').hidden = on;
     if (on) setProgressOpen(false);
     if (on) setSessionOpen(false);
     if (on) setLessonOpen(false);
@@ -3408,6 +3546,8 @@ export function createPanels({
     el.classList.toggle('ok', tone === 'ok');
     el.classList.toggle('danger', tone === 'danger');
   }
+
+  function focusBackupStatus() { $('backupStatus').focus(); }
 
   function setImportBusy(on) {
     const busy = !!on;
@@ -3701,8 +3841,67 @@ export function createPanels({
   }
   function setTapPreview(text) { $('tapPreview').textContent = text; }
 
+  // ---------- The More sheet (06-03) ----------
+  // One native modal dialog holds the tuner, the mic cluster, the backup and the settings toggles.
+  // `showModal` gives the focus trap and Esc; every close path (Close, Esc, the backdrop, a drill
+  // start) ends in the dialog's own `close` event, which owns the side effects and the focus return.
+  // Stub documents have no dialog API, so every call is guarded.
+  let announcerHome = null;
+  function isMoreOpen() {
+    const sheet = $('moreSheet');
+    return !!(sheet && sheet.open);
+  }
+  function openMore() {
+    const sheet = $('moreSheet');
+    if (!sheet || typeof sheet.showModal !== 'function' || sheet.open) return false;
+    const node = $('announcer');
+    node.textContent = '';
+    sheet.appendChild(node);
+    markAnnouncerMoved();
+    sheet.showModal();
+    $('moreBtn').setAttribute('aria-expanded', 'true');
+    return true;
+  }
+  function closeMore() {
+    const sheet = $('moreSheet');
+    if (sheet && sheet.open && typeof sheet.close === 'function') sheet.close();
+  }
+  function onMoreClosed() {
+    const node = $('announcer');
+    if (announcerHome && announcerHome.parent && typeof announcerHome.parent.insertBefore === 'function') {
+      announcerHome.parent.insertBefore(node, announcerHome.next);
+      markAnnouncerMoved();
+    }
+    $('moreBtn').setAttribute('aria-expanded', 'false');
+    onMoreClose();
+    // Never rely on the UA's focus restore: the sheet may have been opened from the learning path.
+    $('moreBtn').focus();
+  }
+
   function wire() {
     fillPath();
+    const announcerNode = $('announcer');
+    announcerHome = { parent: announcerNode.parentNode || null, next: announcerNode.nextSibling || null };
+    const sheet = $('moreSheet');
+    if ($('moreBtn')) $('moreBtn').addEventListener('click', () => openMore());
+    // Closing the guitar menu hands focus back to the pill unless the player already moved it on.
+    const connMenu = $('connMenu');
+    if (connMenu) connMenu.addEventListener('toggle', e => {
+      if (e.newState !== 'closed') return;
+      const active = document.activeElement;
+      const inside = active && typeof connMenu.contains === 'function' && connMenu.contains(active);
+      if (!active || active === document.body || inside) $('connectBtn').focus();
+    });
+    if ($('closeMore')) $('closeMore').addEventListener('click', () => closeMore());
+    if (sheet) {
+      // The body fills the dialog box, so a click whose target is the dialog is the backdrop. A press
+      // that starts inside the body and is released on the backdrop also targets the dialog, so
+      // the press must have started there too (IN-02).
+      let pressedBackdrop = false;
+      sheet.addEventListener('pointerdown', e => { pressedBackdrop = e.target === sheet; });
+      sheet.addEventListener('click', e => { if (e.target === sheet && pressedBackdrop) closeMore(); pressedBackdrop = false; });
+      sheet.addEventListener('close', () => onMoreClosed());
+    }
     $('key').addEventListener('change', e => onChange('keyPc', +e.target.value));
     $('scale').addEventListener('change', e => onChange('scaleId', e.target.value));
     $('position').addEventListener('change', e => onChange('positionId', e.target.value));
@@ -3783,7 +3982,6 @@ export function createPanels({
       onHintCancel();
     });
     $('stageBtn').addEventListener('click', () => onStageMode($('stageBtn').getAttribute('aria-pressed') !== 'true'));
-    if ($('theme')) $('theme').addEventListener('change', e => onChange('theme', e.target.value));
     $('backToBrowse').addEventListener('click', () => onBack());
 
     const segments = [...$('familyPicker').querySelectorAll('[role=radio]')];
@@ -3819,18 +4017,6 @@ export function createPanels({
     $('revealAnswer').addEventListener('click', () => onReveal());
     $('nextQuestion').addEventListener('click', () => onNextQuestion());
 
-    $('progressBtn').addEventListener('click', () => {
-      if (isProgressOpen()) onProgressClose();
-      else onProgressOpen();
-    });
-    $('hideProgress').addEventListener('click', () => onProgressClose());
-    // The Session button is its panel's toggle, exactly like `Progress` above: one control, two
-    // states, and `Hide session` / `Done` are the ways out of the panel.
-    $('sessionBtn').addEventListener('click', () => {
-      if (isSessionOpen()) onSessionClose();
-      else onSession();
-    });
-    $('hideSession').addEventListener('click', () => onSessionClose());
     $('startSession').addEventListener('click', () => onSessionStart());
     // The boundary's four verbs and their panel mirror call the same four handlers, so the two
     // containers can never disagree about what `Next block`, `Skip`, `Repeat` or `End session`
@@ -3864,7 +4050,10 @@ export function createPanels({
       else onTunerStop();
     });
     $('tunerClose').addEventListener('click', () => onTunerStop());
-    if ($('pathSession')) $('pathSession').addEventListener('click', () => onSession());
+    if ($('changeInLibrary')) $('changeInLibrary').addEventListener('click', () => onView('library'));
+    // The empty Progress view's one action goes through the same switcher (the run lock applies).
+    if ($('openToday')) $('openToday').addEventListener('click', () => onView('today'));
+    if ($('libraryCta')) $('libraryCta').addEventListener('click', () => onPractiseSelection());
     if ($('workspaceWatch')) $('workspaceWatch').addEventListener('click', () => {
       lessonReturnFocus = $('workspaceWatch');
       onLessonSection('real');
@@ -3958,23 +4147,18 @@ export function createPanels({
       });
     }
     $('practiseWeakestPair').addEventListener('click', () => onPractiseWeakestPair());
-    document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || !isProgressOpen()) return;
-      e.preventDefault();
-      onProgressClose();
-    });
+    // Escape closes the lesson, a non-modal Practice panel. While the More sheet is open the key
+    // belongs to the dialog: a preventDefault here would cancel its close and shut the lesson behind
+    // the modal instead (06-03, Pitfall 5). Calibration has no listener of its own: it lives in the
+    // sheet, whose Esc close already runs calibration's close path once. The same holds for an open
+    // guitar menu (its own Esc closes it), and a lesson left open in a hidden Practice view is not
+    // the player's to close from Today or Library (IN-01).
     document.addEventListener('keydown', e => {
       if (e.key !== 'Escape' || !isLessonOpen()) return;
+      if (isMoreOpen()) return;
+      if (isConnMenuOpen() || !$('view-practice') || $('view-practice').hidden) return;
       e.preventDefault();
       onLessonClose();
-    });
-    // Escape closes Calibration the same way and hands focus back to the mic cluster
-    // (UI-SPEC, Keyboard). The two panels are mutually exclusive, so the listeners can
-    // never both act.
-    document.addEventListener('keydown', e => {
-      if (e.key !== 'Escape' || !isCalibrationOpen()) return;
-      e.preventDefault();
-      onCalibrationSkip();
     });
     for (const id of ['reportClean', 'reportShaky']) {
       $(id).addEventListener('click', () => onSelfReport($(id).dataset.report));
@@ -3988,6 +4172,30 @@ export function createPanels({
       if (!btn) return;
       onBar(+btn.dataset.bar);
     });
+
+    // The main navigation: eight tabs, two bars, one handler. Click, Enter and Space all arrive as
+    // a click and go to `onView`, which owns the run lock. Arrow keys move focus with roving
+    // tabindex and activate the target, except a locked tab: moving focus onto it is silent.
+    for (const prefix of NAV_PREFIXES) {
+      const navTabs = NAV_VIEWS.map(v => $(`${prefix}-${v}`));
+      navTabs.forEach((tab, i) => {
+        tab.addEventListener('click', () => onView(NAV_VIEWS[i]));
+      });
+      $(`${prefix}List`).addEventListener('keydown', e => {
+        const i = navTabs.indexOf(e.target);
+        if (i < 0) return;
+        let next = null;
+        if (e.key === 'ArrowRight') next = (i + 1) % navTabs.length;
+        else if (e.key === 'ArrowLeft') next = (i - 1 + navTabs.length) % navTabs.length;
+        else if (e.key === 'Home') next = 0;
+        else if (e.key === 'End') next = navTabs.length - 1;
+        if (next === null) return;
+        e.preventDefault();
+        const target = navTabs[next];
+        target.focus();
+        if (target.getAttribute('aria-disabled') !== 'true') onView(NAV_VIEWS[next]);
+      });
+    }
 
     tabs.forEach((tab, i) => {
       tab.addEventListener('click', () => select(TABS[i], false, true));
@@ -4005,20 +4213,22 @@ export function createPanels({
   }
 
   fillStaticOptions();
-  if ($('workspaceSetup') && globalThis.matchMedia) $('workspaceSetup').open = !matchMedia('(max-width: 1179px)').matches;
   wire();
   return {
-    render, setStatus, setFeedback, announce, setLights, select, revealLessonSection,
+    render, setStatus, setConnection, openConnMenu, closeConnMenu, isConnMenuOpen, setFeedback, announce, setLights, select, revealLessonSection,
     setDrill, renderBeat, resetBeat, setNowPlaying, setProgress, setTempoValue,
     renderStageChart,
     setTapPreview, setSelfReport, setHint, setPassReview, setStageMode,
     setHintAction, openHintConfirm, closeHintConfirm, setHintBusy, focusPause, focusHint,
-    setProgressPanel, setProgressOpen, isProgressOpen, focusProgressHead, focusProgressToggle,
-    setSessionPanel, setSessionOpen, isSessionOpen, setSessionButton, focusSessionHead, focusSessionToggle,
+    setView,
+    setNavLocked,
+    openMore, closeMore, isMoreOpen,
+    setProgressPanel, setProgressOpen, isProgressOpen, focusProgressHead,
+    setSessionPanel, setSessionOpen, isSessionOpen, setSessionButton, focusSessionHead,
     setLesson, setLessonOpen, isLessonOpen, focusLessonHead,
     setTunerOpen, setTunerReading, setTunerMessage,
     setSessionBoundary, setSessionSummary, setSessionView, setPractiseView, setRecommendation,
-    setBackupStatus, setImportBusy, showImportConfirm,
+    setBackupStatus, focusBackupStatus, setImportBusy, showImportConfirm,
     setFamilyPicker, setQuestion, setAskForOptions, focusNextQuestion,
     setPairStrip, setChangesSelect, setTempoSuggestion,
     setMic, focusMicCluster, focusCalibrationHead, focusCalibrationTap,

@@ -883,19 +883,33 @@ test('an exported document imports back with skills, sessions, streak and the st
   const result = validateBackup(doc, { validateSettings });
   assert.equal(result.ok, true);
   // A v2 record predates the chord pair (03-02), the microphone (03-03), the backing mix
-  // (04-01), the song plane (04-03) and the Session panel's two preferences (05-01): the validator
+  // (04-01), the song plane (04-03), the Session panel's two preferences (05-01) and the main view (06-01): the validator
   // fills the defaults in, and every other stored setting survives untouched.
   assert.deepEqual(result.doc.settings, {
     ...V2_RECORD.settings, chordPairId: 'C-G', micOn: false, calibrationMs: 0,
     intensity: 'full', stemClick: true, stemDrums: true, stemBass: true, stemPad: true,
     loopBars: 0, songSectionId: '', sectionLoop: false, sessionView: 'plan', practiseFilter: 'due',
-    theme: 'system',
+    view: 'today',
   });
   assert.equal(Object.keys(result.doc.progress.skills).length, 3);
   assert.equal(result.doc.progress.sessions.length, 20);
   assert.deepEqual(result.doc.progress.streak, { current: 4, longest: 6, lastDay: '2026-11-09' });
   assert.equal(startLevelFor(result.doc.progress, 'scaleRun:minPent:9:s6f0'), 2);
   assert.equal(result.doc.progress.skills['scaleRun:minPent:9:s6f0'].withoutLights.bestLevel, 3);
+});
+
+// LOOK-02 / KEEP-03: a backup written by the v1 shell carries `theme`. It still imports at backup
+// version 3; the injected validator drops the theme and fills the main view.
+test('a v1 backup carrying theme dark imports without the theme and with view today', () => {
+  const doc = exportDoc({ ...V2_RECORD, settings: { ...V2_RECORD.settings, theme: 'dark' } }, { now: FIXED_DAY });
+  assert.equal(doc.schemaVersion, BACKUP_SCHEMA_VERSION);
+  assert.equal(doc.settings.theme, 'dark', 'the fixture really carries a theme');
+  const result = validateBackup(doc, { validateSettings });
+  assert.equal(result.ok, true);
+  assert.ok(!Object.hasOwn(result.doc.settings, 'theme'), 'the theme is dropped');
+  assert.equal(result.doc.settings.view, 'today');
+  assert.equal(result.doc.settings.keyPc, V2_RECORD.settings.keyPc);
+  assert.equal(result.doc.progress.sessions.length, 20);
 });
 
 // 05-01 Task 3 (binding correction 5): the two Session-panel preferences are additive defaulted

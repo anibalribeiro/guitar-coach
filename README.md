@@ -62,6 +62,10 @@ Open <http://localhost:8765> in Chrome or Edge, close the official Poputar app (
 accepts only one Bluetooth connection), and press **Connect guitar**. You don't need the guitar
 to try the app: without it, every drill runs on screen only.
 
+The light Daylight interface has four tabs (**Today**, **Practice**, **Progress**, **Library**:
+a floating bar on phones, pill tabs on desktop), a connection pill that shows the guitar and its
+battery, and a **More** sheet with the Tuner, Microphone, Backup and Settings.
+
 ## How it is built
 
 No framework, no bundler and no dependencies: plain HTML, CSS and twenty native ES modules,
@@ -109,10 +113,11 @@ The metronome uses short unpitched ticks to reduce pitch leakage; headphones rem
 
 Everything lives in this browser, under the single `t2coach.v1` record (schema 2: settings plus the
 progress plane). A version 1 record migrates once and keeps a `t2coach.v1.migration-backup` copy.
-The header **Progress** panel shows the streak, practised and unguided minutes, due reviews, the
-last 20 sessions and per-skill mastery. **Export JSON** downloads one file
-(`t2coach-backup-YYYY-MM-DD.json`); **Import JSON** validates the whole document and asks for an
-explicit **Replace data** confirmation before overwriting anything.
+**Progress** is one of the four tabs (Today, Practice, Progress, Library). It shows the streak,
+practised and unguided minutes, due reviews, the last 20 sessions and per-skill mastery. Backup
+lives in **More › Backup**: **Export JSON** downloads one file (`t2coach-backup-YYYY-MM-DD.json`);
+**Import JSON** validates the whole document and asks for an explicit **Replace data**
+confirmation before overwriting anything. The app remembers the tab you were on and reopens it.
 
 ## Run
 
@@ -151,6 +156,13 @@ PLAYWRIGHT_MODULE=/path/to/playwright node tools/check_browser.cjs
 
 The browser check covers keyboard/Stage-mode answer privacy, mobile layout, lesson focus, independent
 recall, late microphone grants and offline reload. It saves screenshots in a temporary directory.
+
+A manual layout gate checks that no tab (and no open More sheet) scrolls sideways at 360, 390, 768,
+1024 and 1440px. It needs a local Chrome (or `CHROME=/path/to/chrome`) and is not run in CI:
+
+```
+node tools/overflow_probe.mjs
+```
 
 `node --test` discovers every suite from the repository root. The probe refusal test uses only
 the Python standard library and does not require `bleak` or a guitar.

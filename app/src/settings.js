@@ -13,9 +13,6 @@ export const BACKUP_KEY = 't2coach.v1.migration-backup';
 const MAX_STRING = 64;
 
 const TABS = ['scales', 'chords', 'progressions', 'songs'];
-// The theme is a display preference, not a drill control: System follows the OS, the other
-// two pin the app regardless of the OS preference (the CSS media query excludes Light).
-export const THEMES = ['system', 'light', 'dark'];
 const LABELS = ['notes', 'degrees', 'intervals', 'fingers', 'none'];
 const DIRECTIONS = ['up', 'down', 'updown'];
 // The validator's own family list. The picker's guard in `main.applyChange` tests the same
@@ -49,11 +46,12 @@ const QUIZ_MODES = ['find', 'name'];
 // can only ever select one of the approved values (T-05-03).
 export const SESSION_VIEWS = ['plan', 'practise'];
 export const PRACTISE_FILTERS = ['due', 'pairs'];
+// The main view the app reopens on (Phase 6): a v1 shell drops the unknown key, a v2 shell defaults a missing one.
+export const VIEWS = ['today', 'practice', 'progress', 'library'];
 const POSITION_ID = /^s6f(?:[0-9]|1[0-9]|2[0-4])$/;
 
 export const DEFAULT_SETTINGS = {
   tab: 'scales', keyPc: 0, scaleId: 'major', positionId: 'all', labels: 'notes',
-  theme: 'system',
   direction: 'updown', bpm: 70, sound: true, drone: false, lightsOn: true, stageMode: false,
   // The backing mix (D-55): a full band is what a Phase 3 record loads, and the four stem
   // booleans are the stored truth the intensity select writes in bulk (A-58).
@@ -71,6 +69,7 @@ export const DEFAULT_SETTINGS = {
   // filter. Two additive defaulted fields, so a Phase 4 record loads unchanged — no schema bump
   // and no migration, because `validateSettings` rebuilds the whole object from these defaults.
   sessionView: 'plan', practiseFilter: 'due',
+  view: 'today',
   micOn: false, calibrationMs: 0,
 };
 
@@ -147,7 +146,6 @@ export function validateSettings(raw, content = CONTENT) {
   out.positionId = resolvePosition(raw.positionId, out.keyPc, out.scaleId, c);
 
   out.labels = pickString(raw.labels, LABELS, out.labels);
-  out.theme = pickString(raw.theme, THEMES, out.theme);
   out.direction = pickString(raw.direction, DIRECTIONS, out.direction);
   out.bpm = clampBpm(raw.bpm);
   out.sound = pickBool(raw.sound, out.sound);
@@ -170,6 +168,7 @@ export function validateSettings(raw, content = CONTENT) {
   // on a view or a list it cannot render (T-05-03).
   out.sessionView = pickString(raw.sessionView, SESSION_VIEWS, out.sessionView);
   out.practiseFilter = pickString(raw.practiseFilter, PRACTISE_FILTERS, out.practiseFilter);
+  out.view = pickString(raw.view, VIEWS, out.view);
   out.quizQuestion = pickString(raw.quizQuestion, QUIZ_QUESTIONS, out.quizQuestion);
   out.quizMode = pickString(raw.quizMode, QUIZ_MODES, out.quizMode);
   // The mic is opt-in and the stored offset is a per-device measurement, so both default

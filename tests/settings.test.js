@@ -7,7 +7,7 @@ import {
   STORAGE_KEY, LEGACY_KEY, BACKUP_KEY, MAX_RECORD_LENGTH, SCHEMA_VERSION, DEFAULT_SETTINGS,
   DRILL_FAMILIES, validateSettings, migrateLegacySettings, createSettingsStore,
 } from '../app/src/settings.js';
-import { emptyProgress } from '../app/src/progress.js';
+import { emptyProgress, BACKUP_SCHEMA_VERSION } from '../app/src/progress.js';
 import { scaleById, chordById, chordPairById, progressionById, songById, SONGS, CHORD_PAIRS } from '../app/src/content.js';
 import { positionsForScale } from '../app/src/theory.js';
 import { SCORE } from '../app/src/score.js';
@@ -776,16 +776,61 @@ test('sessionView and practiseFilter default and reject unknown values', () => {
   assert.equal(validateSettings({ practiseFilter: 'x' }).practiseFilter, 'due');
 });
 
-test('theme defaults to system, accepts only the three modes, and round-trips', () => {
-  assert.equal(DEFAULT_SETTINGS.theme, 'system');
-  assert.equal(validateSettings({ ...DEFAULT_SETTINGS, theme: 'light' }, CONTENT).theme, 'light');
-  assert.equal(validateSettings({ ...DEFAULT_SETTINGS, theme: 'dark' }, CONTENT).theme, 'dark');
-  assert.equal(validateSettings({ ...DEFAULT_SETTINGS, theme: 'system' }, CONTENT).theme, 'system');
-  for (const bad of ['light ', 'sepia', 1, null, true]) {
-    assert.equal(validateSettings({ ...DEFAULT_SETTINGS, theme: bad }, CONTENT).theme, 'system');
+test('view defaults to today, accepts the four views, and round-trips', () => {
+  assert.equal(DEFAULT_SETTINGS.view, 'today');
+  for (const view of ['today', 'practice', 'progress', 'library']) {
+    assert.equal(validateSettings({ ...DEFAULT_SETTINGS, view }, CONTENT).view, view);
+  }
+  for (const bad of ['Today', 'stage', 1, null, true, '']) {
+    assert.equal(validateSettings({ ...DEFAULT_SETTINGS, view: bad }, CONTENT).view, 'today');
   }
   const storage = createFakeStorage();
   const store = createSettingsStore(storage, CONTENT);
-  store.set({ theme: 'light' });
-  assert.equal(createSettingsStore(storage, CONTENT).get().theme, 'light');
+  store.set({ view: 'library' });
+  assert.equal(createSettingsStore(storage, CONTENT).get().view, 'library');
+});
+
+// LOOK-02: the theme setting is gone. A stored theme from a v1 shell is ignored on load and
+// dropped by the rebuild-from-defaults validator on the next save — no migration, no bump.
+test('a stored theme is ignored and dropped on the next save, with every other setting intact', () => {
+  const out = validateSettings({ theme: 'dark', bpm: 90, view: 'library' }, CONTENT);
+  assert.equal(out.bpm, 90);
+  assert.equal(out.view, 'library');
+  assert.ok(!Object.hasOwn(out, 'theme'), 'no own theme key');
+  for (const theme of ['system', 'dark']) {
+    const progress = { ...emptyProgress(), totals: { ...emptyProgress().totals, sessionCount: 4, totalMs: 60000 } };
+    const settings = { ...DEFAULT_SETTINGS, theme, bpm: 88, keyPc: 7, view: 'progress' };
+    const storage = createFakeStorage({ [STORAGE_KEY]: JSON.stringify({ schemaVersion: 2, settings, progress }) });
+    const store = createSettingsStore(storage, CONTENT);
+    assert.equal(store.status, 'ok', 'never readFailed');
+    assert.equal(store.get().bpm, 88);
+    assert.equal(store.get().keyPc, 7);
+    assert.equal(store.get().view, 'progress');
+    assert.ok(!Object.hasOwn(store.get(), 'theme'));
+    assert.equal(store.getProgress().totals.sessionCount, 4, 'the progress plane survives');
+    store.set({ bpm: 92 });
+    const saved = JSON.parse(storage.map.get(STORAGE_KEY));
+    assert.equal(saved.schemaVersion, 2);
+    assert.ok(!Object.hasOwn(saved.settings, 'theme'), 'the theme key is gone after the save');
+    assert.equal(saved.settings.keyPc, 7);
+    assert.equal(saved.progress.totals.sessionCount, 4);
+  }
+});
+
+// KEEP-03: neither schema version moves, so an open v1 tab or a rollback never resets the record,
+// and the v2 settings key set is exactly the v1 set minus theme plus view.
+const V1_SETTINGS_KEYS = Object.freeze([
+  'tab', 'keyPc', 'scaleId', 'positionId', 'labels', 'theme', 'direction', 'bpm', 'sound', 'drone',
+  'lightsOn', 'stageMode', 'intensity', 'stemClick', 'stemDrums', 'stemBass', 'stemPad', 'drillFamily',
+  'quizQuestion', 'quizMode', 'chordPairId', 'chordId', 'voicingId', 'progressionId', 'songId',
+  'barIndex', 'songSectionId', 'sectionLoop', 'loopBars', 'sessionView', 'practiseFilter', 'micOn',
+  'calibrationMs',
+]);
+
+test('KEEP-03: schema versions stay 2 and 3 and the settings keys are v1 minus theme plus view', () => {
+  assert.equal(SCHEMA_VERSION, 2);
+  assert.equal(BACKUP_SCHEMA_VERSION, 3);
+  assert.equal(V1_SETTINGS_KEYS.length, 33);
+  const expected = new Set([...V1_SETTINGS_KEYS.filter(key => key !== 'theme'), 'view']);
+  assert.deepEqual(new Set(Object.keys(DEFAULT_SETTINGS)), expected);
 });

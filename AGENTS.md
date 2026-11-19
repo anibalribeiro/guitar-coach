@@ -29,7 +29,7 @@ A personal, browser-based guitar practice coach for the Poputar T2 LED guitar. I
 
 - JavaScript (ES2020, browser-native, native ES modules) — application logic lives in `app/src/*.js` (twenty flat modules) loaded from `app/index.html` with `<script type="module" src="./src/main.js">`. Uses optional chaining, async/await, destructuring, template literals, `Map`/`Set`, `Uint8Array`, one `AudioContext` and one transport clock. No transpilation, no bundler, no framework.
 - HTML5 — single document `app/index.html` (shell markup plus inline CSS), no templating engine.
-- CSS3 — inline `<style>` block in `app/index.html` (D-02). CSS custom properties, CSS Grid, `prefers-color-scheme` dark mode, radial gradients; the target pulse is beat-driven, not a fixed animation.
+- CSS3 — inline `<style>` block in `app/index.html` (D-02). CSS custom properties in a single light `:root` (Daylight tokens, light only), CSS Grid, radial gradients; the target pulse is beat-driven, not a fixed animation.
 - Python 3 - `tools/ble_probe.py` (133 lines), a command-line BLE probe. Standard library `asyncio`, `sys`, `pathlib` plus the third-party `bleak` package.
 - Markdown - `README.md`, `PROTOCOL.md` (protocol reference).
 - Cocos2d-JS compiled bytecode (`.jsc`) - 35 files under `re/apk/assets/` and `re/apk/assets/src/`, dated Jan 2017. Extracted from the official APK for reverse engineering; not runnable by this project.
@@ -149,7 +149,7 @@ A one-way tier rule, not a literal file chain. No module may import a module in 
 - Position IDs are stable `s6f{anchor}` strings, never array indices.
 - DOM IDs are `camelCase`: `scaleInfo`, `connectBtn`, `startDrill`, `drillStage`, `selfReport`.
 - CSS classes are lowercase kebab-case with state classes as separate tokens: `.board-wrap`, `.cell.open`, `.note.root`, `.note.dim`, `.note.target`, `.note.hit`, `.num.mk`, `.conn.on`, `.beat-dot.active`.
-- CSS custom properties are kebab-case in `:root`: `--bg`, `--accent-text`, `--note-text`, `--wood-dark` (`app/index.html:8-24`).
+- CSS custom properties are kebab-case in the single `:root` block: `--bg`, `--cobalt`, `--marigold`, `--rasp`, `--mint`.
 - `snake_case` functions: `scan`, `find_guitar`, `dump`, `listen`, `write`, `main` (`tools/ble_probe.py:23-129`).
 - Predicate/helper names read as prose: `find_guitar(address)` returns an address or exits.
 
@@ -211,7 +211,7 @@ A one-way tier rule, not a literal file chain. No module may import a module in 
 - `main.js` holds the single app state: validated `settings`, the browse `view`, the current `run` reducer state and one `chart`. Controls are projected from settings; do not mirror state in the DOM.
 - `settings.js` owns `localStorage['t2coach.v1']` (schema 2: `{ schemaVersion, settings, progress }`); it is the only writer, migrates a v1 record once with a `t2coach.v1.migration-backup` copy, and keeps the settings and progress planes independently validated. Progress is exported and imported as one JSON document; storage is per origin. `drills.js` is pure and returns `{ state, effects }`; `main` applies the effects.
 - DOM lookups go through `$ = id => document.getElementById(id)`; use `querySelector` only for descendant lookup inside a cached cell. Cached DOM nodes live in `cells` keyed by `"s:f"`.
-- New controls need: markup in the relevant section, a `$('id')` listener in `panels.wire()`, a settings field plus persistence if applicable, and a render path. New colors go into both `:root` blocks.
+- New controls need: markup in the relevant section, a `$('id')` listener in `panels.wire()`, a settings field plus persistence if applicable, and a render path. New colors go into the single `:root` block.
 - The board is built once and diff-rendered; never clear every cell on a tick.
 
 ## Documentation Conventions

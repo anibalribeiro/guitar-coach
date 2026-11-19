@@ -30,7 +30,7 @@ import { createWakeLock, wakelockSupported, wakeLockStep } from './wakelock.js';
 import {
   SCORE, barForOnset, calibrationOffset, nextPitchStreak, outputTimeMs, pitchClassOf, scoreBars, scoreSteps, scoreSummary, tapOffsetMs,
 } from './score.js';
-import { createSettingsStore, validateSettings, DRILL_FAMILIES, INTENSITY_STEMS, STEM_KEYS, LOOP_BARS, THEMES } from './settings.js';
+import { createSettingsStore, validateSettings, DRILL_FAMILIES, INTENSITY_STEMS, STEM_KEYS, LOOP_BARS, VIEWS } from './settings.js';
 import { createFretboard, labelFor } from './fretboard.js';
 import {
   createPanels, boardInteractiveFor, hintAnnouncementText, hintAskedText, barCounterText, countText,
@@ -53,6 +53,9 @@ const nowMs = () => (globalThis.performance && globalThis.performance.now ? glob
 const browserTimer = { setInterval: (fn, ms) => setInterval(fn, ms), clearInterval: handle => clearInterval(handle) };
 const AUDIO_START_FAILED = 'Audio could not start. Tap Resume to try again.';
 const OPEN_STRING_FEEDBACK = 'Open string — screen only (no LED on the T2).';
+// Today and Progress describe a stage a live pass already owns, so their tabs refuse while one runs.
+// Pausing keeps the lock (`stageOwned` counts paused and passReview), so the copy never says pause (WR-03).
+const RUN_LOCK_FEEDBACK = 'Stop the drill or finish this pass to open Today or Progress.';
 // One predicate for "this chart is a play-along", so every reader — the composer, the spot
 // line, the counter, the progress bar, the two boundary announcements and the rebuilt next
 // pass — asks `drills`' own family set rather than inventing a second list (T-04-02).
@@ -143,6 +146,8 @@ let transport = null;
 let view = { notes: [] };
 let connected = false;
 let battery = null;
+// The boot preflight's one answer (D-76), kept so the pill can say No Bluetooth without a second probe.
+let capabilities = null;
 let chart = null;
 let run = null;
 // The daily session lives here and is never persisted: a reload abandons it and the plan is
@@ -196,6 +201,32 @@ const SPOT_SILENT_MS = 3000;
 
 function isRunning() {
   return !!run && (run.phase === 'countIn' || run.phase === 'active' || run.phase === 'paused');
+}
+
+// The run lock's one predicate, the same one `setDrill` paints as `lockedForProgress`: a pass that
+// is playing or waiting for its boundary decision owns the stage (WR-10).
+const stageOwned = () => isRunning() || !!(run && run.phase === 'passReview');
+
+// ---------- The four views (Phase 6) ----------
+// The single view switcher. Both tablists, every seed and boot come through here: the name is
+// re-checked against the closed list, Today and Progress refuse while the stage is owned, the
+// view's enter hook repaints its content, and the choice is persisted only when it changes.
+function switchView(name, { scroll = true, persist = true } = {}) {
+  if (!VIEWS.includes(name)) return false;
+  if ((name === 'today' || name === 'progress') && stageOwned()) {
+    // `#feedback` sits in Practice, so the refusal is also spoken through the one live region.
+    panels.setFeedback(RUN_LOCK_FEEDBACK);
+    panels.announce(RUN_LOCK_FEEDBACK);
+    return false;
+  }
+  if (name === 'today') enterToday();
+  else if (name === 'progress') enterProgress();
+  if (persist && settings.view !== name) save({ view: name });
+  panels.setView(name);
+  // Back on the stage, repaint the drill view so the session boundary returns (A-73).
+  if (name === 'practice') renderDrillState();
+  if (scroll && typeof globalThis.scrollTo === 'function') globalThis.scrollTo(0, 0);
+  return true;
 }
 
 function ensureAudio() {
@@ -624,6 +655,9 @@ function closeCalibration({ announceSkip = false, focus = true } = {}) {
   clearCalibrationTimers();
   calibration = null;
   if (mic && mic.state === 'calibrating') mic.endCalibration();
+  // Repaint the cluster first, so `Calibrate timing` is no longer the calibrating (disabled)
+  // action when focus comes back to it.
+  syncMicChip();
   panels.setCalibrationOpen(false);
   if (focus) panels.focusMicCluster();
   if (announceSkip && !saved) panels.announce(CALIBRATION.skippedAnnouncement);
@@ -1838,17 +1872,12 @@ function progressView() {
   };
 }
 
-function openProgress() {
-  if (!store || isRunning() || (run && run.phase === 'passReview')) return;
+// The Progress view's enter hook: the panel is rebuilt from the store every time it comes on screen.
+function enterProgress() {
+  if (!store) return;
   if (calibration) closeCalibration({ focus: false });
   panels.setProgressPanel(progressView());
   panels.setProgressOpen(true);
-  panels.focusProgressHead();
-}
-
-function closeProgress() {
-  panels.setProgressOpen(false);
-  panels.focusProgressToggle();
 }
 
 // ---------- The micro-lesson (05-02 Task 1, D-75) ----------
@@ -2083,6 +2112,7 @@ function stopTuner() {
 // action starts the question set, so the first click and the first drill use the same family.
 function startHere() {
   if (!store || isRunning() || (run && run.phase === 'passReview')) return;
+  switchView('practice');
   applyChange('drillFamily', 'findNote');
   // The beginner path is about naming notes, so it cannot inherit a finger-number display
   // from whatever the player was browsing. Reset the labels with the family switch.
@@ -2098,11 +2128,13 @@ function startHere() {
 // idle guard is the only lock, so a path press during a pass does nothing (D-75).
 function openPathStep(step) {
   if (!store || isRunning() || (run && run.phase === 'passReview')) return;
+  // The tuner lives in the More sheet, so the step opens it there on Start tuner (no auto-start).
   if (step === 'tune') {
-    if ($('tunerCard').hidden) startTuner();
-    else stopTuner();
+    panels.openMore();
+    $('tunerBtn').focus();
     return;
   }
+  switchView('practice');
   if (step === 'power') {
     applyTab('chords');
     openPowerChordLesson();
@@ -2130,12 +2162,14 @@ function openPathStep(step) {
 // section, so the photo/clip and the YouTube cards are never a separate copy (D-75).
 function openLessonSection(section) {
   if (!store || isRunning() || (run && run.phase === 'passReview')) return;
+  switchView('practice');
   openLesson();
   requestAnimationFrame(() => panels.revealLessonSection(section));
 }
 
 function openPowerChordLesson() {
   if (!store || isRunning() || (run && run.phase === 'passReview')) return;
+  switchView('practice');
   if (tunerActive || !$('tunerCard').hidden) stopTuner();
   const power = lessonFor('chordChanges')?.power;
   if (!power) return;
@@ -2150,6 +2184,7 @@ function openPowerChordLesson() {
 async function startGuidedLesson() {
   if (!store || isRunning()) return;
   const family = run && run.chart ? run.chart.family : settings.drillFamily;
+  switchView('practice', { scroll: false });
   closeLesson();
   pendingBlock = null;
   const patch = { tab: 'scales', drillFamily: family };
@@ -2160,15 +2195,38 @@ async function startGuidedLesson() {
   await startDrill();
 }
 
-// The one panel-close tail every seed shares. Progress, Calibration, the Session panel and the
-// micro-lesson are four siblings in one slot under the header (A-73), so "close every panel" is
-// four lines and never three: a stale lesson left open above a freshly seeded stage is a panel the
-// player did not ask for, with `Learn` still reporting `aria-expanded="true"` (WR-07).
+// The one panel-close tail every seed shares: a stale lesson left open above a freshly seeded
+// stage is a panel the player did not ask for, with `Learn` still reporting
+// `aria-expanded="true"` (WR-07). Leaving Progress still disarms a pending import (WR-11).
+// Phase 6: every seed lands on Practice, and the switch comes before any focus or scroll,
+// because focusing or scrolling inside a hidden view silently does nothing (Pitfall 3).
 function closeAllPanels() {
   panels.setProgressOpen(false);
   panels.setCalibrationOpen(false);
   panels.setSessionOpen(false);
   panels.setLessonOpen(false);
+  panels.closeMore();
+  switchView('practice', { scroll: false });
+}
+
+// Every way out of the More sheet (Close, Esc, the backdrop, a drill start) lands here once, from
+// the dialog's own close event: the tuner never keeps listening out of sight, calibration runs its
+// existing close path without stealing focus from More, and a parsed import is disarmed (WR-11).
+function onMoreClose() {
+  if (tunerActive || !$('tunerCard').hidden) stopTuner();
+  if (calibration || panels.isCalibrationOpen()) closeCalibration({ announceSkip: true, focus: false });
+  if (pendingImport || !$('importConfirm').hidden) cancelImport();
+}
+
+// Library's "Practise this …": the pickers have already written the settings, so the action is
+// only the move to Practice with focus on Start drill. It never starts the drill. The Chords tab
+// browses without a drill stage, so there the focus lands on the Practice title instead, as it
+// does while a pass runs and Start drill is hidden (WR-02).
+function practiseSelection() {
+  if (!switchView('practice')) return;
+  const start = $('startDrill');
+  if (!$('transportBar').hidden && !start.hidden && !start.disabled) $('startDrill').focus();
+  else $('workspaceTitle').focus();
 }
 
 // Practise loads the skill's stored content without starting the drill. UI-SPEC:543-545:
@@ -2328,6 +2386,7 @@ function seedPlayAlong(family, id, { keyPc = null, sectionId = '' } = {}) {
 // a free-choice pass is never credited to the session block that is `now` (D-73).
 function focusDrillStage() {
   pendingBlock = null;
+  switchView('practice', { scroll: false });
   closeAllPanels();
   renderAll({ forceScene: true });
   renderDrillState();
@@ -2373,6 +2432,9 @@ async function importFile(file) {
   pendingImport = null;
   panels.showImportConfirm(false);
   if (!file) return;
+  // More stays open during a pass (CR-01), but an import replaces settings behind the running
+  // chart, so it is refused until the stage is free (WR-10).
+  if (stageOwned()) { setBackup(IMPORT_MESSAGE.running, 'danger'); return; }
   panels.setImportBusy(true);
   try {
     if (Number.isFinite(file.size) && file.size > 1024 * 1024) {
@@ -2405,9 +2467,12 @@ async function importFile(file) {
 }
 
 function confirmImport() {
-  if (!pendingImport) return;
+  if (!pendingImport || stageOwned()) return;
   const previousSettings = settings;
   const previousProgress = progress;
+  // Importing never changes the view on screen (KEEP-03): the file's own `view` is overridden by
+  // the one the player is looking at, so the sheet closes onto the same page.
+  const viewBefore = settings.view;
   settings = store.replaceAll(pendingImport);
   pendingImport = null;
   panels.showImportConfirm(false);
@@ -2418,6 +2483,7 @@ function confirmImport() {
     setBackup(STORAGE_MESSAGE.writeFailed, 'danger');
     return;
   }
+  if (settings.view !== viewBefore) save({ view: viewBefore });
   const skills = Object.keys(progress.skills).length;
   const sessions = progress.sessions.length;
   // The previous result hero described the replaced progress; never keep it stale.
@@ -2425,9 +2491,12 @@ function confirmImport() {
   renderAll({ forceScene: true });
   renderDrillState();
   panels.setProgressPanel(progressView());
+  // The view did not change, so a Today behind the sheet is repainted from the imported store.
+  if (settings.view === 'today') enterToday();
   setBackup(`Imported. ${countText(skills, 'skill', 'skills')} and ${countText(sessions, 'session', 'sessions')}.`, 'ok');
   panels.announce(`Import complete. ${countText(skills, 'skill', 'skills')} and ${countText(sessions, 'session', 'sessions')}.`);
-  panels.focusProgressHead();
+  // Focus stays inside the sheet: the Progress heading sits behind the modal.
+  panels.focusBackupStatus();
 }
 
 function cancelImport() {
@@ -2526,8 +2595,10 @@ function sessionView() {
   };
 }
 
-function openSession() {
-  if (!store || isRunning() || (run && run.phase === 'passReview')) return;
+// The Today view's enter hook (Phase 6): the v1 `openSession` body without the open and focus,
+// because the Session panel is always shown inside its view.
+function enterToday() {
+  if (!store) return;
   if (calibration) closeCalibration({ focus: false });
   // The plan is rebuilt from the store on every open, but only while the session is idle: once a
   // session has started, `session.plan` is frozen and the five reasons cannot move under the
@@ -2539,7 +2610,6 @@ function openSession() {
   panels.setPractiseView(practiseView());
   panels.setSessionView({ view: settings.sessionView, filter: settings.practiseFilter });
   panels.setSessionOpen(true);
-  panels.focusSessionHead();
 }
 
 // Hiding the panel is not ending the session: the plan stays frozen and the block keeps running.
@@ -2555,8 +2625,9 @@ function closeSession() {
     // the due count: the result panel is the drill's again, exactly as it was before the session.
     renderDrillState();
   }
-  panels.setSessionOpen(false);
-  panels.focusSessionToggle();
+  // The panel lives in Today, so closing the summary repaints the fresh plan in place.
+  enterToday();
+  panels.focusSessionHead();
 }
 
 // One press: the plan is written into the session first so the reducer's START has something to
@@ -2829,6 +2900,8 @@ function applyRecommendation(recommendation = currentRecommendation()) {
 // panel opening itself. The announcement is the reducer's own `announce` effect — this function
 // never speaks, so a finished session is heard exactly once (05-UI-SPEC "Screen-reader contract").
 function openSessionSummary() {
+  // The summary lives in the Today view; the run is at its result, so the lock never refuses.
+  switchView('today', { scroll: false });
   const view = progressView();
   panels.setSessionSummary({
     visible: true,
@@ -2838,7 +2911,6 @@ function openSessionSummary() {
       values: session.nextSuggestionValues,
     }),
   });
-  panels.setSessionOpen(true);
   // Scrolling is the browser's own and never animated when motion is reduced; focus lands on the
   // summary's heading so a screen reader reads the panel from its own title.
   const panel = $('sessionPanel');
@@ -2890,7 +2962,8 @@ async function seedBlock(block) {
   save(target);
   renderAll({ forceScene: true });
   renderDrillState();
-  panels.setSessionOpen(false);
+  // Synchronous, before anything is awaited, so the click's activation still resumes audio.
+  switchView('practice', { scroll: false });
   await startDrill({ recall: block.kind === 'recall' || block.reasonKey === 'due' });
   return true;
 }
@@ -3191,13 +3264,6 @@ function loop() {
 }
 
 // ---------- Browse wiring ----------
-// `system` leaves the attribute in place for the CSS media query; the other two values win
-// over the OS. Applying before the shell is revealed avoids a light flash for a dark choice.
-function applyTheme(theme) {
-  const value = THEMES.includes(theme) ? theme : 'system';
-  document.documentElement.dataset.theme = value;
-}
-
 function applyTab(tab) {
   if (!TABS.includes(tab)) return;
   if (calibration) closeCalibration({ focus: false });
@@ -3238,12 +3304,6 @@ function applyStageMode(on, feedback = false) {
 function applyChange(field, value) {
   // A display preference is never a drill control: it works in every phase and must
   // not touch run.hintLevel or the LED scene.
-  if (field === 'theme') {
-    if (!THEMES.includes(value)) return;
-    save({ theme: value });
-    applyTheme(settings.theme);
-    return;
-  }
   if (field === 'stageMode') {
     save({ stageMode: !!value });
     applyStageMode(settings.stageMode, true);
@@ -3387,6 +3447,18 @@ function onSection(id) {
   renderDrillState();
 }
 
+// The pill is painted from the real connection state, never from the button's own text: connected
+// with the last battery reading, otherwise disconnected, or No Bluetooth when the boot preflight
+// (guitar.js's own presence read) found the API missing.
+const bluetoothMissing = () => !!(capabilities && capabilities.bluetooth === 'unsupported');
+function connectionState() {
+  if (connected) return 'connected';
+  return bluetoothMissing() ? 'unsupported' : 'disconnected';
+}
+function paintConnection() {
+  panels.setConnection({ state: connectionState(), battery });
+}
+
 function wireGuitar() {
   sink = createLedSink({
     send: frame => guitar.send(frame),
@@ -3403,8 +3475,7 @@ function wireGuitar() {
       // branch returns: a dropped guitar can never leave the screen awake (D-77, T-05-13).
       syncWakeLock();
       $('conn').classList.toggle('on', on);
-      $('connectBtn').classList.toggle('on', on);
-      $('connectBtn').textContent = on ? 'Disconnect' : 'Connect guitar';
+      paintConnection();
       panels.setStatus(on ? 'Connected · battery —' : 'Guitar not connected');
       panels.announce(on ? 'Guitar connected.' : 'Guitar disconnected.');
       if (!on) {
@@ -3435,28 +3506,53 @@ function wireGuitar() {
     onBattery: pct => {
       battery = pct;
       if (connected) panels.setStatus(`Connected · battery ${battery}%`);
+      paintConnection();
     },
     onError: message => { panels.setStatus(message); panels.announce(message); },
   });
 
-  $('connectBtn').addEventListener('click', async () => {
-    if (guitar.writeChar) return guitar.disconnect();
+  // One press connects when disconnected; connected, the pill opens the guitar menu instead. Without
+  // Bluetooth the same connect path fails at once with guitar.js's own reason, and a failed connect
+  // opens the menu so the full sentence is visible, not only announced (NAV-03).
+  // Light dismiss shuts the menu during the press, before `click`, so whether it was open is read
+  // at pointerdown; a keyboard click (detail 0) reads it directly. Connected, a second press on the
+  // pill closes the menu instead of reopening it (IN-03).
+  let connMenuOpenAtPress = false;
+  $('connectBtn').addEventListener('pointerdown', () => { connMenuOpenAtPress = panels.isConnMenuOpen(); });
+  $('connectBtn').addEventListener('click', async e => {
+    const menuWasOpen = e && e.detail > 0 ? connMenuOpenAtPress : panels.isConnMenuOpen();
+    connMenuOpenAtPress = false;
+    if (guitar.writeChar && menuWasOpen) { panels.closeConnMenu(); return; }
+    if (guitar.writeChar) {
+      panels.openConnMenu();
+      return;
+    }
     panels.setStatus('Connecting…');
-    $('connectBtn').disabled = true;
-    $('connectBtn').setAttribute('aria-busy', 'true');
+    if (!bluetoothMissing()) panels.setConnection({ state: 'connecting' });
+    let failed = false;
     try {
       await guitar.connect();
     } catch (e) {
+      failed = true;
       const message = e.name === 'NotFoundError'
         ? 'No guitar selected. Press Connect guitar and choose your T2 — close the official Poputar app first.'
         : `Could not connect: ${e.message}. Close the official Poputar app, keep the guitar awake, then try again.`;
       panels.setStatus(message);
       panels.announce(message);
     } finally {
-      $('connectBtn').disabled = false;
-      $('connectBtn').removeAttribute('aria-busy');
+      paintConnection();
+      if (failed) panels.openConnMenu();
+      // The pill was disabled while connecting, which drops focus to the body; hand it back.
+      else if (!document.activeElement || document.activeElement === document.body) $('connectBtn').focus();
     }
   });
+  // Disconnect is the existing adapter call; the drop then arrives through onConnection(false),
+  // which repaints the pill and pauses a running drill with the `ble` reason.
+  $('disconnectBtn').addEventListener('click', () => {
+    guitar.disconnect();
+    panels.closeConnMenu();
+  });
+  paintConnection();
 }
 
 export function boot() {
@@ -3467,7 +3563,6 @@ export function boot() {
   } catch (e) { return; }
   settings = { ...store.load() };
   if (!TABS.includes(settings.tab)) settings.tab = 'scales';
-  applyTheme(settings.theme);
   progress = store.getProgress();
 
   panels = createPanels({
@@ -3488,10 +3583,10 @@ export function boot() {
     onReveal,
     onNextQuestion,
     onRecallReport: onSelfReport,
-    onProgressOpen: openProgress,
-    onProgressClose: closeProgress,
-    onSession: openSession,
+    onSession: () => switchView('today'),
     onSessionClose: closeSession,
+    onView: name => switchView(name),
+    onPractiseSelection: practiseSelection,
     onSessionStart: startSession,
     onSessionNext: sessionNextBlock,
     onSessionSkip: sessionSkip,
@@ -3534,6 +3629,7 @@ export function boot() {
     onLessonListen: listenLesson,
     onTunerStart: startTuner,
     onTunerStop: stopTuner,
+    onMoreClose,
     onPowerPractice: practicePowerChords,
     onPath: openPathStep,
     onLessonSection: openLessonSection,
@@ -3545,7 +3641,8 @@ export function boot() {
   syncMicChip();
   // The preflight runs exactly once, here, from API presence alone: no prompt, no timer and no
   // re-run. A missing capability is the word `unsupported`, never an error or a disabled control.
-  panels.setCapabilities(readCapabilities());
+  capabilities = readCapabilities();
+  panels.setCapabilities(capabilities);
   wakeLock = createWakeLock({ onState: () => syncWakeNote() });
   syncWakeNote();
   // Boot derives both planes once, so the stems start at their stored levels and no path
@@ -3573,19 +3670,6 @@ export function boot() {
     now: () => (ctx ? ctx.currentTime : 0),
   });
   wireGuitar();
-  const headerMore = $('headerMore');
-  if (headerMore) {
-    headerMore.addEventListener('click', event => {
-      if (event.target.closest('.more-menu button')) headerMore.open = false;
-    });
-    document.addEventListener('click', event => {
-      if (headerMore.open && !headerMore.contains(event.target)) headerMore.open = false;
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape') headerMore.open = false;
-    });
-  }
-
   $('lightsBtn').addEventListener('click', () => {
     save({ lightsOn: !settings.lightsOn });
     sink.setEnabled(settings.lightsOn);
@@ -3612,6 +3696,9 @@ export function boot() {
   renderAll();
   panels.setFeedback('');
   renderDrillState();
+  // Reopen on the view the player last chose (a first launch or a bad value is Today), running its
+  // enter hook so Today and Progress are painted from the store.
+  switchView(settings.view, { scroll: false, persist: false });
   // A repaired or unreadable record must be visible where the player first looks,
   // not only behind the Progress panel (WR-08).
   if (store.status === 'readFailed') {

@@ -1,17 +1,6 @@
-// Runs before the stylesheet so a stored Light or Dark choice never flashes the OS theme.
-// This file is deliberately outside the ES-module graph: it must still work when main.js
+// Boot-error recovery only (LOOK-02 removed the theme shim, so this file no longer reads
+// storage). It stays outside the ES-module graph on purpose: it must still work when main.js
 // fails to load, which is the stale-shell failure the boot-error screen exists for.
-(() => {
-  let theme = 'system';
-  try {
-    const raw = localStorage.getItem('t2coach.v1');
-    const parsed = raw ? JSON.parse(raw) : null;
-    const stored = parsed && parsed.settings ? parsed.settings.theme : null;
-    if (stored === 'light' || stored === 'dark' || stored === 'system') theme = stored;
-  } catch (e) {}
-  document.documentElement.dataset.theme = theme;
-})();
-
 (() => {
   const connect = () => {
     const button = document.getElementById('recoverApp');
