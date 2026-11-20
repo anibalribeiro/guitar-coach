@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://anibalribeiro.github.io/guitar-coach/">Live app</a> ·
+  <a href="https://anibalribeiro.cz/guitar-coach/">Live app</a> ·
   <a href="#run">Run locally</a> ·
   <a href="PROTOCOL.md">BLE protocol</a> ·
   <a href="docs/HARDWARE-CHECKLIST.md">Hardware checklist</a>
@@ -20,7 +20,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/images/guitar-coach.png" alt="Guitar Coach showing the C major scale across the whole neck, with the learning path on the left and the drill controls above the fretboard" width="900">
+  <img src="docs/images/guitar-coach.png" alt="Guitar Coach Practice view: C major across the whole neck on the vertical fretboard, with lesson notes on the left and the Brighter / Start drill / Darker dimmer on the right" width="900">
 </p>
 
 ---
@@ -173,7 +173,8 @@ the Python standard library and does not require `bleak` or a guitar.
 
 `.github/workflows/pages.yml` uploads only `app/` with `actions/upload-pages-artifact`
 (`path: app`) and deploys with `actions/deploy-pages`; there is no build command and no secret.
-The live deployment is <https://anibalribeiro.github.io/guitar-coach/>. For a fork, set
+The live app is <https://anibalribeiro.cz/guitar-coach/>, uploaded by
+`.github/workflows/deploy-host.yml` on every push to `main`; the Pages copy is a mirror. For a fork, set
 **Settings → Pages → Build and deployment → Source** to **GitHub Actions**.
 
 - Project sites live under `https://<owner>.github.io/<repository>/`, so every URL and import
