@@ -17,6 +17,8 @@
   --marigold: #ffb12e; --marigold-edge: #a86a00; --marigold-soft: #ffeac2;
   --rasp: #bf2d60; --mint: #1d7f55; --mint-ink: #17694a; --mint-soft: #d9f1e5; --danger: #b3261e;
   --wood: #f6efe4; --fret: #c5b598; --string: #7a6a52; --nut: #13233a; --marker: #e6dccb;
+  --own-hint: #7fbf9f;
+  --own-0: #a86a00; --own-1: #4d7a2c; --own-2: #2a6f62; --own-3: #17694a;
   --geo: Futura, "Futura PT", "Century Gothic", "Avenir Next", "Segoe UI", system-ui, sans-serif;
   --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
   --space-1: 4px; --space-2: 8px; --space-3: 12px; --space-4: 16px; --space-6: 24px; --space-8: 32px; --space-12: 48px; --space-16: 64px;
@@ -294,6 +296,36 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 .legend-swatch { width: 10px; height: 10px; border-radius: 2px; display: inline-block; flex: none; }
 .legend-swatch.guided { background: var(--line-2); }
 .legend-swatch.unguided { background: var(--mint); }
+.own-layout { display: grid; gap: var(--space-4); align-items: start; }
+@media (min-width: 640px) { .own-layout { grid-template-columns: 140px minmax(0, 1fr); } }
+.own-neck { display: grid; grid-template-columns: repeat(6, 1fr); grid-template-rows: repeat(20, 14px); width: 140px; padding: 0 var(--space-1) var(--space-1); background: var(--wood); border-radius: var(--r-sm); }
+.own-cell { border-bottom: 1px solid var(--fret); border-left: 1px solid var(--string); }
+.own-cell[data-fret="0"] { border-bottom: 3px solid var(--nut); }
+.own-cell[data-level] { box-shadow: inset 0 0 0 1px var(--muted); }
+/* WR-05: every owned shade reads 3:1+ against the wood, and the level is also a count of light
+   dots (Full pattern 3, Anchors 2, Hint on demand 1, No lights none), because no colour ramp can
+   put 3:1 between each adjacent pair as well as against the wood. */
+.own-cell[data-level="0"], .own-swatch[data-level="0"] { background-color: var(--own-0); background-image: radial-gradient(circle at 25% 50%, var(--wood) 0 1.5px, transparent 2px), radial-gradient(circle at 50% 50%, var(--wood) 0 1.5px, transparent 2px), radial-gradient(circle at 75% 50%, var(--wood) 0 1.5px, transparent 2px); }
+.own-cell[data-level="1"], .own-swatch[data-level="1"] { background-color: var(--own-1); background-image: radial-gradient(circle at 33% 50%, var(--wood) 0 1.5px, transparent 2px), radial-gradient(circle at 67% 50%, var(--wood) 0 1.5px, transparent 2px); }
+.own-cell[data-level="2"], .own-swatch[data-level="2"] { background-color: var(--own-2); background-image: radial-gradient(circle at 50% 50%, var(--wood) 0 1.5px, transparent 2px); }
+.own-cell[data-level="3"], .own-swatch[data-level="3"] { background-color: var(--own-3); background-image: none; }
+.own-side { display: grid; gap: var(--space-3); min-width: 0; }
+.own-legend { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-4); font-size: 12px; font-weight: 700; color: var(--ink-2); }
+.own-key { display: inline-flex; gap: var(--space-1); align-items: center; }
+.own-swatch { width: 20px; height: 12px; border-radius: 2px; box-shadow: inset 0 0 0 1px var(--muted); flex: none; }
+.own-item { overflow-wrap: anywhere; color: var(--ink-2); }
+.family-bars { display: grid; gap: var(--space-3); }
+.family-row { display: grid; gap: var(--space-1); min-width: 0; }
+.family-name { font-size: 16px; font-weight: 700; color: var(--ink); }
+.family-bar { display: flex; height: 12px; border-radius: var(--r-pill); background: var(--line); overflow: hidden; }
+.family-seg { display: block; height: 100%; box-shadow: inset 0 0 0 1px var(--muted); }
+.family-seg[hidden] { display: none; }
+.family-seg[data-bucket="not-started"] { background: var(--line-2); }
+.family-seg[data-bucket="full"] { background: var(--marigold-soft); }
+.family-seg[data-bucket="anchors"] { background: var(--mint-soft); }
+.family-seg[data-bucket="hint"] { background: var(--own-hint); }
+.family-seg[data-bucket="none"] { background: var(--mint); }
+.family-count { margin: 0; font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; }
 .due-list, .skill-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); }
 .due-row, .skill-row { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
 .due-copy, .skill-copy { display: grid; gap: 2px; }
@@ -419,6 +451,9 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 .session-block-state[data-state="now"] { background: var(--cobalt); color: var(--surface); }
 .session-block-state[data-state="done"] { background: var(--mint-soft); color: var(--mint-ink); }
 .session-block-reason { min-width: 0; font-size: 12px; line-height: 1.3; color: var(--muted); overflow-wrap: anywhere; }
+/* A row's Start (09-01): the secondary button from the base rule (surface, 1.5px line-2 ring,
+   36px, 44px under coarse pointers), right-aligned on its own grid line so long reasons wrap. */
+.session-block-start { justify-self: end; grid-column: 1 / -1; }
 .session-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
 .session-summary { display: grid; gap: var(--space-3); }
 .session-next { font-size: 16px; line-height: 1.4; }
@@ -661,6 +696,16 @@ label.inline { display: flex; align-items: center; gap: var(--space-2); text-tra
 .coach-avatar svg { display: block; }
 .coach-text { min-width: 0; display: grid; gap: var(--space-2); }
 .coach-bubble h2, .coach-bubble p { margin: 0; }
+/* The Today coach thread (09-01): coach lines as bubbles, finished blocks as result cards. The
+   card's left rule is a shape cue, so the outcome never rests on colour alone. */
+.today-greeting { min-width: 0; display: grid; gap: var(--space-3); }
+.today-greeting h2 { margin: 0; }
+.coach-thread { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-2); min-width: 0; }
+.coach-line { min-width: 0; padding: var(--space-3) var(--space-4); background: var(--surface); border-radius: 16px 16px 16px 4px; box-shadow: var(--shadow-1); color: var(--ink-2); overflow-wrap: anywhere; }
+.result-card { min-width: 0; display: grid; gap: var(--space-1); padding: var(--space-4); background: var(--surface); border-radius: var(--r-md); box-shadow: var(--shadow-1); border-left: 4px solid var(--muted); color: var(--ink-2); overflow-wrap: anywhere; }
+.result-card-title { font-size: 16px; font-weight: 700; color: var(--ink); }
+.result-card-guided, .result-card-min { font-size: 12px; color: var(--muted); }
+#coachContinue { justify-self: start; }
 /* Library (06-05): one surface card, one field per row on phone and two per row at 640px+; the CTA
    is full width on phone. Labels wrap instead of truncating. */
 .library-card { min-width: 0; padding: var(--space-4); background: var(--surface); border: 0; border-radius: 24px; box-shadow: var(--shadow-2); }
@@ -860,9 +905,13 @@ header.appbar > *, .more-head > *, .more-list > * { min-width: 0; }
 
       <section id="view-today" role="tabpanel" aria-label="Today" hidden>
         <h2 class="sr-only">Today</h2>
-        <section class="coach-bubble today-greeting" aria-labelledby="todayGreeting">
+        <section class="today-greeting" aria-labelledby="todayGreeting">
           <h2 class="lead" id="todayGreeting">Today's practice</h2>
-          <p>Here's your plan. Each block says why it was chosen. Start at the top.</p>
+          <div class="coach-row today-coach">
+            <span class="coach-avatar" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" focusable="false"><circle cx="8" cy="8" r="3" fill="var(--surface)"/><path d="M8 1 V3 M8 13 V15 M1 8 H3 M13 8 H15" stroke="var(--muted)" stroke-width="1.8" stroke-linecap="round"/></svg></span>
+            <ol class="coach-thread" id="coachThread"></ol>
+          </div>
+          <button type="button" class="cta" id="coachContinue" hidden>Continue</button>
         </section>
         <section class="progress-panel" id="sessionPanel" aria-labelledby="sessionTitle">
           <div class="progress-head">
@@ -1378,6 +1427,30 @@ header.appbar > *, .more-head > *, .more-list > * { min-width: 0; }
             <div><div class="stat-label">Practised</div><div class="stat-value" id="progPractised">0 s</div><div class="stat-sub" id="progPractisedSub">Across 0 sessions.</div></div>
             <div><div class="stat-label">Unguided</div><div class="stat-value" id="progUnguided">0 s</div><div class="stat-sub">No-light passes only.</div></div>
             <div><div class="stat-label">Due now</div><div class="stat-value" id="progDue">0 skills</div><div class="stat-sub">Ready for review.</div></div>
+          </div>
+
+          <div class="progress-section" id="ownedSection">
+            <div class="stat-label">The neck you own</div>
+            <div class="own-layout">
+              <div class="own-neck" id="ownedNeck" aria-hidden="true"></div>
+              <div class="own-side">
+                <div class="own-legend" id="ownedLegend">
+                  <span class="own-key"><span class="own-swatch" data-level="0" aria-hidden="true"></span><span>Full pattern</span></span>
+                  <span class="own-key"><span class="own-swatch" data-level="1" aria-hidden="true"></span><span>Anchors</span></span>
+                  <span class="own-key"><span class="own-swatch" data-level="2" aria-hidden="true"></span><span>Hint on demand</span></span>
+                  <span class="own-key"><span class="own-swatch" data-level="3" aria-hidden="true"></span><span>No lights</span></span>
+                </div>
+                <ul class="skill-list own-list" id="ownedList"></ul>
+                <p class="microcopy" id="ownedEmpty" hidden>Play a scale position and it appears on your neck.</p>
+              </div>
+            </div>
+            <p class="microcopy">Nut at the top, low E on the left. Each box is shaded by the fewest lights you have played it with.</p>
+          </div>
+
+          <div class="progress-section" id="familySection">
+            <div class="stat-label">Light levels by family</div>
+            <div class="family-bars" id="familyBars"></div>
+            <p class="microcopy">Counts are the skills you have recorded, by the fewest lights you have played them with.</p>
           </div>
 
           <div class="progress-section" id="historySection">

@@ -186,8 +186,9 @@ test('main owns the single view switcher, persists the change and restores it at
   assert.match(body, /if \(!VIEWS\.includes\(name\)\) return false;/);
   assert.match(body, /if \(persist && settings\.view !== name\) save\(\{ view: name \}\);/);
   assert.match(body, /panels\.setView\(name\);/);
-  assert.match(body, /if \(name === 'today'\) enterToday\(\);/);
-  assert.match(main, /switchView\(settings\.view, \{ scroll: false, persist: false \}\);/);
+  assert.match(body, /if \(name === 'today'\) enterToday\(\{ announce \}\);/);
+  // IN-03: the boot restore is not a view entry, so it never voices the coach line.
+  assert.match(main, /switchView\(settings\.view, \{ scroll: false, persist: false, announce: false \}\);/);
   assert.match(main, /onView: name => switchView\(name\)/);
   // Nothing but the switcher paints the view.
   assert.equal((main.match(/panels\.setView\(/g) || []).length, 1);
@@ -351,7 +352,12 @@ test('Today shows the greeting, the v1 session plan and the learning path', () =
   const source = html();
   const today = viewSlice(source, 'today');
   assert.match(today, /<h2 class="lead" id="todayGreeting">Today's practice<\/h2>/);
-  assert.match(today, /<p>Here's your plan\. Each block says why it was chosen\. Start at the top\.<\/p>/);
+  // 09-01: the v1 "Start at the top." sentence became the coach thread and its one Continue.
+  assert.ok(!today.includes('Start at the top'), 'the old greeting paragraph is gone');
+  const greeting = today.slice(today.indexOf('today-greeting'), today.indexOf('id="sessionPanel"'));
+  assert.match(greeting, /<ol class="coach-thread" id="coachThread"><\/ol>/);
+  assert.match(greeting, /<button type="button" class="cta" id="coachContinue" hidden>Continue<\/button>/);
+  assert.match(greeting, /<span class="coach-avatar" aria-hidden="true">/);
   const greet = today.indexOf('id="todayGreeting"');
   const session = today.indexOf('id="sessionPanel"');
   const path = today.indexOf('id="learningPath"');
@@ -1017,6 +1023,9 @@ test('LOOK-03 contrast: every text pair the UI uses meets 4.5:1', () => {
     ['#b9c6da', 'ink'],
     // 08-03: the dimmer readout sits on --sky (numbers ink, passes-left and the where line ink-2).
     ['ink', 'sky'], ['ink-2', 'sky'],
+    // 09-03: the owned-neck legend labels and family count lines sit beside the shades, on
+    // --surface, never on a shade.
+    ['ink-2', 'surface'], ['ink', 'surface'],
   ];
   for (const [fg, bg] of TEXT) {
     assert.ok(hex(fg) && hex(bg), `${fg} and ${bg} are declared`);
@@ -1032,6 +1041,9 @@ test('LOOK-03 contrast: every non-text pair meets 3:1 (board marks on wood, fiel
     ['muted', 'surface'], ['muted', 'sky'],
     // 08-03: the lit lamp's stroke carries the 3:1 edge that marigold alone (1.81:1) cannot.
     ['marigold-edge', 'surface'],
+    // 09-03: owned-neck cells carry a --muted edge (pinned above as muted on wood) and the
+    // No lights fill must read against the bare wood on its own.
+    ['mint', 'wood'],
   ];
   for (const [fg, bg] of NON_TEXT) {
     const ratio = contrast(t[fg], t[bg]);
@@ -1039,6 +1051,36 @@ test('LOOK-03 contrast: every non-text pair meets 3:1 (board marks on wood, fiel
   }
   // Why form fields ring in --muted: --line-2 on surface fails the 3:1 non-text floor [D:inputborder].
   assert.ok(contrast(t['line-2'], t.surface) < 3, '--line-2 is decorative only');
+});
+
+// WR-05: the owned neck's four shades. Each fill reads 3:1+ against the bare wood, and the light
+// dots (wood-coloured) read 3:1+ on every fill. Colour alone cannot also put 3:1 between each
+// adjacent level, so any adjacent pair below 3:1 must differ in its dot count.
+test('WR-05 contrast: owned-neck shades read against the wood and adjacent levels differ by a non-colour cue', () => {
+  const t = rootTokens();
+  const css = style();
+  const dotsOf = level => {
+    const rule = css.match(new RegExp(`\\.own-swatch\\[data-level="${level}"\\] \\{([^}]*)\\}`));
+    assert.ok(rule, `level ${level} rule`);
+    assert.match(rule[1], new RegExp(`background-color: var\\(--own-${level}\\);`));
+    return (rule[1].match(/radial-gradient\([^)]*var\(--wood\)[^)]*\)/g) || []).length;
+  };
+  const dots = [0, 1, 2, 3].map(dotsOf);
+  assert.deepEqual(dots, [3, 2, 1, 0], 'lights left = dots: Full pattern 3, Anchors 2, Hint 1, No lights none');
+  for (let level = 0; level <= 3; level += 1) {
+    const fill = t[`own-${level}`];
+    assert.ok(fill, `--own-${level} is a :root token`);
+    const ratio = contrast(fill, t.wood);
+    assert.ok(ratio >= 3, `--own-${level} on wood is ${ratio.toFixed(2)}:1, below 3:1`);
+  }
+  for (let level = 0; level < 3; level += 1) {
+    const ratio = contrast(t[`own-${level}`], t[`own-${level + 1}`]);
+    assert.ok(ratio >= 3 || dots[level] !== dots[level + 1], `levels ${level} and ${level + 1} need 3:1 or a different dot count`);
+  }
+  // The levels darken monotonically, so greyscale still orders them.
+  for (let level = 0; level < 3; level += 1) {
+    assert.ok(luminance(t[`own-${level}`]) > luminance(t[`own-${level + 1}`]), `--own-${level} is lighter than --own-${level + 1}`);
+  }
 });
 
 test('LOOK-03 contrast: the forbidden pairs never appear in a rule', () => {
@@ -1056,12 +1098,13 @@ test('LOOK-03 contrast: the forbidden pairs never appear in a rule', () => {
   }
 });
 
-test('KEEP-04: the offline release is v29, bumped once after the Phase 8 review fixes', () => {
+test('KEEP-04: the offline release is v31, bumped once after the Phase 9 review fixes', () => {
   const sw = fs.readFileSync(fileURLToPath(new URL('../app/sw.js', import.meta.url)), 'utf8');
-  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v29';/);
+  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v31';/);
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v30'"), 'the v30 release is gone');
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v29'"), 'the v29 release is gone');
   assert.ok(!sw.includes("CACHE_PREFIX + 'v28'"), 'the v28 release is gone');
   assert.ok(!sw.includes("CACHE_PREFIX + 'v27'"), 'the v27 release is gone');
-  assert.ok(!sw.includes("CACHE_PREFIX + 'v26'"), 'the v26 release is gone');
 });
 
 // ---------- 08-03: thumb row styling (FADE-07/10) ----------

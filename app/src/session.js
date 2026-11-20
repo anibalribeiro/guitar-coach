@@ -428,6 +428,16 @@ function finish(next, effects, event) {
   });
 }
 
+// A `now` block that never reached its result goes back to pending, or to done when an earlier
+// run already completed it — never skipped. Shared by START_AT, advance and BLOCK_ABORTED.
+function demoteNow(blocks, keep = null) {
+  for (const other of blocks) {
+    if (other === keep || other.state !== 'now') continue;
+    other.state = other.doneOnce === true ? 'done' : 'pending';
+    other.credited = other.doneOnce === true;
+  }
+}
+
 // The one block-advance path, shared by `CONTINUE` and `SKIP`: the first block still `pending`
 // becomes `now` and is launched, with the session's one block-start announcement. With nothing
 // pending left the session is over, so the same helper finishes it.
@@ -439,6 +449,10 @@ function advance(next, effects, event) {
     return;
   }
   const block = blocks[index];
+  // An unfinished `now` block (a failed or abandoned start) is demoted exactly as START_AT does,
+  // so the plan never holds two `now` blocks and the coach never names a stale one (WR-04).
+  demoteNow(blocks, block);
+  next.completed = blocks.filter(entry => entry.state === 'done').length;
   block.state = 'now';
   block.credited = false;
   next.blockIndex = index;
@@ -448,6 +462,126 @@ function advance(next, effects, event) {
     key: 'session-block',
     values: { index: index + 1, total: blocks.length, kind: block.kind },
   });
+}
+
+// ---------- Block result + coach script (09-01, TODAY-01/02) ----------
+// A local copy of `fade.clampLevel`: this module imports nothing, so the four light levels are
+// clamped here rather than borrowed.
+const clampLevel = n => Math.max(0, Math.min(3, Number.isFinite(n) ? Math.trunc(n) : 0));
+// A credited pass is the only evidence that raises the light level: it played to the end, it was
+// not aborted, nobody brightened it and it was reported clean (the drill already forces `shaky`
+// when microphone evidence fails). A guided pass is honest practice, never a level change.
+const creditedPass = pass => isRecord(pass) && Number.isFinite(pass.completedSteps)
+  && Number.isFinite(pass.plannedSteps) && pass.completedSteps >= pass.plannedSteps
+  && pass.aborted !== true && pass.brightened !== true && pass.selfReport === 'clean';
+
+// One block's result, classified from the `summarizeDrill` summary `BLOCK_DONE` already carries:
+// from-level is where the block started, to-level the darkest level played cleanly (or the start
+// level when nothing was), and the outcome is clean, else guided, else stopped, else shaky.
+export function blockResultOf(summary) {
+  const source = isRecord(summary) ? summary : {};
+  const fromLevel = clampLevel(source.startLevel);
+  const credited = asList(source.passes).filter(creditedPass);
+  const recall = isRecord(source.recall) ? source.recall : {};
+  const guided = source.guided === true || recall.guided === true;
+  const toLevel = credited.length ? Math.max(...credited.map(pass => clampLevel(pass.hintLevel))) : fromLevel;
+  // A block stopped before any pass reached its end was never played through, so it is
+  // "stopped early" — not a shaky verdict on playing that never happened (WR-06).
+  const passes = asList(source.passes).filter(isRecord);
+  const stopped = passes.length > 0 && passes.every(pass => !(Number.isFinite(pass.completedSteps)
+    && Number.isFinite(pass.plannedSteps) && pass.completedSteps >= pass.plannedSteps));
+  const outcome = credited.length ? 'clean' : guided ? 'guided' : stopped ? 'stopped' : 'shaky';
+  return { outcome, fromLevel, toLevel, guided, activeMs: pickMs(source.activeMs), unguidedMs: pickMs(source.unguidedMs) };
+}
+
+// Results are ordered by a pure counter, never a clock: the newest result is the highest seq.
+const resultSeq = block => (isRecord(block) && isRecord(block.result) && Number.isInteger(block.result.seq) ? block.result.seq : 0);
+const nextSeq = blocks => 1 + asList(blocks).reduce((max, block) => Math.max(max, resultSeq(block)), 0);
+
+// The Today coach's lines as message keys only — the sentences are `panels`' business. Idle: the
+// day's intro, then the first block with its start level. Running: the newest result, then what
+// is under way, what is next or the finish. Summary: one closing line that points at the
+// summary (rendered, never announced). `startLevels` and `facts` come from main and are coerced
+// here, so a stray value can only drop a detail and never change a line's key.
+const countOf = n => (Number.isInteger(n) && n > 0 ? n : 0);
+export function coachScript({ session, plan, startLevels = [], facts = {} } = {}) {
+  const base = isRecord(session) ? session : emptySession();
+  const source = isRecord(plan) ? plan : isRecord(base.plan) ? base.plan : null;
+  const blocks = source ? asList(source.blocks) : [];
+  if (!blocks.length) return [];
+  if (base.state === 'summary') {
+    return [{ key: 'allDone', values: { completed: countOf(base.completed), skipped: countOf(base.skipped) } }];
+  }
+  const levels = asList(startLevels);
+  const known = isRecord(facts) ? facts : {};
+  const nextLine = index => {
+    const block = blocks[index];
+    const values = {
+      index,
+      kind: block.kind,
+      reasonKey: block.reasonKey,
+      reasonValues: isRecord(block.reasonValues) ? block.reasonValues : {},
+    };
+    // The level the block will really start at, from main; a missing or odd value is left out.
+    const level = levels[index];
+    if (Number.isInteger(level) && level >= 0 && level <= 3) values.level = level;
+    return { key: 'next', values };
+  };
+  const pending = blocks.findIndex(block => isRecord(block) && block.state === 'pending');
+  if (base.state !== 'running') {
+    const intro = {
+      key: 'intro',
+      values: {
+        blocks: blocks.filter(block => isRecord(block) && block.state !== 'skipped').length,
+        minutes: countOf(source.totalMinutes),
+        due: countOf(known.dueCount),
+        streak: countOf(known.streak),
+        noHistory: source.noHistory === true,
+      },
+    };
+    return pending < 0 ? [intro] : [intro, nextLine(pending)];
+  }
+  const lines = [];
+  let newest = -1;
+  blocks.forEach((block, index) => {
+    if (resultSeq(block) > (newest < 0 ? 0 : resultSeq(blocks[newest]))) newest = index;
+  });
+  if (newest >= 0) {
+    const result = blocks[newest].result;
+    lines.push({
+      key: 'result',
+      values: {
+        index: newest,
+        kind: blocks[newest].kind,
+        outcome: typeof result.outcome === 'string' ? result.outcome : 'shaky',
+        fromLevel: clampLevel(result.fromLevel),
+        toLevel: clampLevel(result.toLevel),
+        guided: result.guided === true,
+        seq: resultSeq(blocks[newest]),
+      },
+    });
+  }
+  const now = blocks.findIndex(block => isRecord(block) && block.state === 'now');
+  if (now >= 0) lines.push({ key: 'now', values: { index: now, kind: blocks[now].kind } });
+  else if (pending >= 0) lines.push(nextLine(pending));
+  else lines.push({ key: 'finish' });
+  return lines;
+}
+
+// The newest coach line's identity, so main announces it once per change (09-CONTEXT "Announce
+// once"): the whole newest line — its key, its block and every value — plus the newest result
+// line, whose seq moves on every finished block. So a new result, a repeated block or an idle
+// preview whose kind, level or reason moved is heard again, while a re-entry with the same thread
+// stays quiet (WR-02). The summary speaks for itself through its own announcement, so it never
+// has a signature.
+const lineIdentity = line => JSON.stringify([line.key, isRecord(line.values) ? line.values : {}]);
+export function coachSignatureOf(lines, state) {
+  const list = asList(lines);
+  if (state === 'summary' || !list.length) return '';
+  const newest = isRecord(list[list.length - 1]) ? list[list.length - 1] : {};
+  if (typeof newest.key !== 'string' || !newest.key) return '';
+  const result = list.find(line => isRecord(line) && line.key === 'result' && line !== newest);
+  return result ? `${lineIdentity(newest)}|${lineIdentity(result)}` : lineIdentity(newest);
 }
 
 // `drills.reduce`'s contract exactly: pure, one event in, `{ state, effects }` out, and the
@@ -482,6 +616,34 @@ export function sessionReduce(state, event = {}) {
     return { state: next, effects };
   }
 
+  // `Start` on a plan row (09-01, TODAY-03): any pending block with a target, out of order. From
+  // idle it opens the session exactly as START does; between blocks an unfinished `now` block goes
+  // back to pending (or to done when it already completed once) — never skipped. Everything else
+  // is refused with the state untouched. The block is seeded as itself, so a recall block is still
+  // a recall whatever the order, and CONTINUE keeps walking the plan in order afterwards.
+  if (type === 'START_AT') {
+    const index = isRecord(event) && Number.isInteger(event.index) ? event.index : -1;
+    const block = index >= 0 ? blocks[index] : null;
+    const open = next.state === 'idle' || next.state === 'running';
+    if (!open || !block || block.state !== 'pending' || !isRecord(block.target)) return { state: base, effects: [] };
+    const fromIdle = next.state === 'idle';
+    if (fromIdle) {
+      next.state = 'running';
+      next.startedAt = Number.isFinite(event.now) && event.now > 0 ? event.now : null;
+    } else {
+      demoteNow(blocks);
+      next.completed = blocks.filter(entry => entry.state === 'done').length;
+    }
+    block.state = 'now';
+    block.credited = false;
+    next.blockIndex = index;
+    effects.push({ type: 'seedAndStart', block: { ...block } });
+    effects.push(fromIdle
+      ? { type: 'announce', key: 'session-ready', values: { blocks: blocks.length, minutes: next.plan.totalMinutes } }
+      : { type: 'announce', key: 'session-block', values: { index: index + 1, total: blocks.length, kind: block.kind } });
+    return { state: next, effects };
+  }
+
   if (type === 'BLOCK_DONE') {
     const index = Number.isInteger(event.index) ? event.index : next.blockIndex;
     const block = blocks[index];
@@ -492,6 +654,8 @@ export function sessionReduce(state, event = {}) {
     block.credited = true;
     block.doneOnce = true;
     block.state = 'done';
+    // The block's result card (09-01): additive, and a Repeat's second run replaces the first.
+    block.result = { ...blockResultOf(summary), seq: nextSeq(blocks) };
     next.blockIndex = index;
     // `completed` counts the blocks that are done, so a `Repeat` of the same block re-credits its
     // minutes without ever inflating `{done} of 5` past five.
@@ -500,6 +664,36 @@ export function sessionReduce(state, event = {}) {
     next.unguidedMs = pickMs(next.unguidedMs) + pickMs(summary.unguidedMs);
     const skillId = pickText(summary.skillId);
     if (skillId && !next.skillsTouched.includes(skillId)) next.skillsTouched.push(skillId);
+  }
+
+  // The block's run was abandoned before it could reach a result — a Stop in the first count-in,
+  // or a failed start that was then discarded (WR-04). The block is no longer under way, so it
+  // goes back to pending (or done, for a Repeat in flight); a credited block is never touched.
+  if (type === 'BLOCK_ABORTED') {
+    const index = Number.isInteger(event.index) ? event.index : next.blockIndex;
+    const block = blocks[index];
+    if (next.state !== 'running' || !block || block.state !== 'now' || block.credited === true) {
+      return { state: base, effects: [] };
+    }
+    demoteNow([block]);
+    next.completed = blocks.filter(entry => entry.state === 'done').length;
+    return { state: next, effects };
+  }
+
+  // A No-lights pass reaches its result before the player's self-report, so `BLOCK_DONE` sees it
+  // unreported (CR-02). The report is folded in here: the same block's result is re-classified
+  // from the reported summary, keeping its seq, and only the unguided minutes the report added
+  // are credited — the block's minutes and its credit gate are never paid twice.
+  if (type === 'BLOCK_REPORT') {
+    const index = Number.isInteger(event.index) ? event.index : next.blockIndex;
+    const block = blocks[index];
+    if (next.state !== 'running' || !block || !isRecord(block.result) || block.result.outcome === 'skipped') {
+      return { state: next, effects };
+    }
+    const summary = isRecord(event.summary) ? event.summary : {};
+    const before = pickMs(block.result.unguidedMs);
+    block.result = { ...blockResultOf(summary), seq: block.result.seq };
+    next.unguidedMs = Math.max(0, pickMs(next.unguidedMs) + pickMs(block.result.unguidedMs) - before);
   }
 
   // `Next block`: the first block still pending starts, and a fifth `Next block` with nothing
@@ -521,6 +715,7 @@ export function sessionReduce(state, event = {}) {
     if (block.state !== 'skipped' && block.state !== 'done') {
       block.state = block.doneOnce === true ? 'done' : 'skipped';
       block.credited = true;
+      if (block.state === 'skipped') block.result = { outcome: 'skipped', seq: nextSeq(blocks) };
     }
     next.completed = blocks.filter(entry => entry.state === 'done').length;
     next.skipped = blocks.filter(entry => entry.state === 'skipped').length;
@@ -549,6 +744,7 @@ export function sessionReduce(state, event = {}) {
       if (block.state === 'done' || block.state === 'skipped') continue;
       block.state = block.doneOnce === true ? 'done' : 'skipped';
       block.credited = true;
+      if (block.state === 'skipped') block.result = { outcome: 'skipped', seq: nextSeq(blocks) };
     }
     next.completed = blocks.filter(entry => entry.state === 'done').length;
     next.skipped = blocks.filter(entry => entry.state === 'skipped').length;

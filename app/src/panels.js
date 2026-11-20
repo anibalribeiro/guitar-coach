@@ -6,8 +6,8 @@ import {
   KEYS, KEY_NAMES, SCALES, CHORD_FAMILIES, CHORD_PAIRS, PROGRESSIONS, SONGS, DEGREES, scaleById,
   chordById, chordPairById, progressionById, songById,
 } from './content.js';
-import { positionsForScale, OPEN } from './theory.js';
-import { daysBetween } from './progress.js';
+import { positionsForScale, OPEN, FRETS } from './theory.js';
+import { daysBetween, familyLevelCounts, lightLevelOf, skillFamily, LIGHT_FAMILIES } from './progress.js';
 
 const $ = id => document.getElementById(id);
 const TABS = ['scales', 'chords', 'progressions', 'songs'];
@@ -204,6 +204,14 @@ const KEY_PLANE_IDS = ['progressionKey', 'songKey', 'playKey'];
 
 // ---------- Hint ladder copy (fixed, never data-derived) ----------
 export const HINT_LEVEL_NAMES = ['Full pattern', 'Anchors', 'Hint on demand', 'No lights'];
+// Progress family bars (PROG-09): display names, and the five buckets in bar order —
+// not started first, then the four light levels.
+const FAMILY_NAMES = { scales: 'Scales', chords: 'Chords', progressions: 'Progressions', songs: 'Songs' };
+const FAMILY_BUCKETS = ['not-started', 'full', 'anchors', 'hint', 'none'];
+const FAMILY_BUCKET_NAMES = ['not started', ...HINT_LEVEL_NAMES];
+// The Progress neck spans frets 0-FRETS (0-19), drawn nut-up with low E on the left.
+const OWNED_FRETS = FRETS;
+const ownedLevelName = level => (level >= 0 && level < HINT_LEVEL_NAMES.length ? HINT_LEVEL_NAMES[level] : 'Not started');
 const HINT_CRITERIA = {
   levels: '3 clean passes to remove a hint · 2 failed passes to bring one back.',
   recall: 'Recall pass — finish at working tempo to mark this skill mastered.',
@@ -961,6 +969,37 @@ export function skillLabelText(content = {}, kind = '') {
   return family === 'findNote' ? `Note finding · ${scaleLabel}` : scaleLabel;
 }
 
+// ---------- The neck you own (PROG-08) ----------
+// Pure view of the Progress neck: every cell of every drilled scale box, shaded by the best
+// light level reached in that box (max where boxes overlap). The rows are the ones the
+// Scales bar counts (`skillFamily`, which also places legacy kind:null rows), and the boxes
+// are the drills' own `positionsForScale` boxes. Whole-neck skills are not boxes and stay
+// off the map; unknown scales and stale position ids are skipped, own-key only.
+export function ownedNeckView(rows = []) {
+  const cells = new Map();
+  const boxes = [];
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!row || typeof row !== 'object' || skillFamily(row) !== 'scales') continue;
+    const content = row.content && typeof row.content === 'object' ? row.content : {};
+    const scale = ownEntry(scaleById, content.scaleId);
+    if (!scale || content.positionId === 'all') continue;
+    const box = positionsForScale(keyPcOf(content), scale).find(p => p.id === content.positionId);
+    if (!box) continue;
+    const level = lightLevelOf(row);
+    for (let s = 1; s <= 6; s++) {
+      const [lo, hi] = box.ranges[s];
+      for (let f = Math.max(0, lo); f <= Math.min(OWNED_FRETS, hi); f++) {
+        const key = `${s}:${f}`;
+        if (!cells.has(key) || cells.get(key) < level) cells.set(key, level);
+      }
+    }
+    boxes.push({ label: skillLabelText(content, row.kind || ''), level });
+  }
+  boxes.sort((a, b) => a.label.localeCompare(b.label));
+  return { cells, boxes };
+}
+// ---------- end ownedNeckView ----------
+
 // A chord pair is named by its curated label (`C → G`); a pair that is no longer in the
 // table still reads from its stored ordered chord ids.
 export function chordPairLabelText(row = {}) {
@@ -1078,6 +1117,116 @@ export function sessionReasonText({ reasonKey = '', values = {} } = {}) {
   const key = typeof reasonKey === 'string' ? reasonKey : '';
   const formatter = Object.hasOwn(SESSION_REASONS, key) ? SESSION_REASONS[key] : SESSION_REASONS.unavailable;
   return formatter(values && typeof values === 'object' ? values : {});
+}
+
+// ---------- Today coach: result cards and coach lines (09-01, TODAY-01/02) ----------
+// `session.coachScript` answers keys; every sentence the coach says is written here, and the
+// result card words the light change with the app-wide level names.
+export const RESULT_OUTCOME_WORDS = { clean: 'Clean', shaky: 'Shaky', guided: 'Guided', skipped: 'Skipped', stopped: 'Stopped early' };
+const levelNameOf = n => HINT_LEVEL_NAMES[Math.max(0, Math.min(3, Number.isFinite(n) ? Math.trunc(n) : 0))];
+const blockNameOf = kind => (Object.hasOwn(SESSION_BLOCK_NAMES, kind) ? SESSION_BLOCK_NAMES[kind] : SESSION_BLOCK_NAMES.focus);
+
+export function lightChangeText(from, to) {
+  const start = levelNameOf(from);
+  const end = levelNameOf(to);
+  return start === end ? `Stayed at ${start}` : `${start} → ${end}`;
+}
+
+// A to-level brighter than the from-level is a light that came back, and the card says so.
+const brighterText = (from, to) => (levelIndexOf(to) < levelIndexOf(from)
+  ? `A light came back · ${lightChangeText(from, to)}`
+  : lightChangeText(from, to));
+
+// One card per finished block: name, outcome word, light change, the guided line only when a
+// pass was brightened, and the recorded minutes. A skipped block has no change and no minutes.
+export function resultCardView(block = {}) {
+  const source = block && typeof block === 'object' ? block : {};
+  const result = source.result && typeof source.result === 'object' ? source.result : {};
+  const key = typeof result.outcome === 'string' && Object.hasOwn(RESULT_OUTCOME_WORDS, result.outcome) ? result.outcome : 'shaky';
+  const skipped = key === 'skipped';
+  return {
+    title: blockNameOf(source.kind),
+    outcome: RESULT_OUTCOME_WORDS[key],
+    change: skipped ? '' : brighterText(result.fromLevel, result.toLevel),
+    guided: !skipped && result.guided === true ? GUIDED_LINE : '',
+    minutes: skipped ? '' : durationText(result.activeMs),
+  };
+}
+
+// The coach's lines. Each formatter reads the line's values and the plan's blocks, so a result
+// line words the block's own stored result and never a sentence the reducer handed over.
+const blockAt = (blocks, index) => {
+  const list = Array.isArray(blocks) ? blocks : [];
+  const block = Number.isInteger(index) ? list[index] : null;
+  return block && typeof block === 'object' ? block : {};
+};
+const wholeOf = n => (Number.isInteger(n) && n > 0 ? n : 0);
+const levelIndexOf = n => Math.max(0, Math.min(3, Number.isFinite(n) ? Math.trunc(n) : 0));
+// The coach's tone (09-CONTEXT): second person, plain, encouraging but honest. A guided pass is
+// never called clean — it opens with `GUIDED_LINE` and keeps its level — and every next line
+// names the block, the light level it starts at and the plan's own reason sentence.
+// The line's own values win; a line without them reads the block's stored result.
+const resultLine = (values = {}, blocks = []) => {
+  const block = blockAt(blocks, values.index);
+  const stored = block.result && typeof block.result === 'object' ? block.result : {};
+  const own = typeof values.outcome === 'string';
+  const outcome = own ? values.outcome : stored.outcome;
+  const fromLevel = levelIndexOf(own ? values.fromLevel : stored.fromLevel);
+  const toLevel = levelIndexOf(own ? values.toLevel : stored.toLevel);
+  const name = blockNameOf(typeof values.kind === 'string' && values.kind ? values.kind : block.kind);
+  const from = HINT_LEVEL_NAMES[fromLevel];
+  const to = HINT_LEVEL_NAMES[toLevel];
+  if (outcome === 'skipped') return `You skipped ${name}. It stays on the list for another day.`;
+  if (outcome === 'stopped') return `${name}: stopped early — it stays at ${from}.`;
+  if (outcome === 'guided') return `${GUIDED_LINE}. ${name} stays at ${to} until you play it unaided.`;
+  if (outcome === 'clean') {
+    if (toLevel > fromLevel) {
+      return `${name}: clean at ${to}. You earned fewer lights — ${lightChangeText(fromLevel, toLevel)}.`;
+    }
+    // Two shaky passes can bring a light back mid-block, so a clean pass may land brighter than
+    // the block started: that is a light gained, never a level held (WR-01).
+    if (toLevel < fromLevel) {
+      return `${name}: clean once a light came back — ${lightChangeText(fromLevel, toLevel)}. Next time we try ${from} again.`;
+    }
+    return `${name}: clean — you held ${to}.`;
+  }
+  return `${name}: not clean yet, so it stays at ${from}. Another pass will get there.`;
+};
+export const COACH_LINES = {
+  intro: ({ blocks = 0, minutes = 0, due = 0, streak = 0, noHistory = false } = {}) => {
+    const size = `${countText(wholeOf(blocks), 'block', 'blocks')}, about ${wholeOf(minutes)} minutes`;
+    const parts = [noHistory === true ? `Your first session: ${size}.` : `Today: ${size}.`];
+    if (wholeOf(due) > 0) parts.push(`${countText(wholeOf(due), 'review', 'reviews')} due.`);
+    if (wholeOf(streak) > 0) parts.push(`You are on a ${wholeOf(streak)}-day streak.`);
+    return parts.join(' ');
+  },
+  result: resultLine,
+  // Every next line names the block, the level it will start at and the plan's own reason.
+  next: ({ kind = '', level, reasonKey = '', reasonValues = {} } = {}) => {
+    const at = Number.isInteger(level) && level >= 0 && level <= 3 ? ` at ${HINT_LEVEL_NAMES[level]}` : '';
+    return `Next: ${blockNameOf(kind)}${at}. ${sessionReasonText({ reasonKey, values: reasonValues })}`;
+  },
+  now: ({ kind = '' } = {}) => `${blockNameOf(kind)} is under way in Practice.`,
+  finish: () => 'That was the last block. Press Finish session to see your day.',
+  allDone: ({ completed = 0, skipped = 0 } = {}) => {
+    const done = `${countText(wholeOf(completed), 'block', 'blocks')} played`;
+    const missed = wholeOf(skipped) > 0 ? `, ${wholeOf(skipped)} skipped` : '';
+    return `Session done — ${done}${missed}. Your summary is below.`;
+  },
+};
+
+export function coachLineText(line = {}, blocks = []) {
+  const source = line && typeof line === 'object' ? line : {};
+  const key = typeof source.key === 'string' ? source.key : '';
+  if (!Object.hasOwn(COACH_LINES, key)) return '';
+  return COACH_LINES[key](source.values && typeof source.values === 'object' ? source.values : {}, blocks);
+}
+
+// The one Continue's label: the next pending block by name, or the finish when nothing is left.
+export function coachContinueText(blocks = []) {
+  const list = Array.isArray(blocks) ? blocks : [];
+  const next = list.find(block => block && typeof block === 'object' && block.state === 'pending');
+  return next ? `Continue: ${blockNameOf(next.kind)}` : 'Finish session';
 }
 
 // The Today tab's accessible name (Phase 6): the count at idle, the block index while a session
@@ -1591,6 +1740,7 @@ export function createPanels({
   onRecallReport = () => {},
   onSession = () => {}, onSessionClose = () => {}, onSessionStart = () => {},
   onSessionNext = () => {}, onSessionSkip = () => {}, onSessionRepeat = () => {}, onSessionEnd = () => {},
+  onSessionPick = () => {},
   onSessionView = () => {}, onPractiseFilter = () => {}, onPractiseFamily = () => {},
   onPractiseDueRow = () => {}, onPractisePairRow = () => {}, onNextDrill = () => {},
   onPractiseSkill = () => {}, onExport = () => {}, onImportFile = () => {},
@@ -3121,7 +3271,7 @@ export function createPanels({
   // One plan row, in the approved slot order: name, minutes, the state chip and the reason last,
   // so a screen reader meets the item before the argument for it. Built with createElement and
   // textContent only — no stored or imported string is ever parsed as markup (T-05-06).
-  function sessionBlockNode(block = {}, showPending = false) {
+  function sessionBlockNode(block = {}, showPending = false, index = 0) {
     const source = block && typeof block === 'object' ? block : {};
     const item = document.createElement('li');
     item.className = 'session-block';
@@ -3143,7 +3293,19 @@ export function createPanels({
     const reason = document.createElement('span');
     reason.className = 'session-block-reason';
     reason.textContent = sessionReasonText({ reasonKey: source.reasonKey, values: source.reasonValues });
-    item.append(name, minutes, reason, state);
+    // The row's own Start (09-01, TODAY-03): only a pending block with a target can be picked,
+    // so any other row keeps the slot but hides and disables it.
+    const start = document.createElement('button');
+    start.type = 'button';
+    start.className = 'session-block-start';
+    start.textContent = 'Start';
+    const at = Number.isInteger(index) && index >= 0 ? index : 0;
+    start.dataset.index = String(at);
+    start.setAttribute('aria-label', `Start block ${at + 1}: ${name.textContent}`);
+    const pickable = source.state === 'pending' && !!source.target && typeof source.target === 'object';
+    start.hidden = !pickable;
+    start.disabled = !pickable;
+    item.append(name, minutes, reason, state, start);
     return item;
   }
 
@@ -3160,7 +3322,7 @@ export function createPanels({
     setSessionSummary({ visible: false });
     $('sessionPlanNote').hidden = !(plan && plan.noHistory);
     $('sessionTotal').textContent = durationText(minutes * 60000);
-    $('sessionBlocks').replaceChildren(...blocks.map(block => sessionBlockNode(block, source.state !== 'idle')));
+    $('sessionBlocks').replaceChildren(...blocks.map((block, index) => sessionBlockNode(block, source.state !== 'idle', index)));
     // `Start session` exists in exactly one state — an idle plan — because it starts one. A session
     // that is already under way belongs to the panel's four verbs, so `Start session` leaves the
     // document instead of staying a filled, enabled control whose handler returns immediately
@@ -3172,6 +3334,50 @@ export function createPanels({
     // The panel's own four verbs belong to a session that is under way: at idle there is nothing
     // to skip, repeat or end, so the row is absent rather than present and inert.
     $('sessionPanelActions').hidden = source.state !== 'running';
+    // Today has one Continue, the coach's own (09-01): the panel's mirror stays wired but hidden.
+    $('panelNextBlock').hidden = true;
+  }
+
+  function resultCardNode(block) {
+    const card = resultCardView(block);
+    const item = document.createElement('li');
+    item.className = 'result-card';
+    const parts = [
+      ['result-card-title', card.title], ['result-card-outcome', card.outcome],
+      ['result-card-change', card.change], ['result-card-guided', card.guided], ['result-card-min', card.minutes],
+    ];
+    for (const [className, text] of parts) {
+      if (!text) continue;
+      const span = document.createElement('span');
+      span.className = className;
+      span.textContent = text;
+      item.append(span);
+    }
+    return item;
+  }
+
+  // The Today coach thread: one result card per finished block in plan order, then the coach's
+  // lines. Built with createElement and textContent only. Continue is shown only while a session
+  // runs with no block under way, so it is never a second start beside a playing block.
+  function setCoach(view = {}) {
+    const source = view && typeof view === 'object' ? view : {};
+    const blocks = Array.isArray(source.blocks) ? source.blocks : [];
+    const lines = Array.isArray(source.lines) ? source.lines : [];
+    const nodes = blocks
+      .filter(block => block && typeof block === 'object' && block.result && typeof block.result === 'object')
+      .map(resultCardNode);
+    for (const line of lines) {
+      const text = coachLineText(line, blocks);
+      if (!text) continue;
+      const item = document.createElement('li');
+      item.className = 'coach-line';
+      item.textContent = text;
+      nodes.push(item);
+    }
+    $('coachThread').replaceChildren(...nodes);
+    const button = $('coachContinue');
+    button.hidden = !(source.state === 'running' && !blocks.some(block => block && block.state === 'now'));
+    button.textContent = coachContinueText(blocks);
   }
 
   // The result panel's boundary, in the approved order, and the panel's mirror of the same row.
@@ -3196,11 +3402,16 @@ export function createPanels({
   // The block boundary: one token naming the block and four neutral verbs, exactly one of which
   // carries the fill. The accent moves here and nowhere else — `next`, `skip`, `repeat` or `end`
   // names the owner, and a `stop` recommendation matches none, so all four stay neutral.
-  function setSessionBoundary({ visible = false, index = 0, total = 5, kind = 'focus', accentKey = 'next' } = {}) {
+  // Once the block has a result the token also names its light change (TODAY-02), so a player
+  // who never opens Today mid-session still sees it.
+  function setSessionBoundary({
+    visible = false, index = 0, total = 5, kind = 'focus', accentKey = 'next', fromLevel, toLevel,
+  } = {}) {
     const at = Number.isInteger(index) ? Math.max(0, index) : 0;
     const size = Number.isFinite(total) && total > 0 ? Math.trunc(total) : 5;
     const name = Object.hasOwn(SESSION_BLOCK_NAMES, kind) ? SESSION_BLOCK_NAMES[kind] : SESSION_BLOCK_NAMES.focus;
-    $('sessionBoundaryToken').textContent = `Block ${Math.min(at + 1, size)} of ${size} · ${name}`;
+    const change = Number.isInteger(fromLevel) && Number.isInteger(toLevel) ? ` · ${lightChangeText(fromLevel, toLevel)}` : '';
+    $('sessionBoundaryToken').textContent = `Block ${Math.min(at + 1, size)} of ${size} · ${name}${change}`;
     boundaryVisible = !!visible;
     for (const action of BOUNDARY_ACTIONS) {
       const owner = boundaryVisible && action.accent !== null && action.accent === accentKey;
@@ -3802,6 +4013,80 @@ export function createPanels({
     $('allSkillsList').replaceChildren(...rows.map(row => skillRowNode(row, now)));
   }
 
+  // ---------- Light levels by family (PROG-09) ----------
+  // One row per family: name + total, an aria-hidden stacked bar and a visible count line
+  // naming all five buckets, so the colour never carries the number alone.
+  function renderFamilyBars(rows) {
+    const counts = familyLevelCounts(rows);
+    $('familyBars').replaceChildren(...LIGHT_FAMILIES.map(family => {
+      const buckets = counts[family];
+      const total = buckets.reduce((sum, n) => sum + n, 0);
+      const row = document.createElement('div');
+      row.className = 'family-row';
+      row.dataset.family = family;
+      const name = document.createElement('div');
+      name.className = 'family-name';
+      name.textContent = `${FAMILY_NAMES[family]} · ${countText(total, 'skill', 'skills')}`;
+      const bar = document.createElement('div');
+      bar.className = 'family-bar';
+      bar.setAttribute('aria-hidden', 'true');
+      bar.append(...buckets.map((n, i) => {
+        const seg = document.createElement('span');
+        seg.className = 'family-seg';
+        seg.dataset.bucket = FAMILY_BUCKETS[i];
+        const pct = total > 0 ? Math.max(0, Math.min(100, (n / total) * 100)) : 0;
+        seg.style.width = `${Math.round(pct * 100) / 100}%`;
+        seg.hidden = n === 0;
+        return seg;
+      }));
+      const count = document.createElement('p');
+      count.className = 'family-count';
+      count.textContent = total === 0
+        ? 'Nothing yet'
+        : buckets.map((n, i) => `${n} ${FAMILY_BUCKET_NAMES[i]}`).join(' · ');
+      row.append(name, bar, count);
+      return row;
+    }));
+  }
+
+  // ---------- The neck you own (PROG-08) ----------
+  // 120 own-cell nodes built on first render, then only data-level changes. The grid is
+  // aria-hidden and has no listeners: the visible box list is its text alternative, and it
+  // is a different class from the live board so nothing here can reach audition or LEDs.
+  let ownedCells = null;
+  function renderOwnedNeck(rows) {
+    const view = ownedNeckView(rows);
+    if (!ownedCells) {
+      ownedCells = new Map();
+      const nodes = [];
+      for (let f = 0; f <= OWNED_FRETS; f++) {
+        for (let s = 6; s >= 1; s--) {
+          const node = document.createElement('div');
+          node.className = 'own-cell';
+          node.dataset.fret = String(f);
+          ownedCells.set(`${s}:${f}`, node);
+          nodes.push(node);
+        }
+      }
+      $('ownedNeck').replaceChildren(...nodes);
+    }
+    ownedCells.forEach((node, key) => {
+      // A box recorded but never played clean (-1) is listed as Not started, never shaded.
+      if (!view.cells.has(key) || view.cells.get(key) < 0) { delete node.dataset.level; return; }
+      const level = String(view.cells.get(key));
+      if (node.dataset.level !== level) node.dataset.level = level;
+    });
+    const hasBoxes = view.boxes.length > 0;
+    $('ownedList').hidden = !hasBoxes;
+    $('ownedEmpty').hidden = hasBoxes;
+    $('ownedList').replaceChildren(...view.boxes.map(box => {
+      const item = document.createElement('li');
+      item.className = 'own-item';
+      item.textContent = `${box.label} — ${ownedLevelName(box.level)}`;
+      return item;
+    }));
+  }
+
   function setProgressPanel(view = {}) {
     const now = Number.isFinite(view.now) ? view.now : Date.now();
     const totals = view.totals || {};
@@ -3825,6 +4110,8 @@ export function createPanels({
     // Zero recorded skills (or an unreadable plane) renders the empty state instead of
     // empty lists; the Backup section always stays available.
     const empty = all.length === 0;
+    $('ownedSection').hidden = empty;
+    $('familySection').hidden = empty;
     $('historySection').hidden = empty;
     $('dueSection').hidden = empty;
     $('skillsSection').hidden = empty;
@@ -3832,6 +4119,8 @@ export function createPanels({
     // is recorded, present with its own empty line in a populated panel.
     $('chordPairSection').hidden = empty;
     $('progressEmpty').hidden = !empty;
+    renderOwnedNeck(empty ? [] : all);
+    renderFamilyBars(empty ? [] : all);
     if (!empty) {
       renderHistory(sessions);
       renderDue(due, now);
@@ -4111,6 +4400,16 @@ export function createPanels({
     $('nextQuestion').addEventListener('click', () => onNextQuestion());
 
     $('startSession').addEventListener('click', () => onSessionStart());
+    // The coach's Continue is the same CONTINUE handler as `Next block`: one dispatcher (09-01).
+    $('coachContinue').addEventListener('click', () => onSessionNext());
+    // One delegated listener for every row's Start; the index is parsed and checked here and
+    // again by the reducer, which refuses anything but a pending block with a target.
+    $('sessionBlocks').addEventListener('click', e => {
+      const button = e && e.target && typeof e.target.closest === 'function' ? e.target.closest('button.session-block-start') : null;
+      if (!button || !button.dataset) return;
+      const index = Number.parseInt(button.dataset.index, 10);
+      if (Number.isInteger(index)) onSessionPick(index);
+    });
     // The boundary's four verbs and their panel mirror call the same four handlers, so the two
     // containers can never disagree about what `Next block`, `Skip`, `Repeat` or `End session`
     // does. `Done` is the summary's own way out and does exactly what `Hide session` does.
@@ -4317,7 +4616,7 @@ export function createPanels({
     setNavLocked,
     openMore, closeMore, isMoreOpen,
     setProgressPanel, setProgressOpen, isProgressOpen, focusProgressHead,
-    setSessionPanel, setSessionOpen, isSessionOpen, setSessionButton, focusSessionHead,
+    setSessionPanel, setCoach, setSessionOpen, isSessionOpen, setSessionButton, focusSessionHead,
     setLesson, setLessonOpen, isLessonOpen, focusLessonHead,
     setTunerOpen, setTunerReading, setTunerMessage,
     setSessionBoundary, setSessionSummary, setSessionView, setPractiseView, setRecommendation,

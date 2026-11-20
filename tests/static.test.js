@@ -22,12 +22,14 @@ import {
   lessonGuideView, chordPlacementText, lessonFinger, lessonVideosView, lessonDemoView,
   CAPABILITIES_READY, CAPABILITY_ITEMS, capabilityLineText, DIMMER_COPY, dimmerView,
   GUIDED_LINE, guidedResultView, withHintsSubText, passReviewView,
+  COACH_LINES, RESULT_OUTCOME_WORDS, coachContinueText, coachLineText, lightChangeText, resultCardView,
+  HINT_LEVEL_NAMES, ownedNeckView,
 } from '../app/src/panels.js';
 import { WAKE_STATES } from '../app/src/wakelock.js';
 import { emptySession, nextSuggestionOf, sessionSummaryOf } from '../app/src/session.js';
-import { LESSONS, lessonFor, progressionById, songById } from '../app/src/content.js';
+import { CHORD_PAIRS, LESSONS, PROGRESSIONS, SCALES, SONGS, lessonFor, progressionById, songById } from '../app/src/content.js';
 import { buildPlayAlongChart, buildScaleRunChart, createRun, reduce, summarizeDrill } from '../app/src/drills.js';
-import { expandProgression } from '../app/src/theory.js';
+import { expandProgression, positionsForScale } from '../app/src/theory.js';
 import { classNameFor, labelFor } from '../app/src/fretboard.js';
 import { buildQuestions, chipsFor, promptText, questionMode } from '../app/src/quiz.js';
 import { POOL, NAMES, DEGREES, INTERVALS, INTERVAL_NAMES, seededRng } from './fixtures/quiz.js';
@@ -4124,6 +4126,26 @@ function stubDocument(dots, extra = new Map()) {
   };
 }
 
+// CR-01 (Phase 9 review): main called `panels.sessionAnnouncementText`, a module export the
+// instance never carried, so every session block's result threw inside dispatch(). Every
+// `panels.<name>(` call in main must name a member of the real `createPanels` return object.
+test('every panels.<name>( call in main.js exists on the object createPanels returns', () => {
+  const { document: fake } = stubDocument([]);
+  const saved = globalThis.document;
+  globalThis.document = fake;
+  let members;
+  try {
+    members = createPanels({});
+  } finally {
+    globalThis.document = saved;
+  }
+  const main = fs.readFileSync(`${SRC_DIR}main.js`, 'utf8');
+  const called = [...new Set([...main.matchAll(/\bpanels\.([A-Za-z_$][\w$]*)\s*\(/g)].map(m => m[1]))];
+  assert.ok(called.length > 20, 'main calls the panels instance');
+  const missing = called.filter(name => typeof members[name] !== 'function');
+  assert.deepEqual(missing, []);
+});
+
 test('renderBeat hides the fourth dot and words the third beat for a 3/4 chart', () => {
   const dots = Array.from({ length: 4 }, () => stubElement());
   const { byId, document: fake } = stubDocument(dots);
@@ -4263,10 +4285,12 @@ test('the play-along skill labels name the item, the section and the key', () =>
 test('the Progress panel lists play-along skills and Practise seeds them without starting', () => {
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   const main = read('main.js');
-  // A-64: no new Progress section and no second table — the play-alongs ride the two lists.
+  // A-64, rewritten for Phase 9: the play-alongs still ride the two lists; the only new
+  // Progress sections are the read-only light-level views (PROG-08/09), never a second table.
   assert.deepEqual(
     [...html.matchAll(/id="(\w+Section)"/g)].map(match => match[1]),
-    ['historySection', 'dueSection', 'skillsSection', 'chordPairSection', 'backupSection'],
+    ['ownedSection', 'familySection', 'historySection', 'dueSection', 'skillsSection', 'chordPairSection', 'backupSection'],
+    'Phase 9 adds the neck-you-own and family bars sections and no other Progress section',
   );
   assert.equal((html.match(/id="skillList"/g) || []).length, 1, 'one Skills list');
   assert.equal((html.match(/id="dueList"/g) || []).length, 1, 'one Due list');
@@ -4456,7 +4480,7 @@ test('the plan view renders the five approved block names, the total and the ele
   assert.match(panels, /minutes\.className = 'session-block-min';/);
   assert.match(panels, /state\.className = 'session-block-state';/);
   assert.match(panels, /reason\.className = 'session-block-reason';/);
-  assert.match(panels, /item\.append\(name, minutes, reason, state\);/);
+  assert.match(panels, /item\.append\(name, minutes, reason, state, start\);/);
   assert.match(panels, /\$\('sessionBlocks'\)\.replaceChildren\(\.\.\.blocks\.map/);
   // No new live region and no alert role: the one announcer still carries every message.
   assert.equal((html.match(/aria-live=/g) || []).length, 1, 'still exactly one live region');
@@ -4566,9 +4590,10 @@ test('a free-choice seed closes the Session panel and clears the block marker', 
     const rest = main.slice(start, start + 4000);
     assert.match(rest, /pendingBlock = null;/, `${body} clears the block marker`);
   }
-  // A failed start clears the marker in the one place every drill event passes through, so
-  // `startDrill`'s own body stays untouched.
-  assert.match(main, /if \(event\.type === 'START_FAILED'\) pendingBlock = null;/);
+  // A failed start is judged in the one place every drill event passes through, so
+  // `startDrill`'s own body stays untouched: a run left paused at Resume keeps the block (WR-04),
+  // a refused start releases it.
+  assert.match(main, /if \(event\.type === 'START_FAILED' && !\(before === 'idle' && run\.phase === 'paused'\)\) releaseBlock\(\);/);
   // The one credit site is the existing result transition, and nothing else credits a block.
   assert.equal((main.match(/type: 'BLOCK_DONE'/g) || []).length, 1, 'one BLOCK_DONE dispatch');
   assert.equal((main.match(/recordResult\(\)/g) || []).length, 3, 'the transition, the self-report upsert and the definition');
@@ -5072,6 +5097,8 @@ test('the four session announcements ride the one live region, and a block resul
   for (const type of ['CONTINUE', 'SKIP', 'REPEAT', 'END']) {
     assert.match(main, new RegExp(`dispatchSession\\(\\{ type: '${type}' \\}\\)`), `${type} is dispatched by its one handler`);
   }
+  // 09-01: START_AT, the out-of-order pick, has exactly one dispatcher too.
+  assert.equal((main.match(/dispatchSession\(\{ type: 'START_AT', index \}\)/g) || []).length, 1, 'START_AT is dispatched by its one handler');
 });
 
 test('the Practise view lists five family rows and its seeds never start a pass', () => {
@@ -5287,7 +5314,7 @@ test('the badge, the two plain lines and the anchor are pinned, and no module ke
 test('the Phase 5 residual fixes hold: state-last rows and an inert Start session under way', () => {
   const panels = read('panels.js');
   // The screen-reader order is name → minutes → reason → state (UI-SPEC:724-725).
-  assert.match(panels, /item\.append\(name, minutes, reason, state\);/);
+  assert.match(panels, /item\.append\(name, minutes, reason, state, start\);/);
   // Start session is disabled and unfilled whenever it cannot act.
   assert.match(panels, /\$\('startSession'\)\.disabled = blocks\.length === 0 \|\| source\.state !== 'idle';/);
   assert.match(panels, /\$\('startSession'\)\.classList\.toggle\('cta', source\.state === 'idle'\);/);
@@ -5735,4 +5762,585 @@ test('FADE-09 #passGuided follows the decision line and is written with textCont
   assert.match(result, /guidedResultView\(summary\)/);
   assert.match(result, /\$\('withHintsSub'\)\.textContent = withHintsSubText\(withHints\);/);
   assert.equal((panels.match(/Guided — you asked for more light/g) || []).length, 1);
+});
+
+// ---------- 09-01: block result + coach thread (TODAY-02) ----------
+// The words of a result card and the coach's lines are pure panels formatters over the reducer's
+// result record and message keys; the stub DOM proves the thread and the one Continue.
+test('09-01 result card words: outcome, light change with the four level names, guided line', () => {
+  assert.equal(lightChangeText(0, 1), 'Full pattern → Anchors');
+  assert.equal(lightChangeText(3, 3), 'Stayed at No lights');
+  assert.equal(lightChangeText(-2, 99), 'Full pattern → No lights', 'levels are clamped');
+  assert.deepEqual(RESULT_OUTCOME_WORDS, { clean: 'Clean', shaky: 'Shaky', guided: 'Guided', skipped: 'Skipped', stopped: 'Stopped early' });
+  const clean = resultCardView({
+    kind: 'warmup', result: { outcome: 'clean', fromLevel: 0, toLevel: 1, guided: false, activeMs: 120000, seq: 1 },
+  });
+  assert.deepEqual(clean, { title: 'Warm-up', outcome: 'Clean', change: 'Full pattern → Anchors', guided: '', minutes: '2 min' });
+  const guided = resultCardView({
+    kind: 'focus', result: { outcome: 'guided', fromLevel: 1, toLevel: 1, guided: true, activeMs: 30000, seq: 2 },
+  });
+  assert.equal(guided.outcome, 'Guided');
+  assert.equal(guided.change, 'Stayed at Anchors');
+  assert.equal(guided.guided, GUIDED_LINE);
+  const skipped = resultCardView({ kind: 'recall', result: { outcome: 'skipped', seq: 3 } });
+  assert.deepEqual(skipped, { title: 'Recall', outcome: 'Skipped', change: '', guided: '', minutes: '' });
+  // Garbage never throws.
+  assert.equal(resultCardView(null).title, 'Focus');
+  assert.equal(resultCardView({ result: { outcome: 'constructor' } }).outcome, 'Shaky');
+});
+
+test('09-01 coach lines: keys become sentences, unknown and prototype keys are silent', () => {
+  const blocks = [
+    { kind: 'warmup', state: 'done', result: { outcome: 'clean', fromLevel: 0, toLevel: 1, guided: false, activeMs: 60000, seq: 1 } },
+    { kind: 'focus', state: 'pending', reasonKey: 'alwaysFirst', reasonValues: {} },
+  ];
+  // 09-02: a result line with no values of its own reads the block's stored result.
+  assert.equal(coachLineText({ key: 'result', values: { index: 0 } }, blocks),
+    'Warm-up: clean at Anchors. You earned fewer lights — Full pattern → Anchors.');
+  assert.equal(
+    coachLineText({ key: 'next', values: { index: 1, kind: 'focus', reasonKey: 'alwaysFirst', reasonValues: {} } }, blocks),
+    'Next: Focus. Always first — a scale run to set your hands.',
+  );
+  assert.equal(coachLineText({ key: 'now', values: { index: 1, kind: 'recall' } }), 'Recall is under way in Practice.');
+  assert.match(coachLineText({ key: 'finish' }), /Finish session/);
+  for (const key of ['constructor', 'toString', '__proto__', 'nope', '', 7]) {
+    assert.equal(coachLineText({ key }), '', `${String(key)} is silent`);
+  }
+  assert.equal(coachLineText(null), '');
+  assert.deepEqual(Object.keys(COACH_LINES), ['intro', 'result', 'next', 'now', 'finish', 'allDone']);
+  assert.equal(coachContinueText(blocks), 'Continue: Focus');
+  assert.equal(coachContinueText([{ kind: 'warmup', state: 'done' }]), 'Finish session');
+  // No markup path: the coach renderer writes text only.
+  const panels = read('panels.js');
+  const coach = panels.slice(panels.indexOf('function resultCardNode('), panels.indexOf('function setCoach('));
+  assert.ok(!/innerHTML|insertAdjacentHTML/.test(coach));
+});
+
+function coachStub(callbacks = {}) {
+  const dots = Array.from({ length: 4 }, () => stubElement());
+  const handlers = {};
+  const listening = id => {
+    const el = stubElement(id);
+    el.addEventListener = (type, handler) => { handlers[`${id}:${type}`] = handler; };
+    return el;
+  };
+  const extra = new Map([
+    ['loop', loopSelectStub()], ['coachContinue', listening('coachContinue')], ['sessionBlocks', listening('sessionBlocks')],
+  ]);
+  const { byId, document: fake } = stubDocument(dots, extra);
+  return { byId, fake, handlers, callbacks };
+}
+function withCoachPanels(callbacks, run) {
+  const stub = coachStub(callbacks);
+  const saved = globalThis.document;
+  globalThis.document = stub.fake;
+  try {
+    return run({ panels: createPanels(callbacks), ...stub });
+  } finally {
+    if (saved === undefined) delete globalThis.document;
+    else globalThis.document = saved;
+  }
+}
+
+test('09-01 setCoach renders result cards then coach lines, and one Continue while between blocks', () => {
+  let continued = 0;
+  withCoachPanels({ onSessionNext: () => { continued += 1; } }, ({ panels, byId, handlers }) => {
+    const blocks = [
+      { index: 0, kind: 'warmup', minutes: 2, state: 'done', reasonKey: 'alwaysFirst', reasonValues: {}, target: {},
+        result: { outcome: 'clean', fromLevel: 0, toLevel: 1, guided: true, activeMs: 60000, seq: 1 } },
+      { index: 1, kind: 'focus', minutes: 3, state: 'skipped', reasonKey: 'alwaysFirst', reasonValues: {}, target: {},
+        result: { outcome: 'skipped', seq: 2 } },
+      { index: 2, kind: 'new', minutes: 3, state: 'pending', reasonKey: 'alwaysFirst', reasonValues: {}, target: {} },
+    ];
+    const lines = [{ key: 'result', values: { index: 1 } }, { key: 'next', values: { index: 2, kind: 'new', reasonKey: 'alwaysFirst', reasonValues: {} } }];
+    panels.setCoach({ lines, blocks, state: 'running' });
+    const thread = byId.get('coachThread').children;
+    assert.deepEqual(thread.map(node => node.className), ['result-card', 'result-card', 'coach-line', 'coach-line']);
+    assert.deepEqual(thread[0].children.map(node => node.className),
+      ['result-card-title', 'result-card-outcome', 'result-card-change', 'result-card-guided', 'result-card-min']);
+    assert.deepEqual(thread[0].children.map(node => node.textContent), ['Warm-up', 'Clean', 'Full pattern → Anchors', GUIDED_LINE, '1 min']);
+    assert.deepEqual(thread[1].children.map(node => node.textContent), ['Focus', 'Skipped']);
+    assert.equal(thread[2].textContent, 'You skipped Focus. It stays on the list for another day.');
+    assert.equal(byId.get('coachContinue').hidden, false);
+    assert.equal(byId.get('coachContinue').textContent, 'Continue: New material');
+    handlers['coachContinue:click']();
+    assert.equal(continued, 1, 'Continue dispatches the one CONTINUE handler');
+    // A block under way: no Continue. Idle: no Continue. Nothing pending: Finish session.
+    panels.setCoach({ lines: [], blocks: [{ ...blocks[2], state: 'now' }], state: 'running' });
+    assert.equal(byId.get('coachContinue').hidden, true);
+    panels.setCoach({ lines: [], blocks, state: 'idle' });
+    assert.equal(byId.get('coachContinue').hidden, true);
+    panels.setCoach({ lines: [{ key: 'finish' }], blocks: blocks.slice(0, 2), state: 'running' });
+    assert.equal(byId.get('coachContinue').textContent, 'Finish session');
+    assert.equal(byId.get('coachContinue').hidden, false);
+    // The panel's own Next block is hidden in Today, so Continue is the only one.
+    panels.setSessionPanel({ state: 'running', plan: { totalMinutes: 13, blocks } });
+    assert.equal(byId.get('panelNextBlock').hidden, true);
+    assert.equal(byId.get('sessionPanelActions').hidden, false);
+  });
+});
+
+test('09-01 the Today greeting holds the coach thread and Continue; main paints the coach', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const greeting = html.slice(html.indexOf('class="today-greeting"'), html.indexOf('id="sessionPanel"'));
+  assert.match(greeting, /<ol class="coach-thread" id="coachThread"><\/ol>/);
+  assert.match(greeting, /<button type="button" class="cta" id="coachContinue" hidden>Continue<\/button>/);
+  assert.ok(!html.includes('Each block says why it was chosen'));
+  assert.match(html, /\.result-card \{[^}]*border-left: 4px solid var\(--muted\)/);
+  const main = read('main.js');
+  const enter = main.slice(main.indexOf('function enterToday('), main.indexOf('function closeSession('));
+  assert.match(enter, /panels\.setSessionPanel\(sessionView\(\)\);\n\s*const coach = coachView\(\);\n\s*panels\.setCoach\(coach\);/);
+  assert.match(main, /lines: coachScript\(\{ session, plan, startLevels: sessionStartLevels\(plan\), facts \}\),/);
+});
+
+// ---------- 09-01: pickable rows (TODAY-03) ----------
+// Every pending row with a target carries its own Start; one delegated listener on the list hands
+// the integer index to main, which dispatches START_AT through the one block start path.
+test('09-01 each pending block row has a Start button that calls onSessionPick with its index', () => {
+  const picks = [];
+  withCoachPanels({ onSessionPick: index => picks.push(index) }, ({ panels, byId, handlers }) => {
+    const blocks = [
+      { index: 0, kind: 'warmup', minutes: 2, state: 'done', reasonKey: 'alwaysFirst', reasonValues: {}, target: { tab: 'scales' } },
+      { index: 1, kind: 'focus', minutes: 3, state: 'pending', reasonKey: 'alwaysFirst', reasonValues: {}, target: { tab: 'scales' } },
+      { index: 2, kind: 'new', minutes: 3, state: 'skipped', reasonKey: 'unavailable', reasonValues: {}, target: null },
+      { index: 3, kind: 'play', minutes: 3, state: 'pending', reasonKey: 'noPlayAlong', reasonValues: {}, target: null },
+      { index: 4, kind: 'recall', minutes: 2, state: 'pending', reasonKey: 'recallFocus', reasonValues: {}, target: { tab: 'scales' } },
+    ];
+    panels.setSessionPanel({ state: 'running', plan: { totalMinutes: 13, blocks } });
+    const rows = byId.get('sessionBlocks').children;
+    const starts = rows.map(row => row.children[4]);
+    assert.deepEqual(starts.map(node => node.className), Array(5).fill('session-block-start'));
+    assert.deepEqual(starts.map(node => node.textContent), Array(5).fill('Start'));
+    assert.deepEqual(starts.map(node => node.hidden), [true, false, true, true, false]);
+    assert.deepEqual(starts.map(node => node.disabled), [true, false, true, true, false]);
+    assert.equal(starts[1].attrs['aria-label'], 'Start block 2: Focus');
+    assert.equal(starts[4].attrs['aria-label'], 'Start block 5: Recall');
+    assert.equal(starts[4].dataset.index, '4');
+    // One delegated listener: a click inside a Start reaches onSessionPick with an integer.
+    const click = target => handlers['sessionBlocks:click']({ target: { closest: () => target } });
+    click(starts[4]);
+    click(starts[1]);
+    click(null);
+    click({ dataset: { index: 'x' } });
+    assert.deepEqual(picks, [4, 1]);
+  });
+});
+
+test('09-01 main picks a block through START_AT and never starts a drill directly', () => {
+  const main = read('main.js');
+  assert.equal((main.match(/function sessionPick\(/g) || []).length, 1);
+  const pick = main.slice(main.indexOf('function startSessionAt('), main.indexOf('// ---------- The Practise view'));
+  assert.match(pick, /if \(!Number\.isInteger\(index\) \|\| stageOwned\(\) \|\| startingDrill\) return;/);
+  assert.match(pick, /if \(session\.state === 'idle'\) startSessionAt\(index\);/);
+  assert.match(pick, /dispatchSession\(\{ type: 'START_AT', index \}\)/);
+  assert.match(pick, /sessionReduce\(\{ \.\.\.session, plan: previewPlan \}, \{ type: 'START_AT', index, now: Date\.now\(\) \}\)/);
+  assert.ok(!/startDrill\(/.test(pick), 'START_AT reaches seedBlock through its effect, never startDrill');
+  assert.match(main, /onSessionPick: sessionPick,/);
+  const panels = read('panels.js');
+  assert.match(panels, /onSessionPick = \(\) => \{\}/);
+  assert.match(panels, /\$\('sessionBlocks'\)\.addEventListener\('click', e => \{/);
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  assert.match(html, /\.session-block-start \{[^}]*justify-self: end;/);
+});
+
+// ---------- 09-02: coach conversation (TODAY-01) ----------
+// The next line names the level the block will really start at: main resolves it through the same
+// chart id and the same start-level rule the drill uses, and recall or due blocks are No lights.
+test('09-02 the next line names the real start level from main.sessionStartLevels', () => {
+  const blocks = [{ kind: 'focus', state: 'pending', reasonKey: 'alwaysFirst', reasonValues: {} }];
+  assert.equal(
+    coachLineText({ key: 'next', values: { index: 0, kind: 'focus', level: 1, reasonKey: 'alwaysFirst', reasonValues: {} } }, blocks),
+    'Next: Focus at Anchors. Always first — a scale run to set your hands.',
+  );
+  assert.equal(
+    coachLineText({ key: 'next', values: { index: 0, kind: 'recall', level: 3, reasonKey: 'recallFocus', reasonValues: {} } }, blocks),
+    'Next: Recall at No lights. No lights — the focus skill, played unaided.',
+  );
+  const main = read('main.js');
+  const levels = main.slice(main.indexOf('function sessionStartLevels('), main.indexOf('function coachView('));
+  assert.match(levels, /block\.kind === 'recall' \|\| block\.reasonKey === 'due'/);
+  assert.match(levels, /FADE\.recallLevel/);
+  assert.match(levels, /startLevelFor\(progress, chartIdFor\(block\.target\)\)/);
+  assert.match(levels, /const progress = store\.getProgress\(\);/);
+  const coach = main.slice(main.indexOf('function coachView('), main.indexOf('function enterToday('));
+  assert.match(coach, /startLevels: sessionStartLevels\(plan\)/);
+  assert.match(main, /\bchartIdFor,?\s/, 'main imports chartIdFor from drills.js');
+});
+
+test('09-02 coach conversation: intro, honest result lines and the closing line', () => {
+  assert.equal(coachLineText({ key: 'intro', values: { blocks: 5, minutes: 13, due: 0, streak: 0, noHistory: true } }),
+    'Your first session: 5 blocks, about 13 minutes.');
+  assert.equal(coachLineText({ key: 'intro', values: { blocks: 5, minutes: 13, due: 2, streak: 4, noHistory: false } }),
+    'Today: 5 blocks, about 13 minutes. 2 reviews due. You are on a 4-day streak.');
+  assert.equal(coachLineText({ key: 'intro', values: { blocks: 4, minutes: 11, due: 1, streak: 0 } }),
+    'Today: 4 blocks, about 11 minutes. 1 review due.');
+  const line = values => coachLineText({ key: 'result', values: { index: 0, kind: 'focus', ...values } });
+  assert.equal(line({ outcome: 'clean', fromLevel: 0, toLevel: 2, guided: false }),
+    'Focus: clean at Hint on demand. You earned fewer lights — Full pattern → Hint on demand.');
+  assert.equal(line({ outcome: 'clean', fromLevel: 1, toLevel: 1, guided: false }), 'Focus: clean — you held Anchors.');
+  // Never praise a guided pass as unaided (T-09-06).
+  for (const level of [0, 1, 2, 3]) {
+    const guided = line({ outcome: 'guided', fromLevel: level, toLevel: level, guided: true });
+    assert.ok(guided.startsWith(GUIDED_LINE), guided);
+    assert.ok(!/clean/i.test(guided), guided);
+  }
+  assert.equal(line({ outcome: 'shaky', fromLevel: 2, toLevel: 2 }), 'Focus: not clean yet, so it stays at Hint on demand. Another pass will get there.');
+  assert.equal(line({ outcome: 'skipped' }), 'You skipped Focus. It stays on the list for another day.');
+  assert.equal(line({ outcome: 'stopped', fromLevel: 1, toLevel: 1 }), 'Focus: stopped early — it stays at Anchors.');
+  assert.equal(coachLineText({ key: 'allDone', values: { completed: 4, skipped: 1 } }), 'Session done — 4 blocks played, 1 skipped. Your summary is below.');
+  assert.equal(coachLineText({ key: 'allDone', values: { completed: 1, skipped: 0 } }), 'Session done — 1 block played. Your summary is below.');
+  for (const values of [null, 'x', 7, []]) {
+    for (const key of Object.keys(COACH_LINES)) assert.equal(typeof coachLineText({ key, values }), 'string');
+  }
+});
+
+test('09-02 coach conversation: every next line for every curated item and level stays short', () => {
+  const reasons = [];
+  const push = (reasonKey, reasonValues) => reasons.push({ reasonKey, reasonValues });
+  for (const key of ['alwaysFirst', 'noHistory', 'noPlayAlong', 'recallFocus', 'unavailable']) push(key, {});
+  const scaleContents = [];
+  for (const scale of SCALES) {
+    for (let keyPc = 0; keyPc < 12; keyPc += 1) {
+      for (const positionId of ['all', ...positionsForScale(keyPc, scale).map(p => p.id)]) scaleContents.push({ scaleId: scale.id, keyPc, positionId });
+    }
+  }
+  const skillReasons = ['due', 'leastPlayed', 'newToYou'];
+  for (const reasonKey of skillReasons) {
+    for (const content of scaleContents) {
+      push(reasonKey, { kind: 'scaleRun', content });
+      push(reasonKey, { kind: 'findNote', content: { ...content, quizQuestion: 'interval', quizMode: 'name' } });
+    }
+    for (const pair of CHORD_PAIRS) push(reasonKey, { kind: 'chordChanges', content: { pairId: pair.id } });
+    for (const prog of PROGRESSIONS) {
+      for (let keyPc = 0; keyPc < 12; keyPc += 1) push(reasonKey, { kind: 'progression', content: { progressionId: prog.id, keyPc } });
+    }
+  }
+  for (const pair of CHORD_PAIRS) push('weakestPair', { pairId: pair.id, chords: [], changesPerMin: 999 });
+  for (const prog of PROGRESSIONS) {
+    for (let keyPc = 0; keyPc < 12; keyPc += 1) push('weakestProgression', { progressionId: prog.id, keyPc });
+  }
+  for (const song of SONGS) {
+    for (const section of song.sections) {
+      for (let keyPc = 0; keyPc < 12; keyPc += 1) {
+        for (const reasonKey of skillReasons) push(reasonKey, { kind: 'song', content: { songId: song.id, sectionId: section.id, keyPc } });
+        push('dueSong', { songId: song.id, sectionId: section.id, keyPc });
+      }
+    }
+  }
+  // The prefix depends only on block and level, so the longest reason decides every item.
+  let longest = reasons[0];
+  for (const reason of reasons) {
+    const text = sessionReasonText({ reasonKey: reason.reasonKey, values: reason.reasonValues });
+    assert.ok(text.length > 0, reason.reasonKey);
+    if (text.length > sessionReasonText({ reasonKey: longest.reasonKey, values: longest.reasonValues }).length) longest = reason;
+  }
+  for (const kind of Object.keys(SESSION_BLOCK_NAMES)) {
+    for (const level of [0, 1, 2, 3]) {
+      const text = coachLineText({ key: 'next', values: { index: 0, kind, level, ...longest } });
+      assert.ok(text.includes(` at ${HINT_LEVEL_NAMES[level]}. `), text);
+      assert.ok(text.length > 0 && text.length <= 160, `${text.length}: ${text}`);
+    }
+  }
+});
+
+// The coach speaks once: enterToday announces the newest line only when its signature changed,
+// CLOSE resets it, and the reducer's effect path never voices a coach line.
+test('09-02 the newest coach line is announced once on a Today entry, never from the effect path', () => {
+  const main = read('main.js');
+  assert.ok((main.match(/lastCoachSignature/g) || []).length >= 3);
+  assert.match(main, /^let lastCoachSignature = '';$/m);
+  const enter = main.slice(main.indexOf('function enterToday('), main.indexOf('function closeSession('));
+  assert.match(enter, /const signature = coachSignatureOf\(coach\.lines, coach\.state\);/);
+  assert.match(enter, /if \(announce && signature && signature !== lastCoachSignature\) \{/);
+  // IN-03: only the boot restore passes announce: false; every tab entry announces as before.
+  assert.match(main, /function switchView\(name, \{ scroll = true, persist = true, announce = true \} = \{\}\)/);
+  assert.match(main, /function enterToday\(\{ announce = true \} = \{\}\)/);
+  assert.equal((main.match(/switchView\([^)]*announce: false/g) || []).length, 1, 'one quiet entry: the boot restore');
+  assert.match(main, /switchView\(settings\.view, \{ scroll: false, persist: false, announce: false \}\);/);
+  assert.match(enter, /lastCoachSignature = signature;/);
+  assert.match(enter, /const text = coachLineText\(coach\.lines\[coach\.lines\.length - 1\], coach\.blocks\);/);
+  assert.match(enter, /if \(text\) panels\.announce\(text\);/);
+  assert.equal((enter.match(/panels\.announce\(/g) || []).length, 1);
+  const close = main.slice(main.indexOf('function closeSession('), main.indexOf('function startSession('));
+  assert.match(close, /sessionReduce\(session, \{ type: 'CLOSE' \}\);\n\s*session = state;\n\s*lastCoachSignature = '';/);
+  const effects = main.slice(main.indexOf('function applySessionEffects('), main.indexOf('function sessionBoundaryPrefix('));
+  const dispatch = main.slice(main.indexOf('function dispatchSession('), main.indexOf('\n}\n', main.indexOf('function dispatchSession(')));
+  for (const body of [effects, dispatch]) {
+    assert.ok(body.length > 0);
+    assert.ok(!/coachLineText|coachSignatureOf/.test(body), 'the effect path never voices a coach line');
+  }
+  // The coach facts are the streak and the due count the Today badge reads (W1).
+  const coach = main.slice(main.indexOf('function coachView('), main.indexOf('let lastCoachSignature'));
+  assert.match(coach, /const view = progressView\(\);/);
+  assert.match(coach, /streak: view\.streak && Number\.isFinite\(view\.streak\.current\) \? view\.streak\.current : 0,/);
+  assert.match(coach, /dueCount: view\.dueCount,/);
+  assert.match(coach, /coachScript\(\{ session, plan, startLevels: sessionStartLevels\(plan\), facts \}\)/);
+  assert.ok(!/noLights/.test(coach), 'no unused facts');
+});
+
+test('09-02 the Practice boundary token names the light change once the block has a result', () => {
+  withCoachPanels({}, ({ panels, byId }) => {
+    panels.setSessionBoundary({ visible: true, index: 1, total: 5, kind: 'focus' });
+    assert.equal(byId.get('sessionBoundaryToken').textContent, 'Block 2 of 5 · Focus');
+    panels.setSessionBoundary({ visible: true, index: 1, total: 5, kind: 'focus', fromLevel: 0, toLevel: 1 });
+    assert.equal(byId.get('sessionBoundaryToken').textContent, 'Block 2 of 5 · Focus · Full pattern → Anchors');
+    panels.setSessionBoundary({ visible: true, index: 4, total: 5, kind: 'recall', fromLevel: 3, toLevel: 3 });
+    assert.equal(byId.get('sessionBoundaryToken').textContent, 'Block 5 of 5 · Recall · Stayed at No lights');
+    panels.setSessionBoundary({ visible: true, index: 0, total: 5, kind: 'warmup', fromLevel: '1', toLevel: null });
+    assert.equal(byId.get('sessionBoundaryToken').textContent, 'Block 1 of 5 · Warm-up');
+  });
+  const main = read('main.js');
+  const boundary = main.slice(main.indexOf('sessionBoundary: session.state'), main.indexOf('sessionOpen: panels.isSessionOpen()'));
+  assert.match(boundary, /\.\.\.boundaryResultOf\(session\.plan\.blocks\[session\.blockIndex\]\),/);
+  const helper = main.slice(main.indexOf('function boundaryResultOf('), main.indexOf('function sessionView('));
+  assert.match(helper, /result\.outcome === 'skipped'\) return \{\};/);
+  assert.match(helper, /return \{ fromLevel: result\.fromLevel, toLevel: result\.toLevel \};/);
+});
+
+test('09-02 the coach thread is one bubble list that wraps at 360px', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  // Flattened (09-01 follow-up): the greeting is not itself a coach bubble, so no bubble nests.
+  assert.match(html, /<section class="today-greeting" aria-labelledby="todayGreeting">/);
+  const greeting = html.slice(html.indexOf('class="today-greeting"'), html.indexOf('id="sessionPanel"'));
+  assert.ok(!greeting.includes('coach-bubble'), 'no coach bubble around the thread');
+  assert.equal((greeting.match(/class="coach-avatar"/g) || []).length, 1, 'one avatar for the thread');
+  assert.match(html, /\.coach-row \{[^}]*grid-template-columns: 32px minmax\(0, 1fr\)/);
+  assert.match(html, /\.coach-avatar \{[^}]*width: 32px; height: 32px/);
+  for (const selector of ['coach-line', 'result-card']) {
+    const rule = html.match(new RegExp(`\\.${selector} \\{[^}]*\\}`))[0];
+    assert.match(rule, /min-width: 0/);
+    assert.match(rule, /overflow-wrap: anywhere/);
+  }
+  assert.match(html, /\.today-greeting \{ min-width: 0; display: grid; gap: var\(--space-3\); \}/);
+});
+
+// ---------- 09-03: family bars (PROG-09) ----------
+const progressRow = (kind, content, bestLevel, cleanPasses, extra = {}) => ({
+  skillId: `${kind}:${JSON.stringify(content)}:${bestLevel}`, kind, content, bestLevel, cleanPasses,
+  bestBpm: 0, accuracy: null, medianTimingMs: null, micUsed: false, lastPlayedAt: null,
+  lastCleanRecallAt: null, masteredAt: null, retainedAt: null, dueAt: null, state: 'learning', ...extra,
+});
+const FAMILY_ROWS = [
+  progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 3, 2),
+  progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f3' }, 1, 1),
+  progressRow('findNote', { scaleId: 'major', keyPc: 0, positionId: 'all' }, 0, 0),
+  progressRow('chordChanges', { pairId: 'C-G' }, 2, 1),
+  progressRow(null, { pairId: 'G-D' }, 0, 1),
+];
+
+test('09-03: the Progress panel renders four family bars with written-out counts', () => {
+  withStubPanels(({ panels, byId }) => {
+    panels.setProgressPanel({ all: FAMILY_ROWS, skills: FAMILY_ROWS, sessions: [], due: [] });
+    assert.equal(byId.get('familySection').hidden, false);
+    assert.equal(byId.get('progressEmpty').hidden, true);
+    const rows = byId.get('familyBars').children;
+    assert.equal(rows.length, 4);
+    const [name, bar, count] = rows[0].children;
+    assert.equal(name.textContent, 'Scales · 3 skills');
+    assert.equal(bar.getAttribute('aria-hidden'), 'true');
+    assert.equal(bar.children.length, 5);
+    assert.deepEqual(bar.children.map(seg => seg.style.width), ['33.33%', '0%', '33.33%', '0%', '33.33%']);
+    assert.equal(count.textContent, '1 not started · 0 Full pattern · 1 Anchors · 0 Hint on demand · 1 No lights');
+    assert.deepEqual(rows.map(row => row.children[0].textContent),
+      ['Scales · 3 skills', 'Chords · 2 skills', 'Progressions · 0 skills', 'Songs · 0 skills']);
+    assert.equal(rows[1].children[2].textContent, '0 not started · 1 Full pattern · 0 Anchors · 1 Hint on demand · 0 No lights',
+      'a legacy kind:null pair row counts as a chord skill');
+    assert.equal(rows[2].children[2].textContent, 'Nothing yet');
+    assert.ok(rows[2].children[1].children.every(seg => seg.style.width === '0%'), 'an empty family keeps an empty track');
+    // Nothing recorded: the whole-panel rule hides the bars and shows the Phase 6 empty state.
+    panels.setProgressPanel({ all: [], skills: [], sessions: [], due: [] });
+    assert.equal(byId.get('familySection').hidden, true);
+    assert.equal(byId.get('progressEmpty').hidden, false);
+  });
+});
+
+test('09-03: family bar markup, tokens and the import from progress.js', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const panels = read('panels.js');
+  assert.match(panels, /import \{ daysBetween, familyLevelCounts, lightLevelOf, skillFamily, LIGHT_FAMILIES \} from '\.\/progress\.js';/);
+  assert.match(panels, /const empty = all\.length === 0;[\s\S]*\$\('familySection'\)\.hidden = empty;/);
+  assert.match(html, /<div class="progress-section" id="familySection">\s*<div class="stat-label">Light levels by family<\/div>\s*<div class="family-bars" id="familyBars"><\/div>/);
+  assert.ok(html.indexOf('id="progressTiles"') < html.indexOf('id="familySection"'));
+  assert.ok(html.indexOf('id="familySection"') < html.indexOf('id="historySection"'));
+  assert.equal((html.match(/--own-hint: #7fbf9f;/g) || []).length, 1, 'the mid-ramp token sits in the single :root block');
+  assert.match(html, /\.family-seg\[data-bucket="none"\] \{ background: var\(--mint\); \}/);
+  assert.match(html, /\.family-seg\[data-bucket="hint"\] \{ background: var\(--own-hint\); \}/);
+  const familyCss = html.split('\n').filter(line => line.startsWith('.family-')).join('\n');
+  assert.doesNotMatch(familyCss, /var\(--marigold\)/, 'lit-LED marigold is reserved for the board');
+  // Text only: no innerHTML anywhere in the family bar render.
+  const render = panels.slice(panels.indexOf('function renderFamilyBars('), panels.indexOf('function setProgressPanel('));
+  assert.ok(render.length > 0);
+  assert.doesNotMatch(render, /innerHTML/);
+});
+
+// ---------- 09-03: neck you own (PROG-08) ----------
+const boxCells = (keyPc, scaleId, positionId) => {
+  const box = positionsForScale(keyPc, SCALES.find(scale => scale.id === scaleId)).find(p => p.id === positionId);
+  const keys = [];
+  for (let s = 1; s <= 6; s++) for (let f = box.ranges[s][0]; f <= box.ranges[s][1]; f++) keys.push(`${s}:${f}`);
+  return keys;
+};
+
+test('09-03: ownedNeckView shades each scale box by its light level, max on overlap', () => {
+  const p1 = boxCells(9, 'minPent', 's6f0');
+  const p2 = boxCells(9, 'minPent', 's6f3');
+  const solo = ownedNeckView([progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 3, 2)]);
+  assert.deepEqual([...solo.cells.keys()].sort(), p1.slice().sort(), 'exactly the box cells');
+  assert.ok([...solo.cells.values()].every(level => level === 3));
+  assert.deepEqual(solo.boxes, [{ label: 'A minor pentatonic · Position 1', level: 3 }]);
+  const both = ownedNeckView([
+    progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f3' }, 1, 1),
+    progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 3, 2),
+  ]);
+  const overlap = p1.filter(key => p2.includes(key));
+  assert.ok(overlap.length > 0, 'the fixture boxes overlap');
+  overlap.forEach(key => assert.equal(both.cells.get(key), 3, `overlap ${key} keeps the max`));
+  p2.filter(key => !p1.includes(key)).forEach(key => assert.equal(both.cells.get(key), 1));
+  assert.deepEqual(both.boxes.map(box => box.label), ['A minor pentatonic · Position 1', 'A minor pentatonic · Position 2'], 'sorted by label');
+  // Skipped: whole neck, unknown or prototype scales, stale positions, non-scale kinds.
+  const skipped = ownedNeckView([
+    progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 'all' }, 3, 1),
+    progressRow('scaleRun', { scaleId: 'gone', keyPc: 9, positionId: 's6f0' }, 3, 1),
+    progressRow('scaleRun', { scaleId: 'constructor', keyPc: 9, positionId: 's6f0' }, 3, 1),
+    progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f99' }, 3, 1),
+    progressRow('chordChanges', { pairId: 'C-G', scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 3, 1),
+    progressRow('song', { songId: 'x', scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 3, 1),
+    null,
+  ]);
+  assert.equal(skipped.cells.size, 0);
+  assert.deepEqual(skipped.boxes, []);
+  assert.deepEqual(ownedNeckView('rows'), { cells: new Map(), boxes: [] });
+  // A not-started box still lists, at level -1, so the map and the bars agree.
+  const fresh = ownedNeckView([progressRow('findNote', { scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 0, 0)]);
+  assert.equal(fresh.boxes[0].level, -1);
+  assert.equal(fresh.boxes[0].label, 'Note finding · A minor pentatonic · Position 1');
+});
+
+test('09-03: a legacy kind:null scale row counts in the Scales bar and shades its box', () => {
+  const legacy = progressRow(null, { scaleId: 'minPent', keyPc: 9, positionId: 's6f5' }, 2, 1);
+  const view = ownedNeckView([legacy]);
+  const p3 = boxCells(9, 'minPent', 's6f5');
+  assert.deepEqual([...view.cells.keys()].sort(), p3.slice().sort());
+  assert.ok([...view.cells.values()].every(level => level === 2));
+  withStubPanels(({ panels, byId }) => {
+    panels.setProgressPanel({ all: [legacy], skills: [legacy], sessions: [], due: [] });
+    const scales = byId.get('familyBars').children[0];
+    assert.equal(scales.children[2].textContent, '0 not started · 0 Full pattern · 0 Anchors · 1 Hint on demand · 0 No lights');
+    const shaded = byId.get('ownedNeck').children.filter(cell => cell.dataset.level !== undefined);
+    assert.equal(shaded.length, p3.length);
+  });
+});
+
+test('09-03: the owned neck is built once, diff-rendered, and lists each box', () => {
+  withStubPanels(({ panels, byId }) => {
+    panels.setProgressPanel({ all: FAMILY_ROWS, skills: FAMILY_ROWS, sessions: [], due: [] });
+    assert.equal(byId.get('ownedSection').hidden, false);
+    const neck = byId.get('ownedNeck');
+    assert.equal(neck.children.length, 120, '6 strings × frets 0-19');
+    const first = neck.children.slice();
+    assert.ok(first.every(cell => cell.className === 'own-cell'), 'the Progress neck never reuses .cell');
+    // Row-major: fret 0 at the top, low E (string 6) in the left column.
+    const indexOf = key => { const [s, f] = key.split(':').map(Number); return f * 6 + (6 - s); };
+    const p1 = boxCells(9, 'minPent', 's6f0');
+    p1.forEach(key => assert.equal(first[indexOf(key)].dataset.level, '3', key));
+    assert.equal(first[indexOf('6:19')].dataset.level, undefined, 'outside every box has no level');
+    const items = byId.get('ownedList').children;
+    assert.deepEqual(items.map(li => li.textContent),
+      ['A minor pentatonic · Position 1 — No lights', 'A minor pentatonic · Position 2 — Anchors']);
+    assert.equal(byId.get('ownedList').hidden, false);
+    assert.equal(byId.get('ownedEmpty').hidden, true);
+    // A second render reuses the same nodes and clears levels that no longer apply.
+    const one = [progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f3' }, 0, 1)];
+    panels.setProgressPanel({ all: one, skills: one, sessions: [], due: [] });
+    assert.ok(neck.children.every((cell, i) => cell === first[i]), 'same 120 nodes');
+    assert.equal(first[indexOf('6:0')].dataset.level, undefined);
+    assert.equal(first[indexOf('6:3')].dataset.level, '0');
+    assert.deepEqual(byId.get('ownedList').children.map(li => li.textContent), ['A minor pentatonic · Position 2 — Full pattern']);
+    // Only whole-neck or non-scale skills: the list gives way to the microcopy, the grid stays bare.
+    const none = [progressRow('chordChanges', { pairId: 'C-G' }, 2, 1)];
+    panels.setProgressPanel({ all: none, skills: none, sessions: [], due: [] });
+    assert.equal(byId.get('ownedList').hidden, true);
+    assert.equal(byId.get('ownedEmpty').hidden, false);
+    assert.ok(neck.children.every(cell => cell.dataset.level === undefined));
+    // Nothing recorded: the whole-panel rule hides the section.
+    panels.setProgressPanel({ all: [], skills: [], sessions: [], due: [] });
+    assert.equal(byId.get('ownedSection').hidden, true);
+    assert.equal(byId.get('progressEmpty').hidden, false);
+  });
+});
+
+test('09-03: owned neck markup, legend, CSS and no path to the LEDs', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const panels = read('panels.js');
+  assert.match(html, /<div class="progress-section" id="ownedSection">\s*<div class="stat-label">The neck you own<\/div>/);
+  assert.ok(html.indexOf('id="ownedSection"') < html.indexOf('id="familySection"'));
+  assert.match(html, /<div class="own-neck" id="ownedNeck" aria-hidden="true"><\/div>/);
+  const legend = html.slice(html.indexOf('id="ownedLegend"'), html.indexOf('id="ownedList"'));
+  for (const name of HINT_LEVEL_NAMES) assert.match(legend, new RegExp(`<span>${name}</span>`), name);
+  assert.equal((legend.match(/class="own-swatch" data-level="[0-3]" aria-hidden="true"/g) || []).length, 4);
+  assert.match(html, /<ul class="skill-list own-list" id="ownedList"><\/ul>/);
+  assert.match(html, /<p class="microcopy" id="ownedEmpty" hidden>Play a scale position and it appears on your neck\.<\/p>/);
+  assert.match(html, /\.own-neck \{[^}]*grid-template-columns: repeat\(6, 1fr\);[^}]*grid-template-rows: repeat\(20, /);
+  assert.match(html, /\.own-cell\[data-level\] \{ box-shadow: inset 0 0 0 1px var\(--muted\); \}/);
+  // WR-05: one fill token per level plus a count of light dots (3, 2, 1, none) as the non-colour cue.
+  for (let level = 0; level <= 3; level += 1) {
+    const rule = html.match(new RegExp(`\\.own-swatch\\[data-level="${level}"\\] \\{([^}]*)\\}`));
+    assert.ok(rule, `level ${level} has a shade rule`);
+    assert.match(rule[1], new RegExp(`background-color: var\\(--own-${level}\\);`));
+    assert.equal((rule[1].match(/radial-gradient\(circle at \d+% 50%, var\(--wood\) 0 1\.5px, transparent 2px\)/g) || []).length, 3 - level);
+  }
+  assert.match(html, /@media \(min-width: 640px\) \{ \.own-layout \{ grid-template-columns: 140px minmax\(0, 1fr\); \} \}/);
+  const ownCss = html.split('\n').filter(line => /^\.own-/.test(line)).join('\n');
+  assert.doesNotMatch(ownCss, /var\(--marigold\)/);
+  // The render path is screen-only: no LEDs, no guitar, no audition, no live board.
+  const view = panels.slice(panels.indexOf('export function ownedNeckView('), panels.indexOf('// ---------- end ownedNeckView ----------'));
+  const render = panels.slice(panels.indexOf('function renderOwnedNeck('), panels.indexOf('function setProgressPanel('));
+  const progress = panels.slice(panels.indexOf('function setProgressPanel('), panels.indexOf('// Every frame during count-in/active'));
+  for (const [name, body] of [['ownedNeckView', view], ['renderOwnedNeck', render], ['setProgressPanel', progress]]) {
+    assert.ok(body.length > 0, name);
+    assert.doesNotMatch(body, /\bleds\b|\bguitar\b|onAudition|createFretboard|innerHTML|addEventListener/, name);
+    assert.doesNotMatch(body, /'cell'|"cell"|\.cell\b/, `${name} never uses the live board class`);
+  }
+  assert.match(view, /skillFamily\(row\) !== 'scales'/, 'the map selects the rows the Scales bar counts');
+});
+
+// ---------- 09-03: kept stats + release (PROG-10) ----------
+test('09-03: every v1 Progress stat stays visible beside the neck and the family bars', () => {
+  const now = Date.UTC(2026, 10, 20, 12);
+  const rows = [
+    progressRow('scaleRun', { scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, 3, 2, { lastPlayedAt: now - 1000 }),
+    progressRow('findNote', { scaleId: 'minPent', keyPc: 9, positionId: 's6f3' }, 1, 1, { lastPlayedAt: now - 2000 }),
+    progressRow('chordChanges', { pairId: 'C-G' }, 0, 1, { lastPlayedAt: now - 3000, dueAt: now - 60000, state: 'due' }),
+  ];
+  const view = {
+    now,
+    totals: { totalMs: 15 * 60000, unguidedMs: 4 * 60000, sessionCount: 1 },
+    streak: { current: 3, longest: 3 },
+    sessions: [{ day: '2026-11-20', startedAt: now - 900000, guidedMs: 11 * 60000, unguidedMs: 4 * 60000 }],
+    due: [rows[2]], dueCount: 1, skills: rows, all: rows,
+  };
+  withStubPanels(({ panels, byId }) => {
+    panels.setProgressPanel(view);
+    for (const id of ['ownedSection', 'familySection', 'historySection', 'dueSection', 'skillsSection']) {
+      assert.equal(byId.get(id).hidden, false, `${id} is visible`);
+    }
+    assert.equal(byId.get('progressEmpty').hidden, true);
+    assert.equal(byId.get('progStreak').textContent, '3 days');
+    assert.equal(byId.get('progPractised').textContent.length > 0, true);
+    assert.equal(byId.get('progUnguided').textContent.length > 0, true);
+    assert.equal(byId.get('progDue').textContent, '1 skill');
+    assert.equal(byId.get('dueList').children.length, 1);
+    assert.equal(byId.get('skillList').children.length, 3);
+    assert.equal(byId.get('familyBars').children.length, 4);
+    assert.equal(byId.get('ownedList').children.length, 2);
+    // Empty view: the Phase 6 empty state is the only thing among them that shows.
+    panels.setProgressPanel({ now, all: [], skills: [], sessions: [], due: [] });
+    for (const id of ['ownedSection', 'familySection', 'historySection', 'dueSection', 'skillsSection']) {
+      assert.equal(byId.get(id).hidden, true, `${id} is hidden when nothing is recorded`);
+    }
+    assert.equal(byId.get('progressEmpty').hidden, false);
+  });
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  assert.match(html, /<div class="progress-section" id="historySection">\s*<div class="stat-label">Last 20 sessions<\/div>/);
+  assert.match(html, /id="progressTiles"/);
 });

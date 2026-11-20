@@ -2,11 +2,12 @@
 // mastery gate, beat-derived minutes and the same-session re-report delta.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
   BACKUP_SCHEMA_VERSION, CLEAN_THRESHOLDS, DECAY_DAYS, MAX_BACKUP_LENGTH, MAX_PAIRS, MAX_SESSIONS, MAX_SKILLS,
-  REVIEW_INTERVALS, addDays, applyResult, chordPairRows, createSkill, dayKey, daysBetween, dueRows,
-  emptyProgress, exportDoc, fitProgress, passActiveMs, skillIdFor, skillRows, skillState, startLevelFor,
-  validateBackup, validateProgress, validateSession, weakestPair,
+  FAMILY_OF_KIND, LIGHT_FAMILIES, REVIEW_INTERVALS, addDays, applyResult, chordPairRows, createSkill, dayKey, daysBetween, dueRows,
+  emptyProgress, exportDoc, familyLevelCounts, fitProgress, lightLevelOf, skillFamily, passActiveMs, skillIdFor, skillRows, skillState, startLevelFor,
+  validateBackup, validateProgress, validateSession, weakestPair, liveStreak,
 } from '../app/src/progress.js';
 import { validateSettings } from '../app/src/settings.js';
 import {
@@ -1251,4 +1252,88 @@ test('WR-05: validateSession re-derives unguidedMs, so a crafted brightened pass
   // The same file with every pass marked brightened keeps no session minutes.
   doc.sessions[0].passes = doc.sessions[0].passes.map(pass => ({ ...pass, brightened: true }));
   assert.equal(validateBackup(doc, { validateSettings }).doc.progress.sessions[0].unguidedMs, 0);
+});
+
+// ---------- 09-03: family bars (PROG-09) ----------
+test('lightLevelOf: not started until a clean pass, then bestLevel clamped to 0..3', () => {
+  assert.equal(lightLevelOf(null), -1);
+  assert.equal(lightLevelOf(undefined), -1);
+  assert.equal(lightLevelOf({}), -1, 'missing cleanPasses is not started');
+  assert.equal(lightLevelOf({ bestLevel: 0, cleanPasses: 0 }), -1, 'a fresh record is not started');
+  assert.equal(lightLevelOf({ bestLevel: 2, cleanPasses: 0 }), -1);
+  assert.equal(lightLevelOf({ bestLevel: 0, cleanPasses: 1 }), 0);
+  assert.equal(lightLevelOf({ bestLevel: 1, cleanPasses: 3 }), 1);
+  assert.equal(lightLevelOf({ bestLevel: 2.7, cleanPasses: 3 }), 2, 'truncated');
+  assert.equal(lightLevelOf({ bestLevel: 3, cleanPasses: 3 }), 3);
+  assert.equal(lightLevelOf({ bestLevel: 99, cleanPasses: 1 }), 3);
+  assert.equal(lightLevelOf({ bestLevel: -4, cleanPasses: 1 }), 0);
+  assert.equal(lightLevelOf({ bestLevel: 'x', cleanPasses: 1 }), 0);
+});
+
+test('skillFamily maps the five kinds and infers legacy rows from content', () => {
+  assert.deepEqual(LIGHT_FAMILIES, ['scales', 'chords', 'progressions', 'songs']);
+  assert.deepEqual(FAMILY_OF_KIND, {
+    scaleRun: 'scales', findNote: 'scales', chordChanges: 'chords', progression: 'progressions', song: 'songs',
+  });
+  assert.equal(skillFamily({ kind: 'scaleRun' }), 'scales');
+  assert.equal(skillFamily({ kind: 'findNote' }), 'scales');
+  assert.equal(skillFamily({ kind: 'chordChanges' }), 'chords');
+  assert.equal(skillFamily({ kind: 'progression' }), 'progressions');
+  assert.equal(skillFamily({ kind: 'song' }), 'songs');
+  assert.equal(skillFamily({ kind: null, content: { pairId: 'C-G' } }), 'chords');
+  assert.equal(skillFamily({ kind: null, content: { songId: 'amazing-grace' } }), 'songs');
+  assert.equal(skillFamily({ kind: null, content: { progressionId: 'I-IV-V' } }), 'progressions');
+  assert.equal(skillFamily({ kind: null, content: { scaleId: 'minPent', keyPc: 9, positionId: 's6f5' } }), 'scales');
+  assert.equal(skillFamily({ kind: null, content: { songId: '', progressionId: '' } }), 'scales');
+  assert.equal(skillFamily({ kind: 'mystery', content: { pairId: 'C-G' } }), 'chords', 'unknown kinds infer too');
+  for (const kind of ['constructor', '__proto__', 'toString', 'hasOwnProperty']) {
+    assert.equal(skillFamily({ kind, content: {} }), 'scales', `prototype kind ${kind}`);
+  }
+  assert.equal(skillFamily(null), 'scales');
+});
+
+test('familyLevelCounts buckets every row into its family and light level', () => {
+  const zero = { scales: [0, 0, 0, 0, 0], chords: [0, 0, 0, 0, 0], progressions: [0, 0, 0, 0, 0], songs: [0, 0, 0, 0, 0] };
+  assert.deepEqual(familyLevelCounts(), zero);
+  assert.deepEqual(familyLevelCounts(null), zero);
+  assert.deepEqual(familyLevelCounts('rows'), zero);
+  const rows = [
+    { kind: 'scaleRun', bestLevel: 0, cleanPasses: 0 },
+    { kind: 'scaleRun', bestLevel: 3, cleanPasses: 4 },
+    { kind: 'findNote', bestLevel: 1, cleanPasses: 1 },
+    { kind: null, content: { scaleId: 'minPent', keyPc: 9, positionId: 's6f0' }, bestLevel: 3, cleanPasses: 2 },
+    { kind: 'chordChanges', bestLevel: 0, cleanPasses: 1 },
+    { kind: null, content: { pairId: 'C-G' }, bestLevel: 2, cleanPasses: 1 },
+    { kind: 'song', bestLevel: 99, cleanPasses: 1 },
+    null,
+  ];
+  const counts = familyLevelCounts(rows);
+  assert.deepEqual(counts.scales, [1, 0, 1, 0, 2]);
+  assert.deepEqual(counts.chords, [0, 1, 0, 1, 0]);
+  assert.deepEqual(counts.progressions, [0, 0, 0, 0, 0]);
+  assert.deepEqual(counts.songs, [0, 0, 0, 0, 1]);
+  const total = Object.values(counts).flat().reduce((a, b) => a + b, 0);
+  assert.equal(total, 7, 'every non-null row is counted exactly once');
+});
+
+// WR-03: the stored streak is only rewritten when a session lands, so it is read against today.
+test('WR-03 liveStreak reads a broken streak as 0 and keeps today or yesterday', () => {
+  const today = new Date(2026, 10, 20, 15, 0).getTime();
+  const stored = { current: 5, longest: 7, lastDay: '2026-11-20' };
+  assert.deepEqual(liveStreak(stored, today), { current: 5, longest: 7, lastDay: '2026-11-20' });
+  assert.equal(liveStreak({ ...stored, lastDay: '2026-11-19' }, today).current, 5, 'yesterday still counts');
+  const broken = liveStreak({ ...stored, lastDay: '2026-11-13' }, today);
+  assert.equal(broken.current, 0, 'a week later the streak is broken');
+  assert.equal(broken.longest, 7, 'the longest streak is a stored fact');
+  assert.equal(liveStreak({ ...stored, lastDay: '2026-11-18' }, today).current, 0, 'a two-day gap breaks it');
+  assert.equal(liveStreak({ current: 3, longest: 3, lastDay: '' }, today).current, 0);
+  for (const raw of [null, undefined, 'x', {}]) assert.equal(liveStreak(raw, today).current, 0);
+  // Applying a session today restores a live count from the stored record.
+  assert.equal(liveStreak(stored, addDays(today, 1)).current, 5);
+  assert.equal(liveStreak(stored, addDays(today, 2)).current, 0);
+});
+
+test('WR-03 progressView in main reads the streak live', () => {
+  const main = fs.readFileSync(new URL('../app/src/main.js', import.meta.url), 'utf8');
+  assert.match(main, /streak: liveStreak\(persisted\.streak, now\)/);
 });

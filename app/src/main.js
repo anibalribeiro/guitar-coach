@@ -13,12 +13,12 @@ import {
 import {
   buildScaleRunChart, buildNoteQuizChart, buildChordChangeChart, buildPlayAlongChart, createRun,
   reduce, frameAt, stepIndexFor, summarizeDrill, PLAY_FAMILIES, CHART_CHANGES, songSectionBars,
-  sectionAtBar, playAlongIdleFrame, readoutFrame,
+  sectionAtBar, playAlongIdleFrame, readoutFrame, chartIdFor,
 } from './drills.js';
 import { buildQuestions, chipsFor, judge, poolLabel, promptText, questionMode, quizKindsFor } from './quiz.js';
 import { FADE, HINT_LEVELS, clampLevel } from './fade.js';
 import {
-  applyResult, chordPairRows, dayKey, dueRows, emptyProgress, exportDoc, skillRows, startLevelFor,
+  applyResult, chordPairRows, dayKey, dueRows, emptyProgress, exportDoc, liveStreak, skillRows, startLevelFor,
   validateBackup, weakestPair,
 } from './progress.js';
 import { buildSegment, tapTempo, createTransport, LEAD_SEC } from './transport.js';
@@ -37,9 +37,11 @@ import {
   playCounterText, playAlongPassAnnouncement, playAlongStartAnnouncement, quizOutcomeText,
   chordPassAnnouncement, spotGate, openStringCue, EXPORT_FAILED, IMPORT_MESSAGE,
   STORAGE_MESSAGE, MIC_FEEDBACK, MIC_ANNOUNCE, CALIBRATION, skillLabelText, practiseItemText, dimmerView,
+  coachLineText, sessionAnnouncementText, sessionNextText,
 } from './panels.js';
 import {
-  FAMILY_ORDER, SESSION_BLOCKS, buildSessionPlan, emptySession, sessionReduce, sessionSummaryOf, suggestionFor,
+  FAMILY_ORDER, SESSION_BLOCKS, buildSessionPlan, coachScript, coachSignatureOf, emptySession, sessionReduce, sessionSummaryOf,
+  suggestionFor,
 } from './session.js';
 
 const $ = id => document.getElementById(id);
@@ -160,6 +162,9 @@ let previewPlan = null;
 // The only thing that distinguishes a session block's run from any other run: set by `seedBlock`,
 // cleared by every other seed, every run-clearing path and every credit (T-05-02).
 let pendingBlock = null;
+// The session block this run's result was credited to, so a self-report that arrives at the result
+// (a No-lights pass) re-classifies that block's card (CR-02). Cleared by the next run.
+let reportBlock = null;
 let progress = emptyProgress();
 let resultSkill = null;
 let pendingImport = null;
@@ -212,7 +217,7 @@ const stageOwned = () => isRunning() || !!(run && run.phase === 'passReview');
 // The single view switcher. Both tablists, every seed and boot come through here: the name is
 // re-checked against the closed list, Today and Progress refuse while the stage is owned, the
 // view's enter hook repaints its content, and the choice is persisted only when it changes.
-function switchView(name, { scroll = true, persist = true } = {}) {
+function switchView(name, { scroll = true, persist = true, announce = true } = {}) {
   if (!VIEWS.includes(name)) return false;
   if ((name === 'today' || name === 'progress') && stageOwned()) {
     // `#feedback` sits in Practice, so the refusal is also spoken through the one live region.
@@ -220,7 +225,7 @@ function switchView(name, { scroll = true, persist = true } = {}) {
     panels.announce(RUN_LOCK_FEEDBACK);
     return false;
   }
-  if (name === 'today') enterToday();
+  if (name === 'today') enterToday({ announce });
   else if (name === 'progress') enterProgress();
   if (persist && settings.view !== name) save({ view: name });
   panels.setView(name);
@@ -1639,6 +1644,8 @@ function renderDrillState() {
         total: session.plan.blocks.length,
         kind: session.plan.blocks[session.blockIndex] ? session.plan.blocks[session.blockIndex].kind : 'focus',
         accentKey: recommendationAccentKey(recommendation),
+        // TODAY-02 on Practice: the block's light change once it has a result (never for a skip).
+        ...boundaryResultOf(session.plan.blocks[session.blockIndex]),
       }
       : { visible: false },
     // A-73: the boundary and the panel never show at once, so the panel's own flag travels with
@@ -1785,9 +1792,6 @@ function applyEffects(effects) {
 }
 
 function dispatch(event) {
-  // A start that never reached the count-in is not the block's run, so its marker goes with the
-  // failure. It is cleared here rather than inside `startDrill`, whose body stays untouched.
-  if (event.type === 'START_FAILED') pendingBlock = null;
   if (!run) {
     if (event.type !== 'START' && event.type !== 'START_FAILED') return;
     if (!chart) buildChart();
@@ -1798,6 +1802,7 @@ function dispatch(event) {
   // a pass is scored with is fixed at its start, so a mid-pass toggle only ever reaches the
   // next boundary (MIC-01).
   if (event.type === 'START' || event.type === 'RESTART' || event.type === 'NEXT_PASS') {
+    reportBlock = null;
     scoreEvents = [];
     micAnswers = [];
     micStreak = { midi: null, count: 0, armedAt: null };
@@ -1821,6 +1826,10 @@ function dispatch(event) {
   const before = run.phase;
   const { state, effects } = reduce(run, event);
   run = state;
+  // A failed start that left the run paused at Resume is still the block's run, so its marker
+  // stays and the block can still reach its result (WR-04). A failed start the reducer refused is
+  // not, so the block is released. Handled here rather than inside `startDrill`.
+  if (event.type === 'START_FAILED' && !(before === 'idle' && run.phase === 'paused')) releaseBlock();
   if (run.phase !== 'countIn' && run.phase !== 'active') flashFeedbackUntilBeat = 0;
   applyEffects(effects);
   // A pass boundary, a restart, a resume and a next pass re-arm the stream here rather than
@@ -1838,14 +1847,19 @@ function dispatch(event) {
     // result. The marker is cleared before the fold, so nothing can credit the same block twice,
     // and the reducer's per-block gate rejects a second summary until a Repeat (T-05-02).
     if (pendingBlock !== null) {
+      const planned = session.plan && Array.isArray(session.plan.blocks) ? session.plan.blocks[pendingBlock] : null;
+      const open = !(planned && planned.credited === true);
       const index = pendingBlock;
       pendingBlock = null;
       const credit = sessionReduce(session, { type: 'BLOCK_DONE', index, summary });
       session = credit.state;
+      if (open) reportBlock = index;
       applySessionEffects(credit.effects);
     }
   }
   if (run.phase === 'idle') {
+    // A Stop in the first count-in discards the run: the block is no longer under way (WR-04).
+    releaseBlock();
     run = null;
     chart = null;
     resultSkill = null;
@@ -1854,6 +1868,15 @@ function dispatch(event) {
     return;
   }
   renderDrillState();
+}
+
+// A session block's run that ended without a result gives the block back to the plan, so the
+// coach never says it is under way when nothing is running (WR-04).
+function releaseBlock() {
+  if (pendingBlock !== null && session.state === 'running') {
+    session = sessionReduce(session, { type: 'BLOCK_ABORTED', index: pendingBlock }).state;
+  }
+  pendingBlock = null;
 }
 
 function recordResult() {
@@ -1976,7 +1999,8 @@ function progressView() {
     status,
     now,
     totals: persisted.totals,
-    streak: persisted.streak,
+    // Read against today, so a broken streak is 0 on the tile, in the coach and in the summary.
+    streak: liveStreak(persisted.streak, now),
     sessions: persisted.sessions,
     skills: skillRows(persisted, { now, limit: 5 }),
     due: dueRows(persisted, { now, limit: 5 }),
@@ -2701,6 +2725,13 @@ function sessionInputs() {
   };
 }
 
+// The levels the boundary token words as a light change: only a played result carries them.
+function boundaryResultOf(block) {
+  const result = block && block.result && typeof block.result === 'object' ? block.result : null;
+  if (!result || result.outcome === 'skipped') return {};
+  return { fromLevel: result.fromLevel, toLevel: result.toLevel };
+}
+
 function sessionView() {
   return {
     state: session.state,
@@ -2715,9 +2746,40 @@ function sessionView() {
   };
 }
 
+// The level each block will really start at (09-02): the recall block and a due review are cold
+// No-lights attempts (seedBlock's rule), every other block starts where the drill's own
+// `startLevelFor` puts the chart the block builds, resolved through the same chart id.
+function sessionStartLevels(plan) {
+  const blocks = plan && Array.isArray(plan.blocks) ? plan.blocks : [];
+  const progress = store.getProgress();
+  return blocks.map(block => (block.kind === 'recall' || block.reasonKey === 'due'
+    ? FADE.recallLevel
+    : startLevelFor(progress, chartIdFor(block.target))));
+}
+
+// The Today coach (09-01): the reducer's result records and the coach's message keys, painted by
+// panels. The intro's facts are the streak and the due count the Today badge already reads. No
+// announcement here — announce-once is `enterToday`'s, on a view entry only (09-02).
+function coachView() {
+  const plan = session.plan || previewPlan;
+  const view = progressView();
+  const facts = {
+    streak: view.streak && Number.isFinite(view.streak.current) ? view.streak.current : 0,
+    dueCount: view.dueCount,
+  };
+  return {
+    lines: coachScript({ session, plan, startLevels: sessionStartLevels(plan), facts }),
+    blocks: plan && Array.isArray(plan.blocks) ? plan.blocks : [],
+    state: session.state,
+  };
+}
+
 // The Today view's enter hook (Phase 6): the v1 `openSession` body without the open and focus,
 // because the Session panel is always shown inside its view.
-function enterToday() {
+// The newest coach line already spoken, so a re-entry with the same line stays quiet. Reset by
+// closing a finished session, so the fresh plan's first line is heard again.
+let lastCoachSignature = '';
+function enterToday({ announce = true } = {}) {
   if (!store) return;
   if (calibration) closeCalibration({ focus: false });
   // The plan is rebuilt from the store on every open, but only while the session is idle: once a
@@ -2725,6 +2787,19 @@ function enterToday() {
   // player (A-84, Pitfall 4).
   if (session.state === 'idle') previewPlan = buildSessionPlan(sessionInputs());
   panels.setSessionPanel(sessionView());
+  const coach = coachView();
+  panels.setCoach(coach);
+  // Announce once (09-CONTEXT): only the newest line, only when it changed, never in the summary
+  // (coachSignatureOf answers '' there, so the summary keeps its single announcement).
+  const signature = coachSignatureOf(coach.lines, coach.state);
+  // A page load that opens on Today is not a view entry, so it stays quiet and leaves the signature
+  // unset: boot messages such as the storage warning keep the live region, and the first real
+  // entry is still heard (IN-03).
+  if (announce && signature && signature !== lastCoachSignature) {
+    lastCoachSignature = signature;
+    const text = coachLineText(coach.lines[coach.lines.length - 1], coach.blocks);
+    if (text) panels.announce(text);
+  }
   // The panel opens on the view and the filter the player stored, so a free-choice player never
   // lands on `Plan` again and the Practise lists are painted before they are looked at (D-73).
   panels.setPractiseView(practiseView());
@@ -2739,6 +2814,7 @@ function closeSession() {
   if (session.state === 'summary') {
     const { state, effects } = sessionReduce(session, { type: 'CLOSE' });
     session = state;
+    lastCoachSignature = '';
     panels.setSessionSummary({ visible: false });
     applySessionEffects(effects);
     // The finished session is gone, so the boundary goes with it and the header chip returns to
@@ -2759,6 +2835,25 @@ function startSession() {
   const { state, effects } = sessionReduce(session, { type: 'START', now: Date.now() });
   session = state;
   applySessionEffects(effects);
+}
+
+// A row's Start (09-01, TODAY-03). At idle the plan is written into the session exactly as
+// `startSession` does, but only kept when the reducer accepts the pick, so a refused START_AT never
+// freezes a stale plan. Between blocks it is one START_AT through the boundary dispatcher. Either
+// way the block reaches `seedBlock` through its `seedAndStart` effect — the one block start path.
+function startSessionAt(index) {
+  if (session.state !== 'idle') return;
+  if (!previewPlan) previewPlan = buildSessionPlan(sessionInputs());
+  const { state, effects } = sessionReduce({ ...session, plan: previewPlan }, { type: 'START_AT', index, now: Date.now() });
+  if (!effects.length) return;
+  session = state;
+  applySessionEffects(effects);
+}
+
+function sessionPick(index) {
+  if (!Number.isInteger(index) || stageOwned() || startingDrill) return;
+  if (session.state === 'idle') startSessionAt(index);
+  else if (session.state === 'running') dispatchSession({ type: 'START_AT', index });
 }
 
 // ---------- The Practise view (05-01 Task 3, D-73) ----------
@@ -3026,7 +3121,7 @@ function openSessionSummary() {
   panels.setSessionSummary({
     visible: true,
     summary: sessionSummaryOf(session, { streak: view.streak && Number.isFinite(view.streak.current) ? view.streak.current : 0 }),
-    nextText: panels.sessionNextText({
+    nextText: sessionNextText({
       key: session.nextSuggestionKey,
       values: session.nextSuggestionValues,
     }),
@@ -3049,7 +3144,7 @@ function applySessionEffects(effects) {
     if (!effect || typeof effect !== 'object') continue;
     if (effect.type === 'seedAndStart') seedBlock(effect.block);
     else if (effect.type === 'announce') {
-      const text = panels.sessionAnnouncementText({ key: effect.key, values: effect.values });
+      const text = sessionAnnouncementText({ key: effect.key, values: effect.values });
       if (text) panels.announce(text);
     } else if (effect.type === 'openPanelAndAnnounce') openSessionSummary();
   }
@@ -3060,7 +3155,7 @@ function applySessionEffects(effects) {
 function sessionBoundaryPrefix(key) {
   if (pendingBlock === null || session.state !== 'running') return '';
   if (key !== 'result-complete' && key !== 'result-stopped') return '';
-  const text = panels.sessionAnnouncementText({
+  const text = sessionAnnouncementText({
     key: 'session-boundary',
     values: { index: pendingBlock + 1, total: SESSION_BLOCKS.length },
   });
@@ -3312,6 +3407,10 @@ function onSelfReport(value) {
     // Re-upsert the same sessionId and re-render so the hero and the No-lights card
     // flip in the same pass; the session count and with-hints counts stay put.
     const summary = recordResult();
+    // The report is the block's evidence too: its card is re-read from the reported summary.
+    if (reportBlock !== null && session.state === 'running') {
+      session = sessionReduce(session, { type: 'BLOCK_REPORT', index: reportBlock, summary }).state;
+    }
     renderDrillState();
     panels.announce(summary.mastered ? (resultSkill && resultSkill.retainedAt && summary.assessment && summary.assessment.coldRecall ? 'Retained on a later independent check.' : 'Recalled today.') : 'Not recalled cleanly yet.');
     return;
@@ -3692,6 +3791,7 @@ export function boot() {
     onPractiseSelection: practiseSelection,
     onSessionStart: startSession,
     onSessionNext: sessionNextBlock,
+    onSessionPick: sessionPick,
     onSessionSkip: sessionSkip,
     onSessionRepeat: sessionRepeat,
     onSessionEnd: sessionEnd,
@@ -3803,7 +3903,7 @@ export function boot() {
   renderDrillState();
   // Reopen on the view the player last chose (a first launch or a bad value is Today), running its
   // enter hook so Today and Progress are painted from the store.
-  switchView(settings.view, { scroll: false, persist: false });
+  switchView(settings.view, { scroll: false, persist: false, announce: false });
   // A repaired or unreadable record must be visible where the player first looks,
   // not only behind the Progress panel (WR-08).
   if (store.status === 'readFailed') {

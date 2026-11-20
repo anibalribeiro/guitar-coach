@@ -483,6 +483,17 @@ function streakAfter(streak, session, now) {
   return next;
 }
 
+// The streak as of `now` (WR-03): the stored `current` is only rewritten when a session lands, so
+// it is read live here. Practised today or yesterday keeps it; any longer gap reads 0. `longest`
+// and `lastDay` are the stored facts, unchanged.
+export function liveStreak(streak, now = Date.now()) {
+  const next = validStreak(streak);
+  const last = next.lastDay ? dayStartOfKey(next.lastDay) : null;
+  const gap = last === null ? Infinity : daysBetween(last, Number.isFinite(now) ? now : Date.now());
+  if (!(gap >= 0 && gap <= 1)) next.current = 0;
+  return next;
+}
+
 // View rows: the panel derives the label from `content`; no display string is stored.
 // `kind` rides along so the panel can name the family (`Chord changes · C → G`), and the
 // three Phase 3 microphone fields ride along for the skill row's optional third line.
@@ -510,6 +521,44 @@ export function skillRows(progress, { now = Date.now(), limit = 5 } = {}) {
   });
   rows.sort((a, b) => (b.lastPlayedAt || 0) - (a.lastPlayedAt || 0));
   return rows.slice(0, Math.max(0, limit));
+}
+
+// ---------- Light levels by family (PROG-09) ----------
+// The four display families and the drill kind each one counts. A legacy record written
+// before `kind` existed names its family from its own content ids, the same inference the
+// panel's skill label uses: only chords store a pair id, only songs a song id, only
+// play-alongs a progression id; everything else is a scale skill.
+export const FAMILY_OF_KIND = { scaleRun: 'scales', findNote: 'scales', chordChanges: 'chords', progression: 'progressions', song: 'songs' };
+export const LIGHT_FAMILIES = ['scales', 'chords', 'progressions', 'songs'];
+
+export function skillFamily(row) {
+  const kind = row && row.kind;
+  if (typeof kind === 'string' && Object.hasOwn(FAMILY_OF_KIND, kind)) return FAMILY_OF_KIND[kind];
+  const content = row && isObject(row.content) ? row.content : {};
+  if (typeof content.pairId === 'string') return 'chords';
+  if (typeof content.songId === 'string' && content.songId !== '') return 'songs';
+  if (typeof content.progressionId === 'string' && content.progressionId !== '') return 'progressions';
+  return 'scales';
+}
+
+// -1 = not started (recorded but no clean pass yet), else the best light level 0..3. A
+// fresh record and "clean at Full pattern" share bestLevel 0; only cleanPasses tells them apart.
+export function lightLevelOf(row) {
+  if (!row || !(row.cleanPasses > 0)) return -1;
+  const level = Math.trunc(Number(row.bestLevel) || 0);
+  return Math.max(0, Math.min(3, level));
+}
+
+// { scales: [notStarted, full, anchors, hint, noLights], ... } — each family's five buckets
+// sum to that family's recorded skill count.
+export function familyLevelCounts(rows = []) {
+  const counts = {};
+  LIGHT_FAMILIES.forEach(family => { counts[family] = [0, 0, 0, 0, 0]; });
+  for (const row of Array.isArray(rows) ? rows : []) {
+    if (!isObject(row)) continue;
+    counts[skillFamily(row)][lightLevelOf(row) + 1] += 1;
+  }
+  return counts;
 }
 
 // The review queue: due or lapsed mastered skills, soonest first. skillState already

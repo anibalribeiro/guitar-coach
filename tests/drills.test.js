@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import {
   buildScaleRunChart, buildNoteQuizChart, buildChordChangeChart, buildPlayAlongChart,
   createRun, reduce, frameAt, summarize, summarizeDrill, resumeFromBeat, stepIndexFor,
-  CHANGE_WINDOW, CHART_CHANGES, songSectionBars, sectionAtBar, playAlongIdleFrame, readoutFrame,
+  CHANGE_WINDOW, CHART_CHANGES, songSectionBars, sectionAtBar, playAlongIdleFrame, readoutFrame, chartIdFor,
 } from '../app/src/drills.js';
 import { CHORD_FAMILIES, CHORD_PAIRS, chordById, chordPairById, PROGRESSIONS, progressionById, SONGS, songById } from '../app/src/content.js';
 import { anchorNotes } from '../app/src/fade.js';
@@ -3416,4 +3416,45 @@ test('FADE-08: after DIMMER the readout follows the new level on the next frame'
   assert.deepEqual(readoutCount(brighter, { phase: 'countIn', beat: 1 }), { lit: 12, dark: 0, open: 0 });
   const darker = reduce(reduce(live, { type: 'DIMMER', delta: 1 }).state, { type: 'DIMMER', delta: 1 }).state;
   assert.deepEqual(readoutCount(darker, { phase: 'countIn', beat: 1 }), { lit: 0, dark: 12, open: 0 });
+});
+
+// ---------- 09-02: chartIdFor (TODAY-01) ----------
+// The coach names a block's start level before the block runs, so the chart id it looks up must be
+// the id the real builder gives the chart main.chartFor would build from the same target.
+test('09-02 chartIdFor matches every real builder for a block target', () => {
+  const scale = { drillFamily: 'scaleRun', scaleId: 'minPent', keyPc: 9, positionId: 's6f5' };
+  assert.equal(chartIdFor(scale), buildScaleRunChart({ scaleId: 'minPent', keyPc: 9, positionId: 's6f5', direction: 'up', bpm: 70 }).id);
+  const whole = { drillFamily: 'scaleRun', scaleId: 'major', keyPc: 0, positionId: 'all' };
+  assert.equal(chartIdFor(whole), buildScaleRunChart({ scaleId: 'major', keyPc: 0, positionId: 'all' }).id);
+  const quiz = { drillFamily: 'findNote', scaleId: 'major', keyPc: 14, positionId: 'all', quizQuestion: 'note', quizMode: 'find' };
+  assert.equal(chartIdFor(quiz), buildNoteQuizChart({ scaleId: 'major', keyPc: 14, positionId: 'all', quizQuestion: 'note', quizMode: 'find', questions: [] }).id);
+  const pair = CHORD_PAIRS[1];
+  assert.equal(chartIdFor({ drillFamily: 'chordChanges', chordPairId: pair.id }), buildChordChangeChart({ pairId: pair.id, bpm: 70, bars: 8 }).id);
+  const prog = PROGRESSIONS[0];
+  assert.equal(
+    chartIdFor({ drillFamily: 'progression', progressionId: prog.id, keyPc: 7 }),
+    buildPlayAlongChart({ family: 'progression', progressionId: prog.id, keyPc: 7, bpm: 80, bars: expandProgression(prog, 7) }).id,
+  );
+  // A song with no section named plays its first section (main.chartFor), and a named one plays it.
+  const song = SONGS[0];
+  const songChart = section => buildPlayAlongChart({
+    family: 'song', songId: song.id, sectionId: section.id, keyPc: 2, bpm: 80,
+    bars: expandSongSection(song, section, 2, progressionById), meter: song.meter,
+  }).id;
+  assert.equal(chartIdFor({ drillFamily: 'song', songId: song.id, songSectionId: '', keyPc: 2 }), songChart(song.sections[0]));
+  assert.equal(chartIdFor({ drillFamily: 'song', songId: song.id, songSectionId: 'nope', keyPc: 2 }), songChart(song.sections[0]));
+  const last = song.sections[song.sections.length - 1];
+  assert.equal(chartIdFor({ drillFamily: 'song', songId: song.id, songSectionId: last.id, keyPc: 2 }), songChart(last));
+  assert.equal(songById[song.id], song);
+});
+
+test('09-02 chartIdFor answers an empty id for unknown or hostile targets and never throws', () => {
+  for (const target of [null, undefined, 7, 'scaleRun', [], {}, { drillFamily: 'nope' }, { drillFamily: 'constructor' }]) {
+    assert.equal(chartIdFor(target), '');
+  }
+  assert.equal(chartIdFor({ drillFamily: 'song', songId: 'nope' }), '');
+  assert.equal(chartIdFor({ drillFamily: 'song', songId: 'constructor' }), '');
+  assert.equal(chartIdFor({ drillFamily: 'scaleRun', scaleId: 'constructor', keyPc: 0, positionId: 'all' }), '');
+  assert.equal(chartIdFor({ drillFamily: 'chordChanges', chordPairId: '__proto__' }), '');
+  assert.equal(chartIdFor({ drillFamily: 'progression', progressionId: 'toString', keyPc: 0 }), '');
 });

@@ -2,7 +2,7 @@
 // A chart is data: steps at absolute beats plus the audio events the transport plays.
 // The reducer is pure and returns effect descriptors; only main performs I/O.
 import {
-  scaleById, chordById, chordPairById, CHORD_PAIRS, CHORD_FAMILIES, progressionById,
+  scaleById, chordById, chordPairById, CHORD_PAIRS, CHORD_FAMILIES, progressionById, songById,
 } from './content.js';
 import { expandChord, expandSongSection, notesForPosition, sequenceFor, voiceChord } from './theory.js';
 import { backingEvents } from './backing.js';
@@ -109,6 +109,39 @@ export function stepIndexFor(chart, beat) {
     if (steps[mid].beat <= beat) { found = mid; lo = mid + 1; } else { hi = mid - 1; }
   }
   return found;
+}
+
+// ---------- chartIdFor (09-02, TODAY-01) ----------
+// The id the matching builder would give a session block's chart, without building it, so the
+// coach can name the level a block will start at before it runs. Each template mirrors its
+// builder exactly and a song with no named section plays its first section, as `main.chartFor`
+// does. Lookups are own-key only, so an unknown or prototype id answers '' and never a chart
+// id for something this build does not ship (T-09-04).
+const ownOf = (map, id) => (typeof id === 'string' && Object.hasOwn(map, id) ? map[id] : null);
+const keyOf = keyPc => (Number.isInteger(keyPc) ? ((keyPc % 12) + 12) % 12 : 0);
+export function chartIdFor(target) {
+  if (!target || typeof target !== 'object') return '';
+  const family = target.drillFamily;
+  if (family === 'scaleRun' || family === 'findNote') {
+    const scaleDef = ownOf(scaleById, target.scaleId);
+    const positionId = typeof target.positionId === 'string' ? target.positionId : 'all';
+    return scaleDef ? `${family}:${scaleDef.id}:${keyOf(target.keyPc)}:${positionId}` : '';
+  }
+  if (family === 'chordChanges') {
+    const pair = ownOf(chordPairById, target.chordPairId);
+    return pair ? `chordChanges:${pair.id}` : '';
+  }
+  if (family === 'progression') {
+    const prog = ownOf(progressionById, target.progressionId);
+    return prog ? 'progression:' + prog.id + ':' + keyOf(target.keyPc) : '';
+  }
+  if (family === 'song') {
+    const song = ownOf(songById, target.songId);
+    const sections = song && Array.isArray(song.sections) ? song.sections : [];
+    const section = sections.find(s => s.id === target.songSectionId) || sections[0];
+    return section ? 'song:' + song.id + ':' + section.id + ':' + keyOf(target.keyPc) : '';
+  }
+  return '';
 }
 
 export function buildScaleRunChart(instance = {}) {

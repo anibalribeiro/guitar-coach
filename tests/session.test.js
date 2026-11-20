@@ -4,14 +4,18 @@
 // `drills.reduce`: one event in, `{ state, effects }` out, and the caller applies the effects.
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import {
-  FAMILY_ORDER, SESSION_BLOCKS, TOTAL_MINUTES, buildSessionPlan, emptySession, familyDefaults,
-  nextSuggestionOf, sessionReduce, sessionSummaryOf, suggestionFor,
+  FAMILY_ORDER, SESSION_BLOCKS, TOTAL_MINUTES, blockResultOf, buildSessionPlan, coachScript, coachSignatureOf, emptySession,
+  familyDefaults, nextSuggestionOf, sessionReduce, sessionSummaryOf, suggestionFor,
 } from '../app/src/session.js';
+import {
+  buildNoteQuizChart, buildScaleRunChart, createRun, reduce, summarizeDrill,
+} from '../app/src/drills.js';
 import {
   CHORD_PAIRS, PROGRESSIONS, SCALES, SONGS,
 } from '../app/src/content.js';
-import { sessionAnnouncementText, sessionNextText } from '../app/src/panels.js';
+import { coachLineText, resultCardView, sessionAnnouncementText, sessionNextText } from '../app/src/panels.js';
 
 // The curated bundle is `main.curatedBundle()`'s shape, built here from the same four content
 // tables. The planner imports nothing, so this fixture is the contract between the two sides:
@@ -730,4 +734,513 @@ test('suggestionFor returns exactly one action for every row of the decision tab
   // Everything else repeats.
   assert.equal(suggestionFor({ pass: { selfReport: 'shaky' }, bpm: 80, nextBpm: 84 }).key, 'repeat');
   assert.equal(suggestionFor().key, 'repeat');
+});
+
+// ---------- 09-01: block result + coach thread (TODAY-02) ----------
+// The result record is classified from the summary `BLOCK_DONE` already carries, built here by the
+// real drill reducer so the classifier is pinned against what a finished drill actually produces.
+const RUN_INSTANCE = { scaleId: 'minPent', keyPc: 9, positionId: 's6f0', direction: 'up', bpm: 80 };
+const runStarted = c => reduce(createRun(c), { type: 'START', at: 1000 }).state;
+function runPass(state, { clean = true, beat = 4 } = {}) {
+  let next = reduce({ ...state, phase: 'active', beat }, { type: 'FINISH', at: 4000 }).state;
+  if (clean !== null) next = reduce(next, { type: 'SELF_REPORT', clean }).state;
+  return next;
+}
+// Three clean passes at Full pattern move the ladder to Anchors; the fourth pass plays there.
+function cleanAtAnchors() {
+  let state = runStarted(buildScaleRunChart(RUN_INSTANCE));
+  for (let pass = 0; pass < 3; pass += 1) {
+    state = runPass(state);
+    state = reduce(state, { type: 'NEXT_PASS' }).state;
+  }
+  assert.equal(state.hintLevel, 1, 'the ladder reached Anchors');
+  return runPass(state);
+}
+function brightenedOnly() {
+  let state = runStarted(buildScaleRunChart({ ...RUN_INSTANCE, startLevel: 1 }));
+  state = reduce(state, { type: 'DIMMER', delta: -1 }).state;
+  return runPass(state);
+}
+
+test('09-01 blockResultOf reads a real clean pass at Anchors as clean, Full pattern → Anchors', () => {
+  const summary = summarizeDrill(cleanAtAnchors());
+  const result = blockResultOf(summary);
+  assert.deepEqual(
+    { outcome: result.outcome, fromLevel: result.fromLevel, toLevel: result.toLevel, guided: result.guided },
+    { outcome: 'clean', fromLevel: 0, toLevel: 1, guided: false },
+  );
+  assert.equal(result.activeMs, summary.activeMs);
+});
+
+test('09-01 blockResultOf: a brightened pass is guided and never raises the to-level', () => {
+  const result = blockResultOf(summarizeDrill(brightenedOnly()));
+  assert.equal(result.outcome, 'guided');
+  assert.equal(result.guided, true);
+  assert.equal(result.fromLevel, 1);
+  assert.equal(result.toLevel, result.fromLevel);
+});
+
+test('09-01 blockResultOf: a clean pass beside a brightened pass is clean and still guided', () => {
+  let state = runStarted(buildScaleRunChart(RUN_INSTANCE));
+  state = runPass(state);
+  state = reduce(state, { type: 'NEXT_PASS' }).state;
+  state = reduce(state, { type: 'DIMMER', delta: 1 }).state;
+  state = reduce(state, { type: 'DIMMER', delta: -1 }).state;
+  state = runPass(state);
+  const result = blockResultOf(summarizeDrill(state));
+  assert.equal(result.outcome, 'clean');
+  assert.equal(result.guided, true);
+  assert.equal(result.toLevel, 0);
+});
+
+test('09-01 blockResultOf: stopped early is stopped, only shaky passes is shaky, both stay put', () => {
+  const c = buildScaleRunChart(RUN_INSTANCE);
+  const stopped = reduce({ ...runStarted(c), phase: 'active', beat: 5 }, { type: 'STOP', at: 2000 }).state;
+  const early = blockResultOf(summarizeDrill(stopped));
+  assert.equal(early.outcome, 'stopped');
+  assert.equal(early.toLevel, early.fromLevel);
+  const shaky = blockResultOf(summarizeDrill(runPass(runStarted(c), { clean: false })));
+  assert.equal(shaky.outcome, 'shaky');
+  assert.equal(shaky.toLevel, 0);
+});
+
+test('09-01 blockResultOf: a recall summary stays at No lights and a guided recall says so', () => {
+  const recall = { attempted: true, completed: false, selfReport: null };
+  const plain = blockResultOf({ startLevel: 3, passes: [], guided: false, recall });
+  assert.equal(plain.fromLevel, 3);
+  assert.equal(plain.toLevel, 3);
+  assert.equal(plain.guided, false);
+  const guided = blockResultOf({ startLevel: 3, passes: [], guided: false, recall: { ...recall, guided: true } });
+  assert.equal(guided.guided, true);
+  assert.equal(guided.outcome, 'guided');
+});
+
+test('09-01 blockResultOf: a real find-the-note pass answered cleanly classifies clean', () => {
+  // The composition root builds the twelve questions; a literal set stands in for `quiz.js` here.
+  const questions = Array.from({ length: 12 }, (_, i) => ({
+    index: i, kind: 'note', mode: 'find', prompt: `Find A on string ${(i % 6) + 1}`,
+    target: { s: (i % 6) + 1, f: (i % 9) + 1, midi: 60 + i, iv: i % 12 },
+  }));
+  const quiz = buildNoteQuizChart({
+    scaleId: 'minPent', keyPc: 9, positionId: 's6f0', quizQuestion: 'note', quizMode: 'find', questions,
+  });
+  let state = runStarted(quiz);
+  const total = state.questions.length;
+  assert.ok(total > 0);
+  for (let i = 0; i < total; i += 1) {
+    state = reduce(state, { type: 'ANSWER', index: i, correct: true }).state;
+    state = reduce(state, { type: 'NEXT_QUESTION', at: 5000 + i }).state;
+  }
+  state = reduce(state, { type: 'SELF_REPORT', clean: true }).state;
+  assert.equal(blockResultOf(summarizeDrill(state)).outcome, 'clean');
+});
+
+test('09-01 blockResultOf never throws on garbage and clamps levels to 0..3', () => {
+  for (const input of [null, undefined, {}, [], 'x', { passes: 'no' }, { startLevel: 99, passes: null }]) {
+    const result = blockResultOf(input);
+    assert.ok(result.fromLevel >= 0 && result.fromLevel <= 3);
+    assert.ok(result.toLevel >= 0 && result.toLevel <= 3);
+    assert.equal(result.outcome, 'shaky');
+  }
+  const wild = blockResultOf({
+    startLevel: -4,
+    passes: [{ hintLevel: 99, completedSteps: 4, plannedSteps: 4, aborted: false, brightened: false, selfReport: 'clean' }],
+  });
+  assert.equal(wild.fromLevel, 0);
+  assert.equal(wild.toLevel, 3);
+});
+
+test('09-01 BLOCK_DONE stores block.result with a rising seq; REPEAT overwrites; SKIP/END mark skipped', () => {
+  const summary = summarizeDrill(cleanAtAnchors());
+  let state = sessionReduce(startedSession(), { type: 'BLOCK_DONE', index: 0, summary }).state;
+  assert.deepEqual(state.plan.blocks[0].result, { ...blockResultOf(summary), seq: 1 });
+  // Repeat clears the credit gate; the second run's result replaces the first, one seq higher.
+  state = sessionReduce(state, { type: 'REPEAT' }).state;
+  const second = summarizeDrill(brightenedOnly());
+  state = sessionReduce(state, { type: 'BLOCK_DONE', index: 0, summary: second }).state;
+  assert.deepEqual(state.plan.blocks[0].result, { ...blockResultOf(second), seq: 2 });
+  // Continue → block 1 now; Skip marks it skipped with the next seq.
+  state = sessionReduce(state, { type: 'CONTINUE' }).state;
+  state = sessionReduce(state, { type: 'SKIP' }).state;
+  assert.deepEqual(state.plan.blocks[1].result, { outcome: 'skipped', seq: 3 });
+  // End closes out the rest; the done block keeps its own result.
+  state = sessionReduce(state, { type: 'END' }).state;
+  assert.deepEqual(state.plan.blocks[0].result, { ...blockResultOf(second), seq: 2 });
+  assert.deepEqual(state.plan.blocks.slice(2).map(block => block.result.outcome), ['skipped', 'skipped', 'skipped']);
+  assert.deepEqual(state.plan.blocks.slice(2).map(block => block.result.seq), [4, 5, 6]);
+  // The idle record is unchanged: no result field ever lands on it.
+  assert.ok(!Object.hasOwn(emptySession(), 'result'));
+});
+
+test('09-01 coachScript answers keys only, deterministic, per session state', () => {
+  const plan = zeroHistory();
+  const idle = { ...emptySession() };
+  const atIdle = coachScript({ session: idle, plan });
+  // 09-02: the idle conversation opens with the intro, then the first block.
+  assert.deepEqual(atIdle, [{
+    key: 'intro', values: { blocks: 5, minutes: 13, due: 0, streak: 0, noHistory: true },
+  }, {
+    key: 'next',
+    values: { index: 0, kind: 'warmup', reasonKey: plan.blocks[0].reasonKey, reasonValues: plan.blocks[0].reasonValues },
+  }]);
+  assert.deepEqual(coachScript({ session: idle, plan }), atIdle, 'same input, same lines');
+  // Running, block 0 under way, nothing finished yet: only the now line.
+  assert.deepEqual(coachScript({ session: startedSession() }), [{ key: 'now', values: { index: 0, kind: 'warmup' } }]);
+  // Block 0 done: the result line, then the next pending block.
+  const done = creditedFirstBlock();
+  const script = coachScript({ session: done });
+  assert.equal(script[0].key, 'result');
+  assert.equal(script[0].values.index, 0);
+  assert.equal(script[1].key, 'next');
+  assert.equal(script[1].values.index, 1);
+  assert.equal(script[1].values.kind, 'focus');
+  assert.deepEqual(coachScript({ session: done }), script);
+  // Every block done, still running: the newest result, then finish.
+  let state = done;
+  for (let i = 1; i < 5; i += 1) {
+    state = sessionReduce(state, { type: 'CONTINUE' }).state;
+    state = sessionReduce(state, { type: 'BLOCK_DONE', index: i, summary: { activeMs: 1000 } }).state;
+  }
+  const last = coachScript({ session: state });
+  assert.deepEqual(last.map(line => line.key), ['result', 'finish']);
+  assert.equal(last[0].values.index, 4);
+  // 09-02: the summary has one closing line; garbage: no throw.
+  assert.deepEqual(coachScript({ session: sessionReduce(state, { type: 'CONTINUE' }).state }),
+    [{ key: 'allDone', values: { completed: 5, skipped: 0 } }]);
+  assert.deepEqual(coachScript(), []);
+  assert.deepEqual(coachScript({ session: null, plan: 'x' }), []);
+});
+
+// ---------- 09-01: START_AT (TODAY-03) ----------
+// Any pending block with a target can be started out of order, from idle or between blocks. The
+// plan, its length and the recall rule are untouched; CONTINUE keeps walking in plan order.
+const idleWithPlan = () => ({ ...emptySession(), plan: zeroHistory() });
+
+test('09-01 START_AT from idle starts the session at the picked block', () => {
+  const { state, effects } = sessionReduce(idleWithPlan(), { type: 'START_AT', index: 3, now: NOW });
+  assert.equal(state.state, 'running');
+  assert.equal(state.blockIndex, 3);
+  assert.equal(state.startedAt, NOW);
+  assert.deepEqual(state.plan.blocks.map(block => block.state), ['pending', 'pending', 'pending', 'now', 'pending']);
+  const seeds = effects.filter(effect => effect.type === 'seedAndStart');
+  assert.equal(seeds.length, 1);
+  assert.equal(seeds[0].block.index, 3);
+  const announces = effects.filter(effect => effect.type === 'announce');
+  assert.equal(announces.length, 1);
+  assert.equal(announces[0].key, 'session-ready');
+  assert.deepEqual(announces[0].values, { blocks: 5, minutes: TOTAL_MINUTES });
+});
+
+test('09-01 START_AT between blocks starts the picked block with one block announcement', () => {
+  const { state, effects } = sessionReduce(creditedFirstBlock(), { type: 'START_AT', index: 2, now: NOW });
+  assert.deepEqual(state.plan.blocks.map(block => block.state), ['done', 'pending', 'now', 'pending', 'pending']);
+  assert.equal(state.blockIndex, 2);
+  assert.equal(effects.filter(effect => effect.type === 'seedAndStart').length, 1);
+  const announces = effects.filter(effect => effect.type === 'announce');
+  assert.equal(announces.length, 1);
+  assert.equal(announces[0].key, 'session-block');
+  assert.deepEqual(announces[0].values, { index: 3, total: 5, kind: 'new' });
+});
+
+test('09-01 START_AT returns an unfinished now block to pending, or done when it completed once', () => {
+  // Block 0 is now and never finished: it goes back to pending, never skipped.
+  const fresh = sessionReduce(startedSession(), { type: 'START_AT', index: 4, now: NOW }).state;
+  assert.deepEqual(fresh.plan.blocks.map(block => block.state), ['pending', 'pending', 'pending', 'pending', 'now']);
+  assert.equal(fresh.skipped, 0);
+  // Block 0 finished once, then Repeat left it now: it returns to done and stays counted.
+  const repeating = sessionReduce(creditedFirstBlock(), { type: 'REPEAT' }).state;
+  assert.equal(repeating.plan.blocks[0].state, 'now');
+  const moved = sessionReduce(repeating, { type: 'START_AT', index: 1, now: NOW }).state;
+  assert.deepEqual(moved.plan.blocks.map(block => block.state), ['done', 'now', 'pending', 'pending', 'pending']);
+  assert.equal(moved.completed, 1);
+  assert.equal(moved.plan.blocks.filter(block => block.state === 'now').length, 1);
+});
+
+test('09-01 START_AT refuses bad indexes, non-pending or target-less blocks and a finished session', () => {
+  const idle = idleWithPlan();
+  for (const index of [undefined, null, '2', 1.5, -1, 5, 99, NaN]) {
+    const refused = sessionReduce(idle, { type: 'START_AT', index, now: NOW });
+    assert.deepEqual(refused.state, idle, `index ${String(index)} refused`);
+    assert.deepEqual(refused.effects, []);
+  }
+  const done = creditedFirstBlock();
+  const notPending = sessionReduce(done, { type: 'START_AT', index: 0, now: NOW });
+  assert.deepEqual(notPending.state, done);
+  assert.deepEqual(notPending.effects, []);
+  const noTarget = { ...idle, plan: { ...idle.plan, blocks: idle.plan.blocks.map((block, i) => (i === 2 ? { ...block, target: null } : block)) } };
+  const refusedTarget = sessionReduce(noTarget, { type: 'START_AT', index: 2, now: NOW });
+  assert.deepEqual(refusedTarget.state, noTarget);
+  assert.deepEqual(refusedTarget.effects, []);
+  const summary = sessionReduce(done, { type: 'END', now: NOW }).state;
+  const late = sessionReduce({ ...summary, plan: { ...summary.plan, blocks: summary.plan.blocks.map(block => ({ ...block, state: 'pending' })) } },
+    { type: 'START_AT', index: 1, now: NOW });
+  assert.equal(late.state.state, 'summary');
+  assert.deepEqual(late.effects, []);
+  assert.deepEqual(sessionReduce(emptySession(), { type: 'START_AT', index: 0 }).effects, [], 'no plan, no start');
+});
+
+test('09-01 after an out-of-order pick, CONTINUE still takes the earliest pending block', () => {
+  let state = sessionReduce(idleWithPlan(), { type: 'START_AT', index: 3, now: NOW }).state;
+  state = sessionReduce(state, { type: 'BLOCK_DONE', index: 3, summary: { activeMs: 1000 } }).state;
+  const next = sessionReduce(state, { type: 'CONTINUE' });
+  assert.equal(next.state.blockIndex, 0);
+  assert.deepEqual(next.state.plan.blocks.map(block => block.state), ['now', 'pending', 'pending', 'done', 'pending']);
+});
+
+test('09-01 a recall block picked first is still seeded as recall; the plan is unchanged', () => {
+  const { effects } = sessionReduce(idleWithPlan(), { type: 'START_AT', index: 4, now: NOW });
+  const seed = effects.find(effect => effect.type === 'seedAndStart');
+  assert.equal(seed.block.kind, 'recall');
+  assert.equal(seed.block.reasonKey, 'recallFocus');
+  assert.equal(TOTAL_MINUTES, 13);
+  assert.deepEqual(SESSION_BLOCKS.map(block => block.kind), ['warmup', 'focus', 'new', 'play', 'recall']);
+});
+
+// ---------- 09-02: coach conversation (TODAY-01) ----------
+// The full scripted conversation as keys: intro and the first block at idle, an honest result line
+// then what is next while running, one closing line in the summary. Pure and deterministic.
+test('09-02 coach conversation: idle intro carries the facts and the next line its start level', () => {
+  const plan = zeroHistory();
+  const idle = emptySession();
+  const lines = coachScript({ session: idle, plan, startLevels: [1, 0, 2, 0, 3], facts: { streak: 4, dueCount: 2 } });
+  assert.deepEqual(lines[0], { key: 'intro', values: { blocks: 5, minutes: 13, due: 2, streak: 4, noHistory: true } });
+  assert.equal(lines[1].values.level, 1, 'the warm-up names the level main resolved');
+  assert.equal(lines.length, 2);
+  // Odd facts and levels are dropped, never thrown on and never change a key.
+  const odd = coachScript({ session: idle, plan, startLevels: ['1', 9], facts: { streak: -3, dueCount: 1.5 } });
+  assert.deepEqual(odd.map(line => line.key), ['intro', 'next']);
+  assert.equal(odd[0].values.streak, 0);
+  assert.equal(odd[0].values.due, 0);
+  assert.ok(!Object.hasOwn(odd[1].values, 'level'));
+  assert.deepEqual(coachScript({ session: idle, plan, facts: null }).map(line => line.key), ['intro', 'next']);
+});
+
+test('09-02 coach conversation: running lines carry the result record, at most three lines', () => {
+  const done = creditedFirstBlock();
+  const levels = [0, 1, 0, 0, 3];
+  const script = coachScript({ session: done, startLevels: levels, facts: { streak: 1, dueCount: 0 } });
+  assert.ok(script.length <= 3);
+  const result = done.plan.blocks[0].result;
+  assert.deepEqual(script[0], {
+    key: 'result',
+    values: {
+      index: 0, kind: 'warmup', outcome: result.outcome, fromLevel: result.fromLevel, toLevel: result.toLevel, guided: result.guided,
+      seq: result.seq,
+    },
+  });
+  assert.equal(script[1].key, 'next');
+  assert.equal(script[1].values.level, 1);
+  // Same inputs, same lines: no clock and no randomness.
+  assert.deepEqual(coachScript({ session: done, startLevels: levels, facts: { streak: 1, dueCount: 0 } }), script);
+  // Running with no result yet: only the block under way.
+  assert.deepEqual(coachScript({ session: startedSession(), startLevels: levels }), [{ key: 'now', values: { index: 0, kind: 'warmup' } }]);
+  // The purity pin: coachScript never reads a clock.
+  const source = fs.readFileSync(new URL('../app/src/session.js', import.meta.url), 'utf8');
+  const body = source.slice(source.indexOf('export function coachScript('), source.indexOf('export function sessionReduce('));
+  assert.ok(!/Date|Math\.random|performance/.test(body));
+});
+
+test('09-02 coachSignatureOf names the newest line once, and nothing in the summary', () => {
+  const plan = zeroHistory();
+  const idle = coachScript({ session: emptySession(), plan, startLevels: [0, 0, 0, 0, 3] });
+  const signature = coachSignatureOf(idle, 'idle');
+  assert.ok(signature.startsWith('["next"'), signature);
+  assert.equal(coachSignatureOf(coachScript({ session: emptySession(), plan, startLevels: [0, 0, 0, 0, 3] }), 'idle'), signature,
+    're-entry with the same thread, same signature');
+  const done = creditedFirstBlock();
+  assert.notEqual(coachSignatureOf(coachScript({ session: done }), 'running'), signature);
+  assert.ok(coachSignatureOf(coachScript({ session: startedSession() }), 'running').startsWith('["now"'));
+  assert.equal(coachSignatureOf([{ key: 'finish' }], 'running'), '["finish",{}]');
+  assert.equal(coachSignatureOf([{ key: 'allDone', values: { completed: 5, skipped: 0 } }], 'summary'), '');
+  for (const lines of [[], null, 'x', [null], [{ key: 7 }]]) assert.equal(coachSignatureOf(lines, 'running'), '');
+});
+
+// ---------- Phase 9 review fixes ----------
+// CR-02: a No-lights pass reaches `result` before its self-report, so `BLOCK_DONE` classifies it
+// unreported. `BLOCK_REPORT` folds the report into the same block's card, with the real reducer.
+function recallAtResult() {
+  let state = runStarted({ ...buildScaleRunChart(RUN_INSTANCE), startLevel: 3 });
+  state = reduce({ ...state, phase: 'active', beat: 4 }, { type: 'FINISH', at: 4000 }).state;
+  assert.equal(state.phase, 'result', 'a No-lights pass goes straight to the result');
+  return state;
+}
+
+test('CR-02 a clean recall self-report re-classifies the credited block as Clean', () => {
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  let drill = recallAtResult();
+  const atResult = summarizeDrill(drill);
+  const done = sessionReduce(running, { type: 'BLOCK_DONE', index: 4, summary: atResult }).state;
+  assert.notEqual(done.plan.blocks[4].result.outcome, 'clean', 'unreported at BLOCK_DONE time');
+  const seq = done.plan.blocks[4].result.seq;
+  drill = reduce(drill, { type: 'SELF_REPORT', clean: true }).state;
+  const reported = summarizeDrill(drill);
+  const after = sessionReduce(done, { type: 'BLOCK_REPORT', index: 4, summary: reported }).state;
+  const result = after.plan.blocks[4].result;
+  assert.equal(result.outcome, 'clean');
+  assert.equal(result.fromLevel, 3);
+  assert.equal(result.toLevel, 3);
+  assert.equal(result.seq, seq, 'the card keeps its place in the thread');
+  // Minutes are paid once; unguided minutes move by exactly what the report added.
+  assert.equal(after.minutesMs, done.minutesMs);
+  assert.equal(after.completed, done.completed);
+  assert.equal(after.unguidedMs, done.unguidedMs - (atResult.unguidedMs || 0) + (reported.unguidedMs || 0));
+  // The coach's newest result line now says clean.
+  const line = coachScript({ session: after }).find(entry => entry.key === 'result');
+  assert.equal(line.values.outcome, 'clean');
+});
+
+test('CR-02 BLOCK_REPORT is refused for a skipped block, an uncredited block or a closed session', () => {
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  const reported = summarizeDrill(reduce(recallAtResult(), { type: 'SELF_REPORT', clean: true }).state);
+  assert.equal(sessionReduce(running, { type: 'BLOCK_REPORT', index: 4, summary: reported }).state.plan.blocks[4].result, undefined);
+  const skipped = sessionReduce(running, { type: 'SKIP' }).state;
+  assert.equal(sessionReduce(skipped, { type: 'BLOCK_REPORT', index: 0, summary: reported }).state.plan.blocks[0].result.outcome, 'skipped');
+  assert.deepEqual(sessionReduce(emptySession(), { type: 'BLOCK_REPORT', index: 0, summary: reported }).state.plan, emptySession().plan);
+});
+
+// WR-01: two shaky passes bring a light back, so a later clean pass lands brighter than the block
+// started. The coach and the card say a light came back and never that a level was held.
+test('WR-01 a clean pass after an automatic light-back says a light came back, never "held"', () => {
+  let drill = runStarted(buildScaleRunChart({ ...RUN_INSTANCE, startLevel: 1 }));
+  drill = runPass(drill, { clean: false });
+  drill = reduce(drill, { type: 'NEXT_PASS' }).state;
+  drill = runPass(drill, { clean: false });
+  drill = reduce(drill, { type: 'NEXT_PASS' }).state;
+  assert.equal(drill.hintLevel, 0, 'two shaky passes brought a light back');
+  drill = runPass(drill);
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  const done = sessionReduce(running, { type: 'BLOCK_DONE', index: 0, summary: summarizeDrill(drill) }).state;
+  const result = done.plan.blocks[0].result;
+  assert.deepEqual([result.outcome, result.fromLevel, result.toLevel], ['clean', 1, 0]);
+  const line = coachScript({ session: done }).find(entry => entry.key === 'result');
+  const text = coachLineText(line, done.plan.blocks);
+  assert.ok(!/held/i.test(text), text);
+  assert.match(text, /a light came back/);
+  assert.match(text, /Anchors → Full pattern/);
+  assert.equal(resultCardView(done.plan.blocks[0]).change, 'A light came back · Anchors → Full pattern');
+  // Every brighter pair, whatever the levels, avoids "held".
+  for (let from = 1; from <= 3; from += 1) {
+    for (let to = 0; to < from; to += 1) {
+      const words = coachLineText({ key: 'result', values: { index: 0, kind: 'focus', outcome: 'clean', fromLevel: from, toLevel: to } });
+      assert.ok(!/held/i.test(words) && /light came back/.test(words), words);
+    }
+  }
+});
+
+// WR-06: a block stopped before a single step is "Stopped early", never a shaky verdict.
+test('WR-06 a block stopped before any step reads Stopped early on the card and in the coach', () => {
+  const questions = Array.from({ length: 4 }, (_, i) => ({ prompt: 'x', target: { s: 6, f: i + 1 } }));
+  const quiz = reduce(runStarted(buildNoteQuizChart({ questions })), { type: 'STOP', at: 1000 }).state;
+  const timed = reduce({ ...runStarted(buildScaleRunChart(RUN_INSTANCE)), phase: 'active', beat: 0 }, { type: 'STOP', at: 1100 }).state;
+  for (const drill of [quiz, timed]) {
+    const summary = summarizeDrill(drill);
+    assert.ok(summary.passes.length > 0 && summary.passes.every(pass => pass.completedSteps < pass.plannedSteps));
+    const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+    const done = sessionReduce(running, { type: 'BLOCK_DONE', index: 0, summary }).state;
+    assert.equal(done.plan.blocks[0].result.outcome, 'stopped');
+    assert.equal(resultCardView(done.plan.blocks[0]).outcome, 'Stopped early');
+    const text = coachLineText(coachScript({ session: done }).find(entry => entry.key === 'result'), done.plan.blocks);
+    assert.match(text, /stopped early/);
+    assert.ok(!/not clean|Shaky|Another pass/i.test(text), text);
+  }
+});
+
+// WR-04: a block whose run never reached a result must not stay `now` behind the player's back.
+const nowCount = state => state.plan.blocks.filter(block => block.state === 'now').length;
+
+test('WR-04 CONTINUE past an unfinished block demotes it, so only one block is ever now', () => {
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  assert.equal(running.plan.blocks[0].state, 'now');
+  // Block 0's start failed and its run never reached a result: no BLOCK_DONE arrives.
+  const next = sessionReduce(running, { type: 'CONTINUE' });
+  assert.equal(next.state.plan.blocks[0].state, 'pending', 'the stale block goes back to the list');
+  assert.equal(next.state.plan.blocks[1].state, 'now');
+  assert.equal(nowCount(next.state), 1);
+  const seeds = next.effects.filter(effect => effect.type === 'seedAndStart');
+  assert.equal(seeds.length, 1);
+  assert.equal(seeds[0].block.index, 1);
+  const lines = coachScript({ session: next.state });
+  assert.deepEqual(lines[lines.length - 1], { key: 'now', values: { index: 1, kind: next.state.plan.blocks[1].kind } });
+  // A Repeat in flight (already completed once) goes back to done, never pending or skipped.
+  const credited = sessionReduce(running, { type: 'BLOCK_DONE', index: 0, summary: { activeMs: 1000 } }).state;
+  const repeating = sessionReduce(credited, { type: 'REPEAT' }).state;
+  const moved = sessionReduce(repeating, { type: 'CONTINUE' }).state;
+  assert.equal(moved.plan.blocks[0].state, 'done');
+  assert.equal(moved.completed, 1);
+  assert.equal(nowCount(moved), 1);
+});
+
+test('WR-04 BLOCK_ABORTED (a Stop in the first count-in) means the block is no longer under way', () => {
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  // The drill side: a Stop during the first count-in discards the run back to idle.
+  const countIn = runStarted(buildScaleRunChart(RUN_INSTANCE));
+  assert.equal(countIn.phase, 'countIn');
+  assert.equal(reduce(countIn, { type: 'STOP', at: 1010 }).state.phase, 'idle');
+  const aborted = sessionReduce(running, { type: 'BLOCK_ABORTED', index: 0 }).state;
+  assert.equal(aborted.plan.blocks[0].state, 'pending');
+  assert.equal(nowCount(aborted), 0);
+  const lines = coachScript({ session: aborted });
+  assert.notEqual(lines[lines.length - 1].key, 'now', 'the coach never says "under way"');
+  assert.ok(!/under way/.test(coachLineText(lines[lines.length - 1], aborted.plan.blocks)));
+  // The block can still be picked again or continued to.
+  assert.equal(sessionReduce(aborted, { type: 'START_AT', index: 0 }).state.plan.blocks[0].state, 'now');
+  // A credited block and an idle session are left alone.
+  const credited = sessionReduce(running, { type: 'BLOCK_DONE', index: 0, summary: {} }).state;
+  assert.equal(sessionReduce(credited, { type: 'BLOCK_ABORTED', index: 0 }).state.plan.blocks[0].state, 'done');
+  assert.deepEqual(sessionReduce(emptySession(), { type: 'BLOCK_ABORTED', index: 0 }).state, emptySession());
+});
+
+test('WR-04 a failed audio start leaves the run paused, so main keeps the block marker', () => {
+  // main keeps `pendingBlock` exactly when START_FAILED moves an idle run to paused.
+  const failed = reduce(createRun(buildScaleRunChart(RUN_INSTANCE)), { type: 'START_FAILED', reason: 'audio', at: 1000 });
+  assert.equal(failed.state.phase, 'paused');
+  const main = fs.readFileSync(new URL('../app/src/main.js', import.meta.url), 'utf8');
+  assert.match(main, /if \(event\.type === 'START_FAILED' && !\(before === 'idle' && run\.phase === 'paused'\)\) releaseBlock\(\);/);
+  const idle = main.slice(main.indexOf("if (run.phase === 'idle') {"), main.indexOf('function recordResult'));
+  assert.match(idle, /releaseBlock\(\);\s*run = null;/, 'a discarded run releases its block');
+  const release = main.slice(main.indexOf('function releaseBlock'), main.indexOf('function recordResult'));
+  assert.match(release, /type: 'BLOCK_ABORTED', index: pendingBlock/);
+  // Resumed and finished, the paused run reaches a result and the block is credited as usual.
+  let drill = reduce(failed.state, { type: 'RESUME', at: 2000 }).state;
+  drill = reduce({ ...drill, phase: 'active', beat: 4 }, { type: 'FINISH', at: 4000 }).state;
+  drill = reduce(drill, { type: 'SELF_REPORT', clean: true }).state;
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  const done = sessionReduce(running, { type: 'BLOCK_DONE', index: 0, summary: summarizeDrill(drill) }).state;
+  assert.equal(done.plan.blocks[0].state, 'done');
+  assert.ok(done.plan.blocks[0].result);
+});
+
+// WR-02: the announce-once signature covers the whole newest line and the newest result, so a
+// changed thread is heard even when the newest line's key and block stay the same.
+test('WR-02 a new result, a repeat and a changed idle preview each change the coach signature', () => {
+  const sig = session => coachSignatureOf(coachScript({ session }), session.state);
+  const running = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START', now: NOW }).state;
+  // (a) Block 3 picked out of order and finished: the newest line is still "next: block 1"-shaped,
+  // but the thread gained a result, so the signature moves.
+  const idleSig = coachSignatureOf(coachScript({ session: emptySession(), plan: zeroHistory() }), 'idle');
+  const picked = sessionReduce({ ...emptySession(), plan: zeroHistory() }, { type: 'START_AT', index: 2, now: NOW }).state;
+  const pickedDone = sessionReduce(picked, { type: 'BLOCK_DONE', index: 2, summary: { activeMs: 1000 } }).state;
+  const lines = coachScript({ session: pickedDone });
+  assert.equal(lines[lines.length - 1].key, 'next');
+  assert.equal(lines[lines.length - 1].values.index, 0, 'the newest line is the same block as at idle');
+  assert.notEqual(sig(pickedDone), idleSig);
+  // (b) A Repeat of the same block with the same outcome: the result's seq moves, so it is heard.
+  const first = sessionReduce(running, { type: 'BLOCK_DONE', index: 0, summary: { activeMs: 1000 } }).state;
+  const again = sessionReduce(sessionReduce(first, { type: 'REPEAT' }).state, { type: 'BLOCK_DONE', index: 0, summary: { activeMs: 1000 } }).state;
+  assert.equal(again.plan.blocks[0].result.outcome, first.plan.blocks[0].result.outcome);
+  assert.notEqual(sig(again), sig(first));
+  // A Skip of a later block while the first pending block stays the same is heard too.
+  const pickedSkip = sessionReduce(sessionReduce(picked, { type: 'SKIP' }).state, { type: 'BLOCK_ABORTED' }).state;
+  assert.notEqual(sig(pickedSkip), sig(picked));
+  // (c) At idle, block 0's start level or reason moved: same key, same block, new signature.
+  const plan = zeroHistory();
+  const atFull = coachSignatureOf(coachScript({ session: emptySession(), plan, startLevels: [0] }), 'idle');
+  const atAnchors = coachSignatureOf(coachScript({ session: emptySession(), plan, startLevels: [1] }), 'idle');
+  assert.notEqual(atFull, atAnchors);
+  const moved = { ...plan, blocks: plan.blocks.map((block, i) => (i === 0 ? { ...block, reasonKey: 'due' } : block)) };
+  assert.notEqual(coachSignatureOf(coachScript({ session: emptySession(), plan: moved, startLevels: [0] }), 'idle'), atFull);
+  // The rules stay: nothing in the summary, and main resets the signature on CLOSE.
+  const summary = sessionReduce(first, { type: 'END' }).state;
+  assert.equal(summary.state, 'summary');
+  assert.equal(sig(summary), '');
 });
