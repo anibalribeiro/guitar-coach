@@ -142,12 +142,15 @@ export const PROGRESSIONS = [
 export const progressionById = Object.fromEntries(PROGRESSIONS.map(p => [p.id, p]));
 
 // ---------- Songs (four traditional/public-domain charts) ----------
-// A section carries exactly one of progressionId or inline degrees; no melody,
-// lyrics, tab, recording or playback (playback is Phase 4).
+// A section carries exactly one of progressionId or inline degrees. Each song carries one
+// public-domain first lyric line (`lyric`) for display only; still no melody, tab, recording
+// or playback of the song itself. Will the Circle uses the 1907 Habershon text, never the
+// 1935 Carter Family rewrite (LIB-01).
 export const SONGS = [
   { id: 'willTheCircleBeUnbroken', title: 'Will the Circle Be Unbroken', keyPc: 7,
     meter: [4,4], defaultBpm: 84, mode: 'major', strum: 'D DU UDU',
     tip: 'Change on beat 1; let the last strum ring.', provenance: 'Traditional, public domain',
+    lyric: 'There are loved ones in the glory',
     sections: [
       { id: 'verse', name: 'Verse', repeats: 2, degrees: [1,4,1,5] },
       { id: 'chorus', name: 'Chorus', repeats: 1, degrees: [1,4,1,5,1] },
@@ -155,6 +158,7 @@ export const SONGS = [
   { id: 'thisLittleLightOfMine', title: 'This Little Light of Mine', keyPc: 0,
     meter: [4,4], defaultBpm: 96, mode: 'major', strum: 'D D DU UDU',
     tip: 'Keep the strum even and let the light shine on the chorus.', provenance: 'Traditional, public domain',
+    lyric: "This little light of mine, I'm gonna let it shine",
     sections: [
       { id: 'verse', name: 'Verse', repeats: 2, degrees: [1,1,4,1] },
       { id: 'chorus', name: 'Chorus', repeats: 1, degrees: [1,4,1,5,1] },
@@ -162,6 +166,7 @@ export const SONGS = [
   { id: 'ohSusanna', title: 'Oh! Susanna', keyPc: 0,
     meter: [4,4], defaultBpm: 100, mode: 'major', strum: 'D DU D DU',
     tip: 'The verse is a loop; keep the bass note on beat 1.', provenance: 'Traditional, public domain',
+    lyric: 'I come from Alabama with my banjo on my knee',
     sections: [
       { id: 'verse', name: 'Verse', repeats: 2, degrees: [1,4,1,5] },
       { id: 'chorus', name: 'Chorus', repeats: 1, degrees: [1,4,5,1] },
@@ -169,11 +174,98 @@ export const SONGS = [
   { id: 'amazingGrace', title: 'Amazing Grace', keyPc: 7,
     meter: [3,4], defaultBpm: 70, mode: 'major', strum: 'D D DU',
     tip: 'Three beats per bar; let the last chord breathe.', provenance: 'Traditional, public domain',
+    lyric: 'Amazing grace! How sweet the sound',
     sections: [
       { id: 'verse', name: 'Verse', repeats: 1, degrees: [1,4,1,5,1] },
     ] },
 ];
 export const songById = Object.fromEntries(SONGS.map(s => [s.id, s]));
+
+// ---------- Library search (LIB-04) ----------
+// One pure function over the tables above: case- and accent-insensitive, word-start
+// anchored substring over each item's label, id and a few musically true aliases. No fuzzy
+// matching, no RegExp built from the query, nothing persisted. Word-start anchoring keeps
+// `I-IV-V` from matching `I–vi–IV–V` (whose fold contains "i-iv-v" mid-word).
+const SEARCH_MAX = 64;
+const fold = text => String(text || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/\u266f/g, '#').replace(/\u266d/g, 'b').replace(/[\u2013\u2014\u2212\u2192]/g, '-')
+  .toLowerCase().replace(/[^a-z0-9#/\- ]+/g, ' ').replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ').trim();
+// A hit counts only at the start of the haystack or right after a space, '-', '/' or '|'.
+const wordStartHit = (hay, q) => {
+  let at = hay.indexOf(q);
+  while (at >= 0) {
+    if (at === 0 || ' -/|'.includes(hay[at - 1])) return true;
+    at = hay.indexOf(q, at + 1);
+  }
+  return false;
+};
+// Private on purpose: the exported-table pin only lists `export const` tables.
+const SEARCH_ALIASES = {
+  scales: {
+    minPent: ['pentatonic', 'minor', 'pent'],
+    majPent: ['pentatonic', 'major', 'pent'],
+    major: ['major scale', 'ionian'],
+    blues: ['blues', 'flat five', 'b5'],
+  },
+  pairs: ['chord change', 'changes'],
+  progressions: {
+    '12-bar-blues': ['12 bar', 'twelve bar', 'blues'],
+    'blues-quick-change': ['quick change', 'blues'],
+    'ii-V-I': ['two five one', 'jazz'],
+    'I-V-vi-IV': ['pop'],
+    'I-vi-IV-V': ['50s', 'doo-wop'],
+    'i-VI-III-VII': ['minor'],
+  },
+  songs: {
+    willTheCircleBeUnbroken: ['hymn', 'traditional'],
+    thisLittleLightOfMine: ['spiritual', 'traditional'],
+    ohSusanna: ['folk', 'foster', 'traditional'],
+    amazingGrace: ['hymn', 'waltz', '3/4', 'traditional'],
+  },
+};
+// A chord's aliases come from its quality: `Am` is also "a minor", `C` is also "c major".
+const chordAliases = chord => {
+  const root = chord.quality === 'min' ? chord.name.replace(/m$/, '') : chord.name;
+  return [root + (chord.quality === 'min' ? ' minor' : ' major')];
+};
+// Each part is folded on its own and joined with ' | ', which a folded query can never
+// contain, so a query never matches across two parts.
+const haystack = parts => parts.map(fold).filter(Boolean).join(' | ');
+// Roman-numeral and chord-sequence names are also typed with spaces (`ii V I`, `am c`), so each
+// hyphenated part gets a spaced twin. Word-start anchoring still holds: `i iv v` never matches
+// inside `i vi iv v` (10 IN-02).
+const withSpaced = parts => parts.flatMap(part => {
+  const folded = fold(part);
+  return folded.includes('-') ? [folded, folded.replace(/-/g, ' ')] : [folded];
+});
+// Titles plus aliases only: lyric words are not indexed, so a one-letter chord query such as `g`
+// never lists songs through "glory" or "grace" (10 IN-03).
+const SEARCH_INDEX = {
+  songs: SONGS.map(song => [song.id,
+    haystack([song.title, song.id, ...(SEARCH_ALIASES.songs[song.id] || [])])]),
+  scales: SCALES.map(scale => [scale.id,
+    haystack([scale.name, scale.id, ...(SEARCH_ALIASES.scales[scale.id] || [])])]),
+  chords: CHORD_FAMILIES.map(chord => [chord.id, haystack([chord.name, chord.id, ...chordAliases(chord)])]),
+  pairs: CHORD_PAIRS.map(pair => [pair.id, haystack([...withSpaced([pair.label, pair.id]), ...SEARCH_ALIASES.pairs])]),
+  progressions: PROGRESSIONS.map(prog => [prog.id,
+    haystack([...withSpaced([prog.name, prog.id]), ...(SEARCH_ALIASES.progressions[prog.id] || [])])]),
+};
+
+// `null` means no query (show the tabs); otherwise the matching ids per group, in table order.
+// Text that folds to nothing (only punctuation or non-Latin letters) is a query with no match,
+// so the field never shows text over the restored tabs (10 IN-01).
+export function searchLibrary(query) {
+  if (!String(query || '').trim()) return null;
+  const q = fold(query).slice(0, SEARCH_MAX).trim();
+  const match = rows => (q ? rows.filter(([, hay]) => wordStartHit(hay, q)).map(([id]) => id) : []);
+  return {
+    songs: match(SEARCH_INDEX.songs),
+    scales: match(SEARCH_INDEX.scales),
+    chords: match(SEARCH_INDEX.chords),
+    pairs: match(SEARCH_INDEX.pairs),
+    progressions: match(SEARCH_INDEX.progressions),
+  };
+}
 
 // ---------- Micro-lessons (one per drill family; TEACH-01, D-75) ----------
 // Eight fields and no more: `title` is the family's own picker label so the panel heading can

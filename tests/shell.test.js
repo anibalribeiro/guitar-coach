@@ -7,8 +7,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createSettingsStore, VIEWS, SCHEMA_VERSION } from '../app/src/settings.js';
-import { createPanels, NAV_VIEWS, CTA_LABEL, MIC_ACTIONS, connectionView } from '../app/src/panels.js';
-import { scaleById, chordById, chordPairById, progressionById, songById } from '../app/src/content.js';
+import { createPanels, NAV_VIEWS, CTA_LABEL, MIC_ACTIONS, connectionView, reportPendingOf } from '../app/src/panels.js';
+import {
+  scaleById, chordById, chordPairById, progressionById, songById, SONGS, SCALES, CHORD_PAIRS, CHORD_FAMILIES, PROGRESSIONS,
+} from '../app/src/content.js';
 import { positionsForScale } from '../app/src/theory.js';
 import { createFakeStorage } from './helpers/fakes.js';
 
@@ -327,8 +329,9 @@ test('Library holds the family tabs, the picker card and the Practise CTA', () =
   for (const needle of ['id="tabs"', 'id="tabpanel"', 'id="key"', 'id="scale"', 'id="position"', 'id="labels"', 'id="libraryCta"']) {
     assert.ok(library.includes(needle), `${needle} sits in view-library`);
   }
-  assert.match(library, /<section id="tabpanel" role="tabpanel" aria-labelledby="tab-scales" class="library-card" tabindex="0">/);
-  assert.match(library, /<button type="button" class="cta" id="libraryCta">Practise this scale<\/button>/);
+  assert.match(library, /<section id="tabpanel" role="tabpanel" aria-labelledby="tab-songs" class="library-card" tabindex="0">/);
+  // 10-02: the Library opens on Songs, so the CTA names the song it opens.
+  assert.match(library, /<button type="button" class="cta" id="libraryCta">Open this song<\/button>/);
   assert.ok(library.indexOf('id="tabpanel"') < library.indexOf('id="libraryCta"'), 'the CTA follows the card');
   assert.ok(!html().includes('id="workspaceSetup"'), 'the setup details wrapper is gone');
 });
@@ -388,19 +391,21 @@ test('every seed switches to Practice before it focuses or scrolls, and Play nev
   assert.match(main, /onPractiseSelection: practiseSelection,/);
   const panels = read('panels.js');
   assert.match(panels, /if \(\$\('libraryCta'\)\) \$\('libraryCta'\)\.addEventListener\('click', \(\) => onPractiseSelection\(\)\);/);
-  assert.match(panels, /if \(\$\('changeInLibrary'\)\) \$\('changeInLibrary'\)\.addEventListener\('click', \(\) => onView\('library'\)\);/);
+  // 10-02: Change in Library opens the Library tab of the loaded item, so it has its own callback.
+  assert.match(panels, /if \(\$\('changeInLibrary'\)\) \$\('changeInLibrary'\)\.addEventListener\('click', \(\) => onChangeInLibrary\(\)\);/);
 });
 
 test('the CTA label follows the family tab, written with textContent', () => {
+  // 10-02, 10 IN-06: songs, progressions and chords open their browse subject, not a drill, so their CTA says Open.
   assert.deepEqual(CTA_LABEL, {
-    scales: 'Practise this scale', chords: 'Practise this chord',
-    progressions: 'Practise this progression', songs: 'Practise this song',
+    scales: 'Practise this scale', chords: 'Open this chord',
+    progressions: 'Open this progression', songs: 'Open this song',
   });
   withPanels(({ panels, byId }) => {
     panels.select('chords', false, false);
-    assert.equal(byId.get('libraryCta').textContent, 'Practise this chord');
+    assert.equal(byId.get('libraryCta').textContent, 'Open this chord');
     panels.select('songs', false, false);
-    assert.equal(byId.get('libraryCta').textContent, 'Practise this song');
+    assert.equal(byId.get('libraryCta').textContent, 'Open this song');
   });
   assert.match(read('panels.js'), /\$\('libraryCta'\)\.textContent = CTA_LABEL\[tab\]/);
 });
@@ -410,11 +415,127 @@ test('the CTA label follows the family tab, written with textContent', () => {
 test('WR-04: every Key select and the selection pickers are disabled while a pass plays', () => {
   withPanels(({ panels, byId }) => {
     const ids = ['key', 'scale', 'position', 'direction', 'progressionKey', 'songKey', 'playKey'];
+    // 10-02: every Library card is disabled too, while the four content tabs stay browsable.
+    const cards = ['songCards', 'scaleCards', 'chordCards', 'progressionCards'].flatMap(list => cardsIn(byId, list));
+    const tabs = ['tab-songs', 'tab-scales', 'tab-chords', 'tab-progressions'];
+    assert.ok(cards.length > 0);
     panels.setDrill({ phase: 'active' });
     for (const id of ids) assert.equal(byId.get(id).disabled, true, `${id} is locked during a pass`);
+    for (const card of cards) assert.equal(card.disabled, true, `${card.dataset.id} card is locked during a pass`);
+    for (const id of tabs) assert.equal(byId.get(id).disabled, false, `${id} stays usable during a pass`);
+    // 10-03: every search result row locks with the cards; the search field stays usable.
+    const rows = ['searchSongs', 'searchScales', 'searchChords', 'searchProgressions'].flatMap(list => findAll(byId.get(list), 'search-row'));
+    assert.ok(rows.length > 0);
+    for (const row of rows) assert.equal(row.disabled, true, `${row.dataset.id} result is locked during a pass`);
+    assert.equal(byId.get('librarySearch').disabled, false, 'the search field stays usable during a pass');
     panels.setDrill({ phase: 'idle' });
     for (const id of ids) assert.equal(byId.get(id).disabled, false, `${id} is live again at idle`);
+    for (const card of cards) assert.equal(card.disabled, false, `${card.dataset.id} card is live again at idle`);
+    for (const row of rows) assert.equal(row.disabled, false, `${row.dataset.id} result is live again at idle`);
   });
+});
+
+// 10 CR-01: every Library picker or button that can move the run's subject locks while the stage
+// is owned. Labels only repaint the shown pass and the power-chord Learn button opens reading
+// material, so those two stay live; anything else added under #controls-* must lock.
+test('10 CR-01: every subject picker and button under #controls-* is disabled while a pass owns the stage', () => {
+  const source = html();
+  const ids = [];
+  for (const tab of ['scales', 'chords', 'progressions', 'songs']) {
+    const start = source.indexOf(`id="controls-${tab}"`);
+    assert.ok(start > 0, `controls-${tab} exists`);
+    const next = source.indexOf('id="controls-', start + 1);
+    const block = source.slice(start, next > start ? next : source.indexOf('id="libraryCta"', start));
+    for (const m of block.matchAll(/<(?:select|button)\b[^>]*\bid="([^"]+)"/g)) ids.push(m[1]);
+  }
+  const live = ['labels', 'powerChordLearn'];
+  const locked = ids.filter(id => !live.includes(id));
+  for (const id of ['song', 'songKey', 'playSong', 'progression', 'progressionKey', 'playProgression', 'chord', 'voicing']) {
+    assert.ok(locked.includes(id), `${id} is a Library picker`);
+  }
+  withPanels(({ panels, byId }) => {
+    for (const phase of ['countIn', 'active', 'paused', 'passReview']) {
+      panels.setDrill({ phase: 'idle' });
+      panels.setDrill({ phase, streaks: {} });
+      for (const id of locked) assert.equal(byId.get(id).disabled, true, `${id} is locked at ${phase}`);
+    }
+    panels.setDrill({ phase: 'result' });
+    for (const id of locked) assert.equal(byId.get(id).disabled, false, `${id} is live again at the result`);
+  });
+  // Defence in depth: the DOM disabled state is not the authority, applyChange refuses too.
+  assert.match(read('main.js'),
+    /if \(stageOwned\(\) && \['songId', 'progressionId', 'chordId', 'voicingId'\]\.includes\(field\)\) return;/);
+});
+
+// 10 IN-07: a completed recall still waiting for its self-report keeps its result. Cards, search
+// rows and the two Play buttons lock (they would close the result); the pickers and the CTA stay
+// live, and main refuses the opens and keeps the CTA to a view switch.
+test('10 IN-07: a pending recall self-report locks Library opens, never the pickers', () => {
+  const recall = report => ({ attempted: true, completed: true, selfReport: report, bpm: 80 });
+  assert.equal(reportPendingOf({ recall: recall(null) }), true);
+  for (const done of ['clean', 'shaky']) assert.equal(reportPendingOf({ recall: recall(done) }), false);
+  assert.equal(reportPendingOf({ recall: { attempted: true, completed: false, selfReport: null } }), false, 'a guided recall never waits');
+  assert.equal(reportPendingOf(null), false);
+  withPanels(({ panels, byId }) => {
+    const cards = ['songCards', 'scaleCards', 'chordCards', 'progressionCards'].flatMap(list => cardsIn(byId, list));
+    const rows = ['searchSongs', 'searchScales', 'searchChords', 'searchProgressions'].flatMap(list => findAll(byId.get(list), 'search-row'));
+    const summary = report => ({ startLevel: 3, passes: [], recall: recall(report), withHints: { passes: [], clean: 0, endedAtLevel: 3 } });
+    panels.setDrill({ phase: 'result', summary: summary(null) });
+    for (const node of [...cards, ...rows]) assert.equal(node.disabled, true, `${node.dataset.id} is locked while the report waits`);
+    for (const id of ['playSong', 'playProgression']) assert.equal(byId.get(id).disabled, true, `${id} is locked while the report waits`);
+    for (const id of ['song', 'progression', 'chord', 'key']) assert.equal(byId.get(id).disabled, false, `${id} only picks, so it stays live`);
+    assert.equal(byId.get('libraryCta').disabled, false, 'the CTA stays live: it only switches view');
+    panels.setDrill({ phase: 'result', summary: summary('clean') });
+    for (const node of [...cards, ...rows]) assert.equal(node.disabled, false, `${node.dataset.id} opens again once reported`);
+    for (const id of ['playSong', 'playProgression']) assert.equal(byId.get(id).disabled, false);
+  });
+  const main = read('main.js');
+  assert.match(main, /const reportPending = \(\) => !!\(run && run\.phase === 'result'\) && reportPendingOf\(run\);/);
+  assert.match(fnBody(main, 'openItem'), /if \(stageOwned\(\) \|\| reportPending\(\)\) return;/);
+  assert.match(fnBody(main, 'playFromLibrary'), /^function playFromLibrary\(family, id\) \{\n  if \(reportPending\(\)\) return;/);
+  assert.match(fnBody(main, 'practiseSelection'), /if \(!stageOwned\(\) && !reportPending\(\)\) \{/);
+});
+
+// v2.0 WARN-2: the IN-07 lock covered Library only. Every other path that would replace or close
+// a recall result still waiting for its Clean/Shaky report refuses through one guard, with the
+// reason on the feedback line and the one live region. Giving the report releases it; the result
+// screen's own Repeat and Back stay live (they are the explicit choice on the result itself).
+test('v2.0 WARN-2: a pending recall self-report refuses Today, Progress, the session and every seed', () => {
+  const main = read('main.js');
+  assert.match(main, /const REPORT_LOCK_FEEDBACK = 'Rate the no-light pass first: Clean or Shaky\.';/);
+  const lock = fnBody(main, 'reportLocked');
+  assert.match(lock, /if \(!reportPending\(\)\) return false;\s*panels\.setFeedback\(REPORT_LOCK_FEEDBACK\);\s*panels\.announce\(REPORT_LOCK_FEEDBACK\);\s*return true;/);
+  assert.match(fnBody(main, 'switchView'),
+    /if \(\(name === 'today' \|\| name === 'progress'\) && reportLocked\(\)\) return false;/);
+  const guarded = ['startSession', 'startSessionAt', 'sessionPick', 'practiseSkill', 'seedPair', 'seedFamily',
+    'seedNextItem', 'seedPlayAlong', 'startGuidedLesson'];
+  for (const name of guarded) {
+    const whole = fnBody(main, name);
+    const body = whole.slice(whole.indexOf('{'));
+    const at = body.indexOf('reportLocked()');
+    assert.ok(at > 0, `${name} refuses while a recall report waits`);
+    for (const closer of ['backToBrowse()', 'startDrill(', 'sessionReduce(', 'dispatchSession(', 'startSessionAt(', 'save(']) {
+      const call = body.indexOf(closer);
+      if (call >= 0) assert.ok(at < call, `${name} checks the lock before ${closer}`);
+    }
+  }
+  // Every remaining backToBrowse/startDrill caller is either guarded above, a result-screen control
+  // (onTransport: Repeat, Back) or reachable only after the guard (openItem, seedBlock via the session).
+  const callers = new Set();
+  for (const fn of main.matchAll(/\n(?:async )?function (\w+)\(/g)) {
+    const body = fnBody(main, fn[1]);
+    const code = body.slice(body.indexOf('{')).replace(/\/\/[^\n]*/g, '');
+    if (/backToBrowse\(\)|startDrill\(/.test(code)) callers.add(fn[1]);
+  }
+  callers.delete('backToBrowse');
+  callers.delete('startDrill');
+  const allowed = new Set([...guarded, 'openItem', 'seedBlock', 'onTransport']);
+  for (const name of callers) assert.ok(allowed.has(name), `${name} closes or replaces a result: guard it or list it`);
+  // The lock releases on the report itself: the predicate reads the recall's own selfReport.
+  const recall = report => ({ phase: 'result', recall: { attempted: true, completed: true, selfReport: report, bpm: 80 } });
+  assert.equal(reportPendingOf(recall(null)), true);
+  assert.equal(reportPendingOf(recall('clean')), false);
+  assert.equal(reportPendingOf(recall('shaky')), false);
 });
 
 // WR-01: a lesson opened from Today or Library returns focus to a rendered node, not the hidden opener.
@@ -1098,9 +1219,12 @@ test('LOOK-03 contrast: the forbidden pairs never appear in a rule', () => {
   }
 });
 
-test('KEEP-04: the offline release is v31, bumped once after the Phase 9 review fixes', () => {
+test('KEEP-04: the offline release is v34, bumped for the v2.0 audit fixes', () => {
   const sw = fs.readFileSync(fileURLToPath(new URL('../app/sw.js', import.meta.url)), 'utf8');
-  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v31';/);
+  assert.match(sw, /const CACHE = CACHE_PREFIX \+ 'v34';/);
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v33'"), 'the v33 release is gone');
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v32'"), 'the v32 release is gone');
+  assert.ok(!sw.includes("CACHE_PREFIX + 'v31'"), 'the v31 release is gone');
   assert.ok(!sw.includes("CACHE_PREFIX + 'v30'"), 'the v30 release is gone');
   assert.ok(!sw.includes("CACHE_PREFIX + 'v29'"), 'the v29 release is gone');
   assert.ok(!sw.includes("CACHE_PREFIX + 'v28'"), 'the v28 release is gone');
@@ -1191,4 +1315,418 @@ test('FADE-10 readout: 40px ink numbers, 12px muted labels, 16px passes left, ne
   assert.match(blockRule(block, '#passesLeft'), /font-size: 16px;[^}]*color: var\(--ink-2\);/);
   assert.match(blockRule(block, '.dimmer-readout'), /background: var\(--sky\);/);
   assert.ok(!/(^|[ ;])color: var\(--marigold-edge\)/.test(block), 'marigold-edge is 4.44:1 on white, so never text');
+});
+
+// ---------- 10-02: songs-first Library (LIB-01, LIB-03) ----------
+// Depth-first search through stub children by class token.
+function findAll(node, cls, out = []) {
+  for (const child of node.children || []) {
+    if (typeof child.className === 'string' && child.className.split(' ').includes(cls)) out.push(child);
+    findAll(child, cls, out);
+  }
+  return out;
+}
+const textOf = node => (node.children && node.children.length ? node.children.map(textOf).join('') : node.textContent);
+// A declaration, so the WR-04 test above can use it before this point is evaluated.
+function cardsIn(byId, listId) { return findAll(byId.get(listId), 'lib-card'); }
+const defaults = () => createSettingsStore(createFakeStorage(), CONTENT).load();
+
+test('10-02: the Library markup opens on Songs, with the song cards inside the tabpanel', () => {
+  const source = html();
+  const library = viewSlice(source, 'library');
+  const tabs = library.slice(library.indexOf('id="tabs"'), library.indexOf('</div>', library.indexOf('id="tabs"')));
+  const order = ['tab-songs', 'tab-scales', 'tab-chords', 'tab-progressions'].map(id => tabs.indexOf(`id="${id}"`));
+  for (const at of order) assert.ok(at > 0, 'a content tab is missing');
+  for (let i = 1; i < order.length; i++) assert.ok(order[i] > order[i - 1], 'the tabs read Songs, Scales, Chords, Progressions');
+  assert.match(tabs, /id="tab-songs" aria-controls="tabpanel" aria-selected="true" tabindex="0">Songs<\/button>/);
+  assert.match(tabs, /id="tab-scales" aria-controls="tabpanel" aria-selected="false" tabindex="-1">Scales<\/button>/);
+  assert.match(library, /<div class="controls" id="controls-songs">/);
+  assert.match(library, /<div class="controls" id="controls-scales" hidden>/);
+  const panel = library.slice(library.indexOf('id="tabpanel"'), library.indexOf('id="libraryCta"'));
+  assert.match(panel, /<ul class="lib-cards" id="songCards"><\/ul>/);
+  assert.ok(panel.indexOf('id="songCards"') < panel.indexOf('id="controls-songs"'), 'the cards sit above the picker rows');
+  assert.equal((source.match(/aria-live/g) || []).length, 1, 'still exactly one live region');
+  assert.match(read('panels.js'), /const TABS = \['songs', 'scales', 'chords', 'progressions'\];/);
+});
+
+test('10-02: createPanels prebuilds one song card per song with title, meta, chords, lyric and lamps', () => {
+  withPanels(({ byId }) => {
+    const cards = cardsIn(byId, 'songCards');
+    assert.equal(cards.length, SONGS.length);
+    cards.forEach((card, i) => {
+      const song = SONGS[i];
+      assert.equal(card.dataset.family, 'song');
+      assert.equal(card.dataset.id, song.id);
+      assert.equal(card.getAttribute('aria-label'), `Open ${song.title} in Practice`);
+      assert.equal(findAll(card, 'meta').length, 1);
+      assert.equal(findAll(card, 'chordline').length, 1);
+      assert.equal(findAll(card, 'verses').length, 1);
+      assert.equal(findAll(card, 'lyric').length, song.lyric ? 1 : 0, 'a lyric node only when the song has one');
+      if (song.lyric) assert.equal(findAll(card, 'lyric')[0].textContent, song.lyric);
+      assert.ok(textOf(card).includes(song.title));
+    });
+  });
+});
+
+// 10 IN-04: the aria-label names the action, so the card's meta (key, meter, BPM), chord line,
+// lyric and lamps are all spoken as its description, in reading order.
+test('10 IN-04: every card is described by its meta, chord line, lyric and lamps', () => {
+  withPanels(({ byId }) => {
+    for (const card of cardsIn(byId, 'songCards')) {
+      const ids = card.getAttribute('aria-describedby').split(' ');
+      const song = SONGS.find(s => s.id === card.dataset.id);
+      const expected = [findAll(card, 'meta')[0], findAll(card, 'chordline')[0],
+        ...findAll(card, 'lyric'), findAll(card, 'verses')[0]].map(node => node.id);
+      assert.deepEqual(ids, expected, `${song.id} description order`);
+      assert.equal(ids.length, song.lyric ? 4 : 3);
+      assert.ok(ids.every(Boolean) && new Set(ids).size === ids.length, 'every described node has its own id');
+    }
+    for (const list of ['scaleCards', 'chordCards', 'progressionCards']) {
+      for (const card of cardsIn(byId, list)) {
+        const ids = card.getAttribute('aria-describedby').split(' ');
+        assert.equal(ids[0], findAll(card, 'meta')[0].id, `${card.dataset.id} names its meta first`);
+        const verses = findAll(card, 'verses');
+        if (verses.length) assert.equal(ids[ids.length - 1], verses[0].id, 'the lamps stay in the description');
+      }
+    }
+  });
+});
+
+// 10 WR-01: the lamps are repainted from the plane on Library entry and at every progress write
+// a result makes (the result itself and its recall self-report both go through recordResult).
+test('10 WR-01: entering Library and every recorded result repaint the Library lamps', () => {
+  const main = read('main.js');
+  assert.match(fnBody(main, 'switchView'), /else if \(name === 'library'\) panels\.renderLibrary\(libraryModel\(\)\);/);
+  const record = fnBody(main, 'recordResult');
+  assert.ok(record.indexOf('store.setProgress(progress)') < record.indexOf('panels.renderLibrary(libraryModel());'),
+    'the lamps repaint after the write, from the persisted plane');
+  // Both progress writes of a result reach the repaint through recordResult.
+  assert.ok((main.match(/= recordResult\(\);/g) || []).length >= 2, 'the result and the self-report both record');
+  assert.equal((main.match(/applyResult\(/g) || []).length, 1, 'recordResult is the one result write');
+});
+
+// 10 WR-03: a scale card's lamp and the skill it opens come from one family rule, so with Find
+// the note selected the lamp reads the findNote level the card will open.
+test('10 WR-03: the scale card lamp uses the family the card opens', () => {
+  const main = read('main.js');
+  assert.match(main, /const scaleOpenFamily = \(\) => \(settings\.drillFamily === 'findNote' \? 'findNote' : 'scaleRun'\);/);
+  const model = fnBody(main, 'libraryModel');
+  assert.match(model, /const family = scaleOpenFamily\(\);/);
+  assert.match(model, /chartIdFor\(\{ drillFamily: family, scaleId: scale\.id, keyPc: settings\.keyPc, positionId \}\)/);
+  assert.ok(!/drillFamily: 'scaleRun'/.test(model), 'no hard-coded scale-run lamp');
+  assert.match(fnBody(main, 'openItem'), /drillFamily: scaleOpenFamily\(\)/);
+});
+
+test('10-02: renderLibrary writes chord chips and owned-level lamps, and a repeat call writes nothing', () => {
+  const model = {
+    songs: [{
+      id: 'willTheCircleBeUnbroken', keyPc: 7, meta: 'G · 4/4 · 84 BPM', chords: ['G', 'C', 'G', 'D'],
+      sections: [{ id: 'verse', name: 'Verse', repeats: 2, level: 1 }, { id: 'chorus', name: 'Chorus', repeats: 1, level: -1 }],
+    }],
+  };
+  withPanels(({ panels, byId }) => {
+    const card = cardsIn(byId, 'songCards').find(c => c.dataset.id === 'willTheCircleBeUnbroken');
+    panels.renderLibrary(model);
+    assert.equal(findAll(card, 'meta')[0].textContent, 'G · 4/4 · 84 BPM');
+    const chordline = findAll(card, 'chordline')[0];
+    assert.deepEqual(chordline.children.map(chip => chip.textContent), ['G', 'C', 'G', 'D']);
+    const groups = findAll(card, 'vz');
+    assert.equal(groups.length, 2);
+    const [verse, chorus] = groups;
+    assert.equal(findAll(verse, 'own-swatch')[0].getAttribute('data-level'), '1');
+    assert.equal(findAll(verse, 'own-swatch')[0].getAttribute('aria-hidden'), 'true');
+    assert.equal(textOf(verse), 'Verse ×2 · owned: Anchors');
+    assert.equal(findAll(chorus, 'own-swatch')[0].getAttribute('data-level'), null, 'not started carries no level');
+    assert.equal(textOf(chorus), 'Chorus · Not started');
+    const verses = findAll(card, 'verses')[0];
+    const chips = chordline.children;
+    const lamps = verses.children;
+    panels.renderLibrary(JSON.parse(JSON.stringify(model)));
+    assert.equal(chordline.children, chips, 'an unchanged card keeps its chips');
+    assert.equal(verses.children, lamps, 'an unchanged card keeps its lamps');
+  });
+});
+
+test('10-02: the Library tab never follows settings.tab; the Practice subject surfaces do', () => {
+  withPanels(({ panels, byId }) => {
+    panels.select('scales', false, false);
+    assert.equal(byId.get('tab-scales').getAttribute('aria-selected'), 'true');
+    panels.render({ ...defaults(), tab: 'chords' }, { libraryTab: 'songs' });
+    assert.equal(byId.get('tab-songs').getAttribute('aria-selected'), 'true');
+    assert.equal(byId.get('tab-scales').getAttribute('aria-selected'), 'false');
+    assert.equal(byId.get('tabpanel').getAttribute('aria-labelledby'), 'tab-songs');
+    assert.equal(byId.get('controls-songs').hidden, false);
+    assert.equal(byId.get('controls-chords').hidden, true);
+    assert.equal(byId.get('songCards').hidden, false);
+    assert.equal(byId.get('libraryCta').textContent, 'Open this song');
+    assert.equal(byId.get('chordDetail').hidden, false, 'chord detail follows the Practice subject');
+    assert.equal(byId.get('chart').hidden, true);
+    const chart = { sections: [{ name: 'Verse', repeats: 1, bars: [{ bar: 1, name: 'G', roman: 'I' }] }] };
+    panels.render({ ...defaults(), tab: 'songs' }, { libraryTab: 'chords', chart });
+    assert.equal(byId.get('chart').hidden, false, 'the bar chart shows for the songs subject');
+    assert.equal(byId.get('controls-chords').hidden, false);
+    assert.equal(byId.get('songCards').hidden, true);
+  });
+});
+
+test('10-02: clicking a song card asks main to open that song', () => {
+  const opened = [];
+  withPanels(({ byId, listeners }) => {
+    const card = cardsIn(byId, 'songCards')[0];
+    const click = listeners.find(l => l.node === byId.get('songCards') && l.type === 'click');
+    assert.ok(click, 'one delegated click listener on the song list');
+    click.handler({ target: { closest: sel => (sel === '.lib-card' ? card : null) } });
+    click.handler({ target: { closest: () => null } });
+    assert.deepEqual(opened, [['song', SONGS[0].id]]);
+  }, { handlers: { onOpenItem: (family, id) => opened.push([family, id]) } });
+});
+
+test('10-02: libraryTab lives in memory only; a tab click never reaches applyTab', () => {
+  const main = read('main.js');
+  assert.equal((main.match(/let libraryTab = 'songs';/g) || []).length, 1);
+  assert.match(main, /onTab: showLibraryTab,/);
+  assert.ok(!/onTab: applyTab/.test(main));
+  const show = fnBody(main, 'showLibraryTab');
+  assert.ok(!show.includes('applyTab('), 'showLibraryTab never calls applyTab');
+  assert.ok(!show.includes('save('), 'showLibraryTab never persists');
+  for (const call of main.match(/save\([^;]*\);/g) || []) assert.ok(!call.includes('libraryTab'), `no save mentions libraryTab: ${call}`);
+  assert.ok(!read('settings.js').includes('libraryTab'), 'settings.js never learns libraryTab');
+  assert.match(fnBody(main, 'renderAll'), /panels\.render\(settings, \{ \.\.\.view, libraryTab, library: libraryModel\(\) \}\);/);
+});
+
+// ---------- 10-02: every Library tab opens its item (LIB-03) ----------
+test('10-02: every Library tab lists its cards; chord shapes carry no lamp', () => {
+  withPanels(({ byId }) => {
+    const scales = cardsIn(byId, 'scaleCards');
+    assert.deepEqual(scales.map(c => [c.dataset.family, c.dataset.id]), SCALES.map(s => ['scale', s.id]));
+    const chords = cardsIn(byId, 'chordCards');
+    assert.deepEqual(chords.map(c => [c.dataset.family, c.dataset.id]), [
+      ...CHORD_PAIRS.map(p => ['pair', p.id]), ...CHORD_FAMILIES.map(c => ['chord', c.id]),
+    ], 'chord pairs first, then the chord shapes');
+    for (const card of chords) {
+      assert.equal(findAll(card, 'verses').length, card.dataset.family === 'pair' ? 1 : 0, `${card.dataset.id} lamp`);
+    }
+    for (const card of chords.filter(c => c.dataset.family === 'chord')) {
+      assert.ok(findAll(card, 'meta')[0].textContent.length > 0, 'a chord shape card names its shapes');
+    }
+    const progressions = cardsIn(byId, 'progressionCards');
+    assert.deepEqual(progressions.map(c => [c.dataset.family, c.dataset.id]), PROGRESSIONS.map(p => ['progression', p.id]));
+    for (const card of [...scales, ...progressions]) assert.equal(findAll(card, 'verses').length, 1);
+  });
+});
+
+test('10-02: selecting a Library tab shows only its card list and its picker row', () => {
+  const lists = { songs: 'songCards', scales: 'scaleCards', chords: 'chordCards', progressions: 'progressionCards' };
+  withPanels(({ panels, byId }) => {
+    for (const tab of Object.keys(lists)) {
+      panels.select(tab, false, false);
+      for (const other of Object.keys(lists)) {
+        assert.equal(byId.get(lists[other]).hidden, other !== tab, `${lists[other]} with ${tab}`);
+        assert.equal(byId.get(`controls-${other}`).hidden, other !== tab, `controls-${other} with ${tab}`);
+      }
+      assert.equal(byId.get('libraryCta').textContent, CTA_LABEL[tab]);
+    }
+  });
+});
+
+test('10-02: renderLibrary writes scale, pair and progression lamps as owned level or Not started', () => {
+  withPanels(({ panels, byId }) => {
+    panels.renderLibrary({
+      scales: [{ id: SCALES[0].id, meta: 'A · Whole neck', level: 3 }],
+      pairs: [{ id: CHORD_PAIRS[0].id, level: -1 }],
+      progressions: [{ id: PROGRESSIONS[0].id, meta: 'C · C – F – G', level: 0 }],
+    });
+    const scale = cardsIn(byId, 'scaleCards')[0];
+    assert.equal(findAll(scale, 'meta')[0].textContent, 'A · Whole neck');
+    assert.equal(findAll(scale, 'own-swatch')[0].getAttribute('data-level'), '3');
+    assert.equal(textOf(findAll(scale, 'vz')[0]), 'owned: No lights');
+    const pair = cardsIn(byId, 'chordCards')[0];
+    assert.equal(findAll(pair, 'own-swatch')[0].getAttribute('data-level'), null);
+    assert.equal(textOf(findAll(pair, 'vz')[0]), 'Not started');
+    const prog = cardsIn(byId, 'progressionCards')[0];
+    assert.equal(textOf(findAll(prog, 'vz')[0]), 'owned: Full pattern');
+  });
+});
+
+test('10-02: the Library picker rows read the library model, whatever the Practice subject', () => {
+  withPanels(({ panels, byId }) => {
+    const voicings = chordById.G.voicings;
+    const positions = positionsForScale(0, scaleById.major);
+    panels.render({ ...defaults(), tab: 'scales', chordId: 'G', voicingId: voicings[0].id }, {
+      positions, voicings: [], library: { positions, voicings },
+    });
+    assert.equal(byId.get('voicing').children.length, voicings.length, 'voicings of settings.chordId on the scales subject');
+    panels.render({ ...defaults(), tab: 'chords', scaleId: 'major', keyPc: 0 }, {
+      positions: [], voicings, library: { positions, voicings },
+    });
+    assert.equal(byId.get('position').children.length, positions.length + 1, 'Whole neck plus the boxes on the chords subject');
+  });
+});
+
+test('10-02: Change in Library opens the tab of the loaded item', () => {
+  const main = read('main.js');
+  assert.match(main, /onChangeInLibrary: changeInLibrary,/);
+  const tabFor = fnBody(main, 'libraryTabForLoaded');
+  assert.match(tabFor, /if \(settings\.tab !== 'scales'\) return settings\.tab;/);
+  assert.match(tabFor, /song: 'songs', progression: 'progressions', chordChanges: 'chords'/);
+  const change = fnBody(main, 'changeInLibrary');
+  assert.ok(change.indexOf('libraryTab = libraryTabForLoaded()') >= 0);
+  assert.ok(change.indexOf('libraryTab = libraryTabForLoaded()') < change.indexOf("switchView('library')"), 'tab first, then the view');
+  assert.match(change, /panels\.select\(libraryTab, false, false\);/);
+});
+
+// ---------- 10-03: Library search (LIB-04) ----------
+const SEARCH_LISTS = { songs: 'searchSongs', scales: 'searchScales', chords: 'searchChords', progressions: 'searchProgressions' };
+const SEARCH_GROUPS = { songs: 'searchGroupSongs', scales: 'searchGroupScales', chords: 'searchGroupChords', progressions: 'searchGroupProgressions' };
+const searchRows = byId => Object.values(SEARCH_LISTS).flatMap(list => findAll(byId.get(list), 'search-row'));
+const visibleRows = byId => Object.values(SEARCH_LISTS).flatMap(list => byId.get(list).children)
+  .filter(item => !item.hidden).map(item => item.children[0]);
+const nodeCount = node => (node.children || []).reduce((sum, child) => sum + 1 + nodeCount(child), 0);
+function typeSearch(byId, listeners, value) {
+  const input = byId.get('librarySearch');
+  const handler = listeners.find(l => l.node === input && l.type === 'input');
+  assert.ok(handler, 'one input listener on #librarySearch');
+  input.value = value;
+  handler.handler({ target: input });
+}
+
+test('10-03: createPanels prebuilds one result row per song, scale, chord pair, chord shape and progression', () => {
+  withPanels(({ byId }) => {
+    const rows = searchRows(byId);
+    assert.equal(rows.length, SONGS.length + SCALES.length + CHORD_PAIRS.length + CHORD_FAMILIES.length + PROGRESSIONS.length);
+    const ids = list => findAll(byId.get(list), 'search-row').map(row => `${row.dataset.family}:${row.dataset.id}`);
+    assert.deepEqual(ids('searchSongs'), SONGS.map(s => `song:${s.id}`));
+    assert.deepEqual(ids('searchScales'), SCALES.map(s => `scale:${s.id}`));
+    assert.deepEqual(ids('searchChords'), [...CHORD_PAIRS.map(p => `pair:${p.id}`), ...CHORD_FAMILIES.map(c => `chord:${c.id}`)]);
+    assert.deepEqual(ids('searchProgressions'), PROGRESSIONS.map(p => `progression:${p.id}`));
+    for (const row of rows) assert.equal(row.type, 'button');
+    assert.ok(textOf(rows.find(r => r.dataset.id === 'minPent')).includes('Minor pentatonic'));
+  });
+});
+
+test('10-03: typing shows only the matching rows and groups, replacing the tabs, without creating nodes', () => {
+  withPanels(({ byId, listeners }) => {
+    const before = Object.values(SEARCH_LISTS).map(list => nodeCount(byId.get(list)));
+    typeSearch(byId, listeners, 'pentatonic');
+    assert.equal(byId.get('searchResults').hidden, false);
+    assert.equal(byId.get('tabs').hidden, true);
+    assert.equal(byId.get('tabpanel').hidden, true);
+    assert.deepEqual(visibleRows(byId).map(row => row.dataset.id), ['minPent', 'majPent']);
+    assert.equal(byId.get(SEARCH_GROUPS.scales).hidden, false);
+    for (const group of ['songs', 'chords', 'progressions']) assert.equal(byId.get(SEARCH_GROUPS[group]).hidden, true, `${group} has no hit`);
+    assert.equal(byId.get('searchCount').textContent, '2 results');
+    typeSearch(byId, listeners, 'blues');
+    assert.ok(visibleRows(byId).some(row => row.dataset.id === 'blues'));
+    assert.ok(visibleRows(byId).some(row => row.dataset.id === '12-bar-blues'));
+    assert.deepEqual(Object.values(SEARCH_LISTS).map(list => nodeCount(byId.get(list))), before, 'typing never adds or removes nodes');
+  });
+});
+
+test('10-03: clearing the field hides the results and restores the remembered Library tab', () => {
+  withPanels(({ panels, byId, listeners }) => {
+    panels.select('chords', false, false);
+    typeSearch(byId, listeners, 'am');
+    assert.equal(byId.get('tabs').hidden, true);
+    typeSearch(byId, listeners, '');
+    assert.equal(byId.get('searchResults').hidden, true);
+    assert.equal(byId.get('searchCount').textContent, '', '10 IN-05: no stale count describes the field');
+    assert.equal(byId.get('tabs').hidden, false);
+    assert.equal(byId.get('tabpanel').hidden, false);
+    assert.equal(byId.get('tab-chords').getAttribute('aria-selected'), 'true');
+    assert.equal(byId.get('chordCards').hidden, false);
+  });
+});
+
+// ---------- 10-03: search empty state, open and lock (LIB-04) ----------
+const EMPTY_TEXT = 'No songs, scales, chords or progressions match.';
+test('10 IN-05: #searchCount ships empty, so the search field is never described by a stale count', () => {
+  assert.match(html(), /<p class="microcopy" id="searchCount"><\/p>/);
+});
+
+test('10-03: an empty result shows visible text and announces once per transition into empty', () => {
+  const said = [];
+  withPanels(({ byId, listeners }) => {
+    typeSearch(byId, listeners, 'zzzz');
+    assert.equal(byId.get('searchEmpty').hidden, false);
+    assert.equal(byId.get('searchEmpty').textContent, EMPTY_TEXT);
+    assert.equal(byId.get('searchCount').textContent, '0 results');
+    assert.deepEqual(said, [EMPTY_TEXT]);
+    typeSearch(byId, listeners, 'zzzzz');
+    assert.deepEqual(said, [EMPTY_TEXT], 'a second empty keystroke stays quiet');
+    typeSearch(byId, listeners, 'pentatonic');
+    assert.equal(byId.get('searchEmpty').hidden, true);
+    typeSearch(byId, listeners, 'zzzz');
+    assert.deepEqual(said, [EMPTY_TEXT, EMPTY_TEXT], 'a new transition into empty announces again');
+    typeSearch(byId, listeners, '');
+    typeSearch(byId, listeners, 'qqqq');
+    assert.equal(said.length, 3, 'clearing the field then missing again is a new transition');
+  }, {
+    setup: ({ get }) => {
+      const node = get('announcer');
+      Object.defineProperty(node, 'textContent', { get: () => said[said.length - 1] || '', set: text => said.push(text) });
+    },
+  });
+});
+
+test('10-03: clicking a result row opens its item exactly as its card does', () => {
+  const opened = [];
+  withPanels(({ byId, listeners }) => {
+    const row = findAll(byId.get('searchScales'), 'search-row').find(r => r.dataset.id === 'minPent');
+    const click = listeners.find(l => l.node === byId.get('searchResults') && l.type === 'click');
+    assert.ok(click, 'one delegated click listener on #searchResults');
+    click.handler({ target: { closest: sel => (sel === '.search-row' ? row : null) } });
+    click.handler({ target: { closest: () => null } });
+    row.disabled = true;
+    click.handler({ target: { closest: sel => (sel === '.search-row' ? row : null) } });
+    assert.deepEqual(opened, [['scale', 'minPent']], 'a locked row opens nothing');
+  }, { handlers: { onOpenItem: (family, id) => opened.push([family, id]) } });
+});
+
+// ---------- 10-04: lesson and title follow the loaded item (KEEP-02) ----------
+function workspaceFor(patch) {
+  return withPanels(({ panels, byId }) => {
+    panels.render({ ...defaults(), ...patch }, {});
+    return { title: byId.get('workspaceTitle').textContent, sub: byId.get('workspaceSub').textContent };
+  });
+}
+
+test('10-04: the Practice title names a loaded song, progression or chord pair', () => {
+  const song = workspaceFor({ tab: 'scales', drillFamily: 'song', songId: 'amazingGrace', songSectionId: 'verse' });
+  assert.equal(song.title, 'Amazing Grace');
+  assert.ok(song.sub.startsWith('Verse'), song.sub);
+  assert.ok(song.sub.endsWith('Song'), song.sub);
+  const prog = workspaceFor({ tab: 'scales', drillFamily: 'progression', progressionId: 'I-IV-V', keyPc: 7 });
+  assert.equal(prog.title, 'I–IV–V in G');
+  const pair = workspaceFor({ tab: 'scales', drillFamily: 'chordChanges', chordPairId: 'Am-C' });
+  assert.equal(pair.title, 'Am → C');
+});
+
+test('10-04: a scale drill keeps its key-and-scale title, and a crafted id falls back without throwing', () => {
+  const run = workspaceFor({ tab: 'scales', drillFamily: 'scaleRun', keyPc: 9, scaleId: 'minPent' });
+  assert.equal(run.title, 'A Minor pentatonic');
+  const find = workspaceFor({ tab: 'scales', drillFamily: 'findNote', keyPc: 9, scaleId: 'minPent' });
+  assert.equal(find.title, 'A Minor pentatonic');
+  for (const [family, field] of [['song', 'songId'], ['progression', 'progressionId'], ['chordChanges', 'chordPairId']]) {
+    for (const id of ['constructor', 'missing']) {
+      const out = workspaceFor({ tab: 'scales', drillFamily: family, [field]: id, keyPc: 9, scaleId: 'minPent' });
+      assert.equal(out.title, 'A Minor pentatonic', `${family} ${id} falls back`);
+    }
+  }
+});
+
+// 10-04 (orchestrator addition to 10-03's open point): the tab CTA names the hidden tab's item,
+// so it hides with the tabs while results show and returns when the query is cleared.
+test('10-04: #libraryCta hides while search results show and returns when the query clears', () => {
+  withPanels(({ byId, listeners }) => {
+    assert.equal(byId.get('libraryCta').hidden, false);
+    typeSearch(byId, listeners, 'pentatonic');
+    assert.equal(byId.get('libraryCta').hidden, true);
+    typeSearch(byId, listeners, 'zzzz');
+    assert.equal(byId.get('libraryCta').hidden, true, 'an empty result still hides it');
+    typeSearch(byId, listeners, '');
+    assert.equal(byId.get('libraryCta').hidden, false);
+  });
+  const panels = read('panels.js');
+  assert.match(fnBody(panels, 'applySearch'), /if \(\$\('libraryCta'\)\) \$\('libraryCta'\)\.hidden = searching;/);
+  assert.equal((fs.readFileSync(fileURLToPath(new URL('../app/index.html', import.meta.url)), 'utf8').match(/aria-live/g) || []).length, 1);
 });

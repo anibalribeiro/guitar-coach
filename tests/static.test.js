@@ -272,7 +272,8 @@ test('the shell has the four-tab tablist, one labelled tabpanel and the lights t
   assert.equal((html.match(/<button [^>]*role="tab"[^>]*data-view="/g) || []).length, 8);
   assert.equal((html.match(/role="tab"/g) || []).length, 12);
   assert.match(html, /role="tabpanel"/);
-  assert.match(html, /aria-labelledby="tab-scales"/);
+  // 10-02: the Library opens on Songs.
+  assert.match(html, /aria-labelledby="tab-songs"/);
   for (const label of ['Scales', 'Chords', 'Progressions', 'Songs']) {
     assert.match(html, new RegExp(`>${label}</button>`), `missing tab ${label}`);
   }
@@ -292,11 +293,12 @@ test('the shell carries the exact field labels and browse microcopy', () => {
   assert.ok(!/Song key/.test(html), 'the read-only Song key chip is gone');
   assert.match(html, /<label>Key <select id="songKey"><\/select><\/label>/);
   assert.match(panels, /Press Start drill to practise this position with a count-in and metronome\./);
-  // A-47: the Chords tab points at the drill stage now that the family exists.
-  assert.match(panels, /Browse only — chord-change drills run from the drill stage on the Scales tab\./);
+  // A-47, rewritten in 10-04: the Chords tab points at the chord-pair cards in Library.
+  assert.match(panels, /Browse only — chord-change drills start from a chord-pair card in Library\./);
   assert.ok(!/Browse only — chord-change drills arrive in Phase 3\./.test(panels), 'the Phase 2 Chords sentence is gone');
-  // 04-03 finishes A-56: both browse tabs point at the stage now that songs can play.
-  assert.match(panels, /Browse only — play-alongs run from the drill stage on the Scales tab\./);
+  // 04-03 finished A-56; 10-04 points both browse tabs at their Library Play buttons.
+  assert.match(panels, /Browse only — pick a bar, then press Play song in Library to play along from that section\./);
+  assert.ok(!/drill stage on the Scales tab\./.test(panels), 'the Phase 4 stage pointer is gone');
   assert.ok(!/Browse only — play-along arrives in Phase 4\./.test(panels), 'the Phase 3 Songs sentence is gone');
 });
 
@@ -934,7 +936,8 @@ test('onHint only flashes the pattern at Hint on demand and never aborts the pas
   const main = read('main.js');
   const onHint = functionBody(main, 'onHint');
   assert.match(onHint, /if \(!run \|\| \(run\.phase !== 'countIn' && run\.phase !== 'active'\)\) return;/);
-  assert.match(onHint, /if \(run\.hintLevel !== 2\) return;/);
+  // 10-01: Blink is refused wherever the shown level (song repeat fade) is not Hint on demand.
+  assert.match(onHint, /if \(shownLevel\(run, transport\.position\(\)\) !== 2\) return;/);
   assert.match(onHint, /dispatch\(\{ type: 'FLASH', beat: transport\.position\(\)\.beat \}\)/);
   assert.match(onHint, /'Full pattern shown once — back to anchors\.'/);
   assert.ok(!/ABORT_PASS/.test(onHint));
@@ -2992,7 +2995,7 @@ test('the pair strip fades exactly on the screen column', () => {
 test('the chord family carries the approved Phase 3 copy', () => {
   const panels = read('panels.js');
   // A-47: the Chords tab sentence, and the Phase 2 one is gone.
-  assert.match(panels, /chords: 'Browse only — chord-change drills run from the drill stage on the Scales tab\.'/);
+  assert.match(panels, /chords: 'Browse only — chord-change drills start from a chord-pair card in Library\.'/);
   assert.ok(!panels.includes('chord-change drills arrive in Phase 3'), 'the Phase 2 sentence is gone');
   // The stage's third accessible name and the recall pass sentence.
   assert.match(panels, /chordChanges: 'Chord-change drill'/);
@@ -3449,13 +3452,14 @@ test('the Progressions tab carries a secondary Play seed and the play-along’s 
   assert.match(panels, /\$\('playProgression'\)\.setAttribute\('aria-label', 'Play progression ' \+ playProg\.name \+ ' in the drill stage'\)/);
   assert.match(panels, /\$\('playSong'\)\.setAttribute\('aria-label', 'Play song ' \+ chosenSong\.title \+ ' in the drill stage'\)/);
   assert.match(panels, /\$\('playProgression'\)\.addEventListener\('click', \(\) => onPlay\('progression', \$\('progression'\)\.value\)\)/);
-  assert.match(main, /onPlay: seedPlayAlong,/);
+  // 10-02: Play routes through playFromLibrary so a song seeds the key its card lamps describe.
+  assert.match(main, /onPlay: playFromLibrary,/);
   // The fourth segment's copy rows and the tab's sentence; 04-03 finishes A-56 so both
   // browse tabs point at the stage.
   assert.match(panels, /progression: 'Progression play-along'/);
   assert.match(panels, /progression: 'Press Start drill to play this progression with the backing band\.'/);
-  assert.match(panels, /progressions: 'Browse only — play-alongs run from the drill stage on the Scales tab\.'/);
-  assert.match(panels, /songs: 'Browse only — play-alongs run from the drill stage on the Scales tab\.'/);
+  assert.match(panels, /progressions: 'Browse only — pick a bar, then press Play progression in Library to play along\.'/);
+  assert.match(panels, /songs: 'Browse only — pick a bar, then press Play song in Library to play along from that section\.'/);
   assert.match(panels, /progression: 'Tempo and selection apply on the next pass\.'/);
   // The stage hides the three controls a play-along cannot use and shows its own Key. Both
   // play-along families read the one predicate; 04-03's song stage is its second reader.
@@ -3856,7 +3860,7 @@ test('the song family has its segment, its Play seed and the section controls', 
   assert.ok(index.includes('id="sectionField"'), 'the stage Section control');
   assert.match(read('panels.js'), /song: 'Press Start drill to play this section with the backing band\.'/);
   assert.match(read('panels.js'), /song: 'Song play-along'/);
-  assert.match(read('panels.js'), /songs: 'Browse only — play-alongs run from the drill stage on the Scales tab\.'/);
+  assert.match(read('panels.js'), /songs: 'Browse only — pick a bar, then press Play song in Library to play along from that section\.'/);
   assert.match(read('panels.js'), /return song && section \? `Song · \$\{song\.title\} · \$\{section\.name\} in \$\{keyName\}` : 'Song';/);
 });
 
@@ -4239,14 +4243,17 @@ test('the family picker ships five live segments in the documented order', () =>
   assert.match(html, /\.family-picker \[role=radio\]:nth-child\(4\), \.family-picker \[role=radio\]:nth-child\(5\) \{ grid-column: span 3; \}/);
 });
 
-test('both browse tabs point at the stage and the Phase 3 placeholder is gone', () => {
+test('both browse tabs point at their Library Play button and the Phase 3 placeholder is gone', () => {
   const panels = read('panels.js');
-  const sentence = 'Browse only — play-alongs run from the drill stage on the Scales tab.';
-  // A-56 in one sentence, on both tabs: the play-along exists, so neither browse tab is a
-  // dead end any more.
-  assert.equal((panels.match(new RegExp(sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length, 2);
-  assert.match(panels, new RegExp(`progressions: '${sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`));
-  assert.match(panels, new RegExp(`songs: '${sentence.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`));
+  const esc = text => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // A-56, rewritten in 10-04: the play-along starts from the picked bar through the Library's
+  // Play button, so neither browse tab is a dead end and neither points at a Scales-tab stage.
+  const progressions = 'Browse only — pick a bar, then press Play progression in Library to play along.';
+  const songs = 'Browse only — pick a bar, then press Play song in Library to play along from that section.';
+  assert.equal((panels.match(/then press Play/g) || []).length, 2);
+  assert.ok(!/play-alongs run from the drill stage on the Scales tab\./.test(panels), 'the Phase 4 stage pointer is gone');
+  assert.match(panels, new RegExp(`progressions: '${esc(progressions)}'`));
+  assert.match(panels, new RegExp(`songs: '${esc(songs)}'`));
   // Phase 3 tombstone: the one placeholder that stood on both tabs is gone from the module.
   assert.ok(!/play-along arrives in Phase 4/.test(panels), 'the Phase 3 placeholder sentence is gone');
   assert.ok(!/arrives in Phase 4/.test(panels), 'no tab still promises a future phase');
@@ -4257,7 +4264,7 @@ test('both browse tabs point at the stage and the Phase 3 placeholder is gone', 
   assert.ok(!/<span class="field-chip" id="songKey">/.test(html), 'the chip is not the control');
   // The Chords tab's own A-47 sentence is untouched beside them, and the stage microcopy
   // `microcopyFor` returns is a different table: the browse line is never shown on the stage.
-  assert.match(panels, /chords: 'Browse only — chord-change drills run from the drill stage on the Scales tab\.'/);
+  assert.match(panels, /chords: 'Browse only — chord-change drills start from a chord-pair card in Library\.'/);
   assert.equal(microcopyFor('progression'), 'Press Start drill to play this progression with the backing band.');
   assert.equal(microcopyFor('song'), 'Press Start drill to play this section with the backing band.');
 });
@@ -5355,7 +5362,8 @@ test('the path, session, reference and materials controls are wired', () => {
   assert.match(panels, /onPath = \(\) => \{\}, onLessonSection = \(\) => \{\},/);
   assert.match(panels, /function setPathActive\(name, remember = true\)/);
   assert.match(panels, /document\.querySelectorAll\('\[data-path\]'\)\.forEach\(button => \{/);
-  assert.match(panels, /if \(\$\('changeInLibrary'\)\) \$\('changeInLibrary'\)\.addEventListener\('click', \(\) => onView\('library'\)\);/);
+  // 10-02: Change in Library opens the loaded item's Library tab through its own callback.
+  assert.match(panels, /if \(\$\('changeInLibrary'\)\) \$\('changeInLibrary'\)\.addEventListener\('click', \(\) => onChangeInLibrary\(\)\);/);
   assert.match(panels, /if \(\$\('workspaceWatch'\)\) \$\('workspaceWatch'\)\.addEventListener\('click', \(\) => \{/);
   assert.match(panels, /lessonReturnFocus = \$\('workspaceWatch'\);/);
   assert.match(panels, /onLessonSection\('real'\);/);
@@ -5555,7 +5563,8 @@ test('FADE-08 wiring: panels calls onDimmer(-1/+1), main dispatches DIMMER and c
   assert.match(main, /ledCounts\(frame\.led, chart\.shape\)/);
   assert.match(main, /'level-manual': \(\) => dimmerModel\(\)\.announcement/);
   assert.match(main, /dispatch\(\{ type: 'DIMMER', delta \}\)/);
-  assert.match(main, /dimmerCounts\(readoutFrame\(run, position\), run\.chart\)/);
+  // 10-01: the readout frame is read once, for both the counts and the shown level.
+  assert.match(main, /const frame = readoutFrame\(run, position\);\s*const counts = dimmerCounts\(frame, run\.chart\);/);
   assert.match(main, /panels\.setDimmer\(dimmerModel\(position\)\);/);
   assert.match(main, /panels\.setDimmer\(dimmerModel\(\)\);/);
   assert.match(main, /onDimmer,\n/);
@@ -5930,7 +5939,7 @@ test('09-01 main picks a block through START_AT and never starts a drill directl
   const main = read('main.js');
   assert.equal((main.match(/function sessionPick\(/g) || []).length, 1);
   const pick = main.slice(main.indexOf('function startSessionAt('), main.indexOf('// ---------- The Practise view'));
-  assert.match(pick, /if \(!Number\.isInteger\(index\) \|\| stageOwned\(\) \|\| startingDrill\) return;/);
+  assert.match(pick, /if \(!Number\.isInteger\(index\) \|\| stageOwned\(\) \|\| startingDrill(?: \|\| reportLocked\(\))?\) return;/);
   assert.match(pick, /if \(session\.state === 'idle'\) startSessionAt\(index\);/);
   assert.match(pick, /dispatchSession\(\{ type: 'START_AT', index \}\)/);
   assert.match(pick, /sessionReduce\(\{ \.\.\.session, plan: previewPlan \}, \{ type: 'START_AT', index, now: Date\.now\(\) \}\)/);
@@ -6343,4 +6352,350 @@ test('09-03: every v1 Progress stat stays visible beside the neck and the family
   const html = fs.readFileSync(INDEX_PATH, 'utf8');
   assert.match(html, /<div class="progress-section" id="historySection">\s*<div class="stat-label">Last 20 sessions<\/div>/);
   assert.match(html, /id="progressTiles"/);
+});
+
+// ---------- 10-01: LIB-02 repeat fade ----------
+// The stage label, pair strip and stage chart read the level the frame shows, so a song
+// repeat the guitar lights at Anchors is never named Full pattern on screen.
+test('10-01: renderDrillFrame reads the frame level, never run.hintLevel, for its display level', () => {
+  const frame = functionBody(stripComments(read('main.js')), 'renderDrillFrame');
+  assert.match(frame, /const level = Number\.isInteger\(frame\.level\) \? frame\.level : run\.hintLevel;/);
+  assert.ok(!/const level = run\.hintLevel;/.test(frame));
+  const drills = read('drills.js');
+  assert.match(drills, /export function shownLevel\(state, position = \{\}\)/);
+  assert.match(drills, /export function songFadeOffset\(state, step\)/);
+});
+
+// ---------- 10-01: dimmer and Blink on the shown level ----------
+test('10-01: dimmerModel, flashWindow and onHint read the shown level, never run.hintLevel', () => {
+  const raw = read('main.js');
+  assert.ok(!raw.includes('level: run.hintLevel,'), 'dimmerModel names the shown level');
+  assert.ok(!raw.includes('if (run.hintLevel !== 2) return;'), 'onHint refuses on the shown level');
+  assert.ok((raw.match(/shownLevel/g) || []).length >= 3);
+  const main = stripComments(raw);
+  const model = functionBody(main, 'dimmerModel');
+  assert.match(model, /const level = Number\.isInteger\(frame\.level\) \? frame\.level : run\.hintLevel;/);
+  const frame = functionBody(main, 'renderDrillFrame');
+  assert.match(frame, /const flashWindow = level === 2 && /);
+  assert.match(functionBody(main, 'onHint'), /shownLevel\(run, transport\.position\(\)\) !== 2/);
+});
+
+test('10-01: setDrill paints the shown level only while the pass runs', () => {
+  const main = stripComments(read('main.js'));
+  const state = functionBody(main, 'renderDrillState');
+  assert.match(state, /hintLevel: run \? \(isRunning\(\) \? shownLevel\(run, livePosition\(\)\) : run\.hintLevel\) : idleLevel,/);
+  assert.ok(!state.includes('hintLevel: run ? run.hintLevel : idleLevel,'));
+  assert.match(main, /function isRunning\(\) \{\s*return !!run && \(run\.phase === 'countIn' \|\| run\.phase === 'active' \|\| run\.phase === 'paused'\);/);
+  // Blink chord is offered exactly where the reducer accepts FLASH (pinned in drills.test.js).
+  assert.deepEqual([0, 1, 2, 3].map(level => hintActionFor(level)), [null, null, 'blink', null]);
+});
+
+test('10-01: a repeat boundary repaints once and announces once through the one live region', () => {
+  const main = stripComments(read('main.js'));
+  assert.equal((main.match(/let shownPainted = null;/g) || []).length, 1);
+  assert.match(main, /if \(run\.phase !== 'active'\) shownPainted = null;/);
+  const frame = functionBody(main, 'renderDrillFrame');
+  assert.match(frame, /if \(run\.phase === 'active' && Number\.isInteger\(frame\.level\) && frame\.level !== shownPainted\) \{/);
+  assert.equal((frame.match(/renderDrillState\(\);/g) || []).length, 1);
+  assert.equal((frame.match(/panels\.announce\(/g) || []).length, 1);
+  assert.match(frame, /if \(!run\.passDimmer\) panels\.announce\(`Repeat \$\{\(frame\.repeat \|\| 0\) \+ 1\}: \$\{HINT_LEVEL_NAMES\[frame\.level\]\}`\);/);
+  assert.match(main, /HINT_LEVEL_NAMES,(?: reportPendingOf,)?\n\} from '\.\/panels\.js';/);
+});
+
+// ---------- 10-02: songs-first Library (LIB-01, LIB-03) ----------
+test('10-02: a song card opens its browse chart in Practice, in the key its lamps describe, without starting', () => {
+  const main = stripComments(read('main.js'));
+  const open = functionBody(main, 'openItem');
+  assert.ok(open, 'main has openItem');
+  // 10 IN-07: a recall result waiting for its self-report refuses an open too.
+  assert.match(open, /if \(stageOwned\(\) \|\| reportPending\(\)\) return;/);
+  const song = open.slice(open.indexOf("family === 'song'"), open.indexOf('return;', open.indexOf("applyTab('songs')")));
+  assert.match(song, /ownEntry\(songById, id\)/);
+  assert.match(song, /save\(\{ songId: song\.id, keyPc: songCardKey\(song\), barIndex: same \? settings\.barIndex : 0 \}\);/);
+  assert.ok(song.indexOf('save(') < song.indexOf("applyTab('songs')"), 'save, then the browse subject');
+  assert.ok(song.indexOf("applyTab('songs')") < song.indexOf("switchView('practice')"), 'then Practice');
+  assert.ok(!open.includes('seedPlayAlong('), 'a card never seeds a play-along');
+  assert.ok(!/type: 'START'/.test(open) && !open.includes('startDrill('), 'a card never starts a pass');
+  // The one key rule: written once, shared by the lamps, the card open and Play song.
+  assert.equal((main.match(/settings\.songId === song\.id \? settings\.keyPc : /g) || []).length, 1);
+  assert.match(functionBody(main, 'songCardKey'), /settings\.songId === song\.id \? settings\.keyPc : /);
+  const model = functionBody(main, 'libraryModel');
+  assert.match(model, /const keyPc = songCardKey\(song\);/);
+  assert.match(model, /chartIdFor\(\{ drillFamily: 'song', songId: song\.id, songSectionId: section\.id, keyPc \}\)/);
+  assert.match(model, /lightLevelOf\(/);
+  assert.match(model, /Object\.hasOwn\(skills, /);
+  assert.match(main, /lightLevelOf,?[\s\S]{0,200}\} from '\.\/progress\.js';/);
+});
+
+test('10-02: Play song seeds the key the card lamps describe; Play progression keeps settings.keyPc', () => {
+  const main = stripComments(read('main.js'));
+  assert.match(main, /onPlay: playFromLibrary,/);
+  assert.ok(!/onPlay: seedPlayAlong,/.test(main));
+  const play = functionBody(main, 'playFromLibrary');
+  assert.match(play, /seedPlayAlong\('song', id, \{ keyPc: songCardKey\(songById\[id\]\) \}\);/);
+  assert.match(play, /seedPlayAlong\('progression', id\);/);
+  assert.match(play, /Object\.hasOwn\(songById, id\)/);
+  assert.ok(!/songKeyPc/.test(read('settings.js')) && !/libraryTab/.test(read('settings.js')), 'no new persisted field');
+});
+
+// ---------- 10-02: every Library tab opens its item (LIB-03) ----------
+test('10-02: libraryModel lamps name the same skills the cards open', () => {
+  const model = functionBody(stripComments(read('main.js')), 'libraryModel');
+  assert.match(model, /const positionId = same \? settings\.positionId : 'all';/);
+  // 10 WR-03: the scale lamp reads the family the card opens.
+  assert.match(model, /chartIdFor\(\{ drillFamily: family, scaleId: scale\.id, keyPc: settings\.keyPc, positionId \}\)/);
+  assert.match(model, /chartIdFor\(\{ drillFamily: 'chordChanges', chordPairId: pair\.id \}\)/);
+  assert.match(model, /chartIdFor\(\{ drillFamily: 'progression', progressionId: prog\.id, keyPc: settings\.keyPc \}\)/);
+  assert.match(model, /positionsForScale\(settings\.keyPc, /);
+  assert.match(model, /return \{ songs, scales, pairs, progressions, positions, voicings \};/);
+});
+
+test('10-02: openItem routes every family to its open path and never starts a pass', () => {
+  const main = stripComments(read('main.js'));
+  const open = functionBody(main, 'openItem');
+  const branch = family => {
+    const at = open.indexOf(`family === '${family}'`);
+    assert.ok(at >= 0, `openItem has a ${family} branch`);
+    const next = open.indexOf('if (family === ', at + 1);
+    return open.slice(at, next > at ? next : undefined);
+  };
+  const prog = branch('progression');
+  assert.match(prog, /ownEntry\(progressionById, id\)/);
+  assert.match(prog, /save\(\{ progressionId: prog\.id, barIndex: same \? settings\.barIndex : 0 \}\);/);
+  assert.ok(prog.indexOf('save(') < prog.indexOf("applyTab('progressions')")
+    && prog.indexOf("applyTab('progressions')") < prog.indexOf("switchView('practice')"));
+  assert.match(branch('pair'), /if \(!Object\.hasOwn\(chordPairById, id\)\) return;\s*seedPair\(id\);/);
+  const scale = branch('scale');
+  assert.match(scale, /if \(!Object\.hasOwn\(SCALE_BY_ID, id\)\) return;/);
+  assert.match(scale, /if \(run\) \{\s*if \(run\.phase !== 'result'\) return;\s*backToBrowse\(\);\s*\}/);
+  assert.match(scale, /tab: 'scales', scaleId: id, drillFamily: scaleOpenFamily\(\)/);
+  assert.match(scale, /if \(settings\.scaleId !== id\) patch\.positionId = 'all';/);
+  assert.match(scale, /focusDrillStage\(\);/);
+  const chord = branch('chord');
+  assert.match(chord, /ownEntry\(chordById, id\)/);
+  assert.match(chord, /if \(settings\.chordId !== chord\.id\) patch\.voicingId = chord\.voicings\[0\]\.id;/);
+  assert.ok(chord.indexOf("applyTab('chords')") < chord.indexOf("switchView('practice')"));
+  assert.ok(!open.includes('seedPlayAlong(') && !/type: 'START'/.test(open) && !open.includes('startDrill('));
+  // openItem sits outside the applyTab–applyChange span (the audio-mix pin slices it).
+  const span = main.slice(main.indexOf('function applyTab'), main.indexOf('function applyChange'));
+  assert.ok(!span.includes('function openItem'));
+});
+
+test('10-02: the Library CTA opens the shown tab\'s selected item; cards lock, tabs do not', () => {
+  const main = stripComments(read('main.js'));
+  const select = functionBody(main, 'practiseSelection');
+  assert.match(select, /if \(!stageOwned\(\) && !reportPending\(\)\) \{/);
+  assert.match(select, /songs: \['song', settings\.songId\], progressions: \['progression', settings\.progressionId\],/);
+  assert.match(select, /scales: \['scale', settings\.scaleId\], chords: \['chord', settings\.chordId\],/);
+  assert.match(select, /if \(Object\.hasOwn\(selected, libraryTab\)\) \{\s*openItem\(\.\.\.selected\[libraryTab\]\);\s*return;\s*\}/);
+  const panels = read('panels.js');
+  assert.ok(!panels.includes('for (const tab of tabs) tab.disabled = locked;'), 'the tabs stay browsable during a pass');
+  assert.match(panels, /for \(const card of libraryCards\) card\.disabled = locked;/);
+});
+
+// ---------- 10-03: Library search (LIB-04) ----------
+test('10-03: the Library search field sits above the tabs and the hidden grouped results follow', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const start = html.indexOf('id="view-library"');
+  const library = html.slice(start, html.indexOf('</main>', start));
+  const input = (library.match(/<input[^>]*id="librarySearch"[^>]*>/) || [''])[0];
+  assert.ok(input, 'input#librarySearch lives in the Library view');
+  assert.match(input, /type="search"/);
+  assert.match(input, /aria-label="Search songs, scales, chords and progressions"/);
+  assert.match(input, /maxlength="64"/);
+  assert.match(input, /autocomplete="off"/);
+  assert.match(input, /aria-describedby="searchCount"/);
+  assert.ok(library.indexOf('id="librarySearch"') < library.indexOf('id="tabs"'), 'the search sits above the tabs');
+  const results = (library.match(/<section[^>]*id="searchResults"[^>]*>/) || [''])[0];
+  assert.match(results, /\shidden>/);
+  const slice = library.slice(library.indexOf('id="searchResults"'), library.indexOf('</section>', library.indexOf('id="searchResults"')));
+  assert.match(slice, /<p class="microcopy" id="searchCount">/);
+  assert.match(slice, /<p class="microcopy" id="searchEmpty" hidden>/);
+  const heads = ['Songs', 'Scales', 'Chords', 'Progressions'].map(name => slice.indexOf(`<h3>${name}</h3>`));
+  for (const at of heads) assert.ok(at > 0, 'a result group heading is missing');
+  for (let i = 1; i < heads.length; i++) assert.ok(heads[i] > heads[i - 1], 'groups read Songs, Scales, Chords, Progressions');
+  for (const list of ['searchSongs', 'searchScales', 'searchChords', 'searchProgressions']) {
+    assert.match(slice, new RegExp(`<ul class="search-list" id="${list}"></ul>`));
+  }
+  assert.equal((html.match(/aria-live=/g) || []).length, 1, 'still exactly one live region');
+});
+
+test('10-03: panels imports searchLibrary from content.js and never parses markup', () => {
+  const panels = read('panels.js');
+  const imports = panels.slice(0, panels.indexOf("from './content.js';"));
+  assert.match(imports, /\bsearchLibrary\b/);
+  assert.ok((panels.match(/searchLibrary/g) || []).length >= 2, 'imported and called');
+  assert.ok(!/innerHTML|insertAdjacentHTML/.test(panels), 'result rows are textContent nodes');
+});
+
+// ---------- 10-03: search empty state, open and lock (LIB-04) ----------
+test('10-03: the empty state is plain text, the query is never persisted and rows lock with the cards', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  assert.equal((html.match(/aria-live/g) || []).length, 1, 'exactly one live region');
+  assert.ok(!html.includes('role="alert"'), 'no alert role');
+  const empty = (html.match(/<p[^>]*id="searchEmpty"[^>]*>/) || [''])[0];
+  assert.ok(empty && !/aria-live|role=/.test(empty), '#searchEmpty is visible text, not a live region');
+  const panels = read('panels.js');
+  assert.equal((panels.match(/No songs, scales, chords or progressions match\./g) || []).length, 1);
+  assert.match(panels, /for \(const \{ row \} of searchRows\) row\.disabled = locked;/);
+  assert.ok(!read('settings.js').includes('libraryQuery'), 'settings.js never learns the query');
+  const main = read('main.js');
+  for (const call of main.match(/save\([^;]*\);/g) || []) assert.ok(!/query|search/i.test(call), `no save mentions the query: ${call}`);
+});
+
+// ---------- 10-04: lesson and title follow the loaded item (KEEP-02) ----------
+// The helper is evaluated from source, so the test exercises the real mapping, not a copy.
+function lessonFamilyHelper() {
+  const main = read('main.js');
+  const at = main.indexOf('const LESSON_FAMILY_OF_SUBJECT');
+  const end = main.indexOf('function openLesson');
+  assert.ok(at >= 0 && at < end, 'lessonFamilyFor sits before openLesson, never between openLesson and closeLesson');
+  return new Function(`${main.slice(at, end)}\nreturn lessonFamilyFor;`)();
+}
+
+test('10-04: lessonFamilyFor maps a browse subject to its lesson family; a run chart wins', () => {
+  const main = read('main.js');
+  assert.equal((main.match(/function lessonFamilyFor/g) || []).length, 1);
+  const familyFor = lessonFamilyHelper();
+  assert.equal(familyFor({ tab: 'chords', drillFamily: 'scaleRun' }, null), 'chordChanges');
+  assert.equal(familyFor({ tab: 'progressions', drillFamily: 'scaleRun' }, null), 'progression');
+  assert.equal(familyFor({ tab: 'songs', drillFamily: 'findNote' }, null), 'song');
+  assert.equal(familyFor({ tab: 'scales', drillFamily: 'findNote' }, null), 'findNote');
+  assert.equal(familyFor({ tab: 'scales', drillFamily: 'scaleRun' }, { phase: 'result' }), 'scaleRun', 'a run without a chart reads the settings');
+  assert.equal(familyFor({ tab: 'chords', drillFamily: 'scaleRun' }, { chart: { family: 'song' } }), 'song', 'the run chart names the family first');
+  assert.equal(familyFor({ tab: 'constructor', drillFamily: 'scaleRun' }, null), 'scaleRun', 'a crafted tab never reaches the prototype');
+  for (const family of ['chordChanges', 'progression', 'song']) assert.ok(lessonFor(family), `${family} has a lesson`);
+});
+
+test('10-04: openLesson and startGuidedLesson both read lessonFamilyFor; the stage path keeps its own line', () => {
+  const main = read('main.js');
+  const openLesson = main.slice(main.indexOf('function openLesson'), main.indexOf('function closeLesson'));
+  assert.match(openLesson, /const family = lessonFamilyFor\(settings, run\);\s*const base = lessonFor\(family\) \|\| \{\};/);
+  const guided = main.slice(main.indexOf('async function startGuidedLesson'), main.indexOf('// The one panel-close tail'));
+  assert.match(guided, /const family = lessonFamilyFor\(settings, run\);/);
+  assert.match(guided, /const patch = \{ tab: 'scales', drillFamily: family \};/, 'the lesson Start seeds the same family');
+  const line = 'const family = run && run.chart ? run.chart.family : settings.drillFamily;';
+  assert.equal(main.split(line).length - 1, 1, 'only the drill-stage path keeps the direct line');
+});
+
+// ---------- 10-04: KEEP-01/02 parity enumeration ----------
+// Every v1 capability and the control that reaches it from Practice or Library. If a family,
+// Check recall, a lesson, a demo clip, hear-it audio, an external link or the browse chart
+// loses its entry point, one of these assertions turns red.
+// The markup of one element, balanced on its own tag, so "inside" means inside.
+function elementSlice(html, id) {
+  const at = html.indexOf(`id="${id}"`);
+  assert.ok(at >= 0, `#${id} exists`);
+  const open = html.lastIndexOf('<', at);
+  const tag = html.slice(open + 1).match(/^[a-z0-9]+/)[0];
+  const pattern = new RegExp(`<${tag}[\\s>]|</${tag}>`, 'g');
+  pattern.lastIndex = open;
+  let depth = 0;
+  for (let m = pattern.exec(html); m; m = pattern.exec(html)) {
+    depth += m[0].startsWith('</') ? -1 : 1;
+    if (depth === 0) return html.slice(open, m.index + m[0].length);
+  }
+  return html.slice(open);
+}
+const sliceFn = (source, name) => {
+  const at = source.search(new RegExp(`(?:async )?function ${name}\\(`));
+  assert.ok(at >= 0, `function ${name} exists`);
+  const next = source.slice(at + 1).search(/\n(?:async )?function |\nconst [A-Z_]+ = /);
+  return next < 0 ? source.slice(at) : source.slice(at, at + 1 + next);
+};
+
+test('10-04 parity: every v1 drill family, the LED quiz, intervals and Check recall start from Practice', async () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const practice = elementSlice(html, 'view-practice');
+  const { DRILL_FAMILIES } = await import('../app/src/settings.js');
+  const { QUIZ_KINDS } = await import('../app/src/quiz.js');
+  assert.deepEqual(DRILL_FAMILIES, ['scaleRun', 'findNote', 'chordChanges', 'progression', 'song'], 'scale runs, find the note, chord changes, progressions, songs');
+  for (const family of DRILL_FAMILIES) assert.match(practice, new RegExp(`role="radio"[^>]*data-family="${family}"`), `${family} has its Practice radio`);
+  assert.match(elementSlice(html, 'quizMode'), /<option value="name">Name it \(LED\)<\/option>/, 'the LED quiz');
+  assert.ok(practice.includes('id="askFor"'), '#askFor sits in Practice');
+  assert.ok(QUIZ_KINDS.includes('interval'), 'interval questions exist');
+  const panels = read('panels.js');
+  assert.match(panels, /QUIZ_QUESTION_LABELS = \{[^}]*interval: 'Interval'/, '#askFor fills an Interval option');
+  assert.match(panels, /\$\('askFor'\)\.replaceChildren\(\.\.\.options\);/);
+  assert.ok(elementSlice(html, 'transportBar').includes('id="checkRecall"'), 'Check recall sits in the transport bar');
+  assert.ok(practice.includes('id="familyLearn"'));
+  assert.match(read('main.js'), /onLearn: openLesson,/);
+});
+
+test('10-04 parity: every lesson, demo clip, hear-it control and external link stays reachable and safe', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const sw = fs.readFileSync(fileURLToPath(new URL('../app/sw.js', import.meta.url)), 'utf8');
+  const media = sw.slice(sw.indexOf('const MEDIA = ['), sw.indexOf('];', sw.indexOf('const MEDIA = [')));
+  const nocookie = /^https:\/\/www\.youtube-nocookie\.com\/embed\/[A-Za-z0-9_-]+$/;
+  const lessons = [];
+  for (const family of Object.keys(LESSONS)) {
+    const lesson = lessonFor(family);
+    assert.ok(lesson, `${family} resolves through lessonFor`);
+    lessons.push([family, lesson]);
+    for (const variant of ['blues', 'power']) if (lesson[variant]) lessons.push([`${family}.${variant}`, lesson[variant]]);
+  }
+  for (const family of ['scaleRun', 'findNote', 'chordChanges', 'progression', 'song']) assert.ok(lessonFor(family), `${family} has a lesson`);
+  for (const [name, lesson] of lessons) {
+    for (const file of [lesson.demo && lesson.demo.src, lesson.demo && lesson.demo.poster].filter(Boolean)) {
+      assert.match(file, /^\.\/assets\/videos\//, `${name} clip is local`);
+      assert.ok(fs.existsSync(fileURLToPath(new URL(`../app/${file.slice(2)}`, import.meta.url))), `${name}: ${file} exists on disk`);
+      assert.ok(media.includes(`'${file}'`), `${name}: ${file} is cached offline`);
+    }
+    if (lesson.link) assert.match(lesson.link, /^https:\/\//, `${name} link is https`);
+    for (const video of lesson.videos || []) {
+      assert.match(video.href, /^https:\/\//, `${name} video link is https`);
+      if (video.embed) assert.match(video.embed, nocookie, `${name} embed is nocookie`);
+    }
+  }
+  const panels = read('panels.js');
+  assert.ok(panels.includes(nocookie.source), 'panels checks embeds with the same nocookie pattern');
+  assert.match(panels, /\$\('lessonListen'\)\.addEventListener\('click', \(\) => onLessonListen\(lessonListenData\)\);/);
+  assert.match(read('main.js'), /onLessonListen: listenLesson,/);
+  assert.match(html, /<a class="lesson-link" id="lessonLink" target="_blank" rel="noopener noreferrer">/);
+  assert.ok(elementSlice(html, 'view-library').includes('id="powerChordLearn"'), 'the power-chord lesson sits in Library');
+  assert.match(read('main.js'), /onPowerChord: openPowerChordLesson,/);
+  const openLesson = read('main.js').slice(read('main.js').indexOf('function openLesson'), read('main.js').indexOf('function closeLesson'));
+  assert.match(openLesson, /lessonFamilyFor\(settings, run\)/, 'the lesson follows the item being practised');
+});
+
+test('10-04 parity: every Library family opens its item, and none starts a pass on open', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const library = elementSlice(html, 'view-library');
+  for (const id of ['songCards', 'scaleCards', 'chordCards', 'progressionCards', 'librarySearch']) {
+    assert.ok(library.includes(`id="${id}"`), `#${id} sits in Library`);
+  }
+  const openItem = sliceFn(read('main.js'), 'openItem');
+  // One branch = its `if (family === …)` up to the next family branch (or the end).
+  const branch = family => {
+    const at = openItem.indexOf(`if (family === '${family}')`);
+    assert.ok(at >= 0, `openItem has a ${family} branch`);
+    const next = openItem.indexOf('if (family === ', at + 1);
+    return openItem.slice(at, next < 0 ? undefined : next);
+  };
+  assert.match(branch('song'), /applyTab\('songs'\);/);
+  assert.match(branch('progression'), /applyTab\('progressions'\);/);
+  assert.match(branch('pair'), /seedPair\(id\);/);
+  assert.match(branch('scale'), /focusDrillStage\(\);/);
+  assert.match(branch('chord'), /applyTab\('chords'\);/);
+  assert.ok(!openItem.includes('seedPlayAlong'), 'opening a card never starts a play-along');
+});
+
+test('10-04 parity: the v1 browse chart, bar selection, loop anchor and browse-bar section stay reachable', () => {
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const main = read('main.js');
+  const panels = read('panels.js');
+  assert.ok(elementSlice(html, 'view-practice').includes('id="chart"'), '#chart sits in Practice');
+  assert.match(sliceFn(panels, 'setSubjectVisual'), /\$\('chart'\)\.hidden = !\(tab === 'progressions' \|\| tab === 'songs'\);/);
+  assert.match(panels, /\$\('chart'\)\.addEventListener\('click', e => \{\s*const btn = e\.target\.closest\('button\[data-bar\]'\);\s*if \(!btn\) return;\s*onBar\(\+btn\.dataset\.bar\);/);
+  assert.match(main, /onBar: applyBar,/);
+  assert.match(sliceFn(main, 'applyBar'), /save\(\{ barIndex: index \}\);/);
+  assert.match(main, /fromBar: settings\.barIndex,/, 'the progression loop window anchors at the picked bar');
+  assert.match(sliceFn(main, 'seedPlayAlong'), /sectionAtBar\(song, settings\.barIndex, /, 'Play song starts from the picked bar\'s section');
+  const library = elementSlice(html, 'view-library');
+  assert.ok(library.includes('id="playSong"') && library.includes('id="playProgression"'));
+  assert.match(panels, /\$\('playProgression'\)\.addEventListener\('click', \(\) => onPlay\('progression', /);
+  assert.match(panels, /\$\('playSong'\)\.addEventListener\('click', \(\) => onPlay\('song', /);
+  assert.match(main, /onPlay: playFromLibrary,/);
+  assert.match(sliceFn(main, 'playFromLibrary'), /seedPlayAlong\('song', id, \{ keyPc: songCardKey\(songById\[id\]\) \}\);/);
+  assert.match(sliceFn(main, 'libraryModel'), /const keyPc = songCardKey\(song\);/, 'the lamps read the same key helper');
 });

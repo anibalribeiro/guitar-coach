@@ -13,12 +13,12 @@ import {
 import {
   buildScaleRunChart, buildNoteQuizChart, buildChordChangeChart, buildPlayAlongChart, createRun,
   reduce, frameAt, stepIndexFor, summarizeDrill, PLAY_FAMILIES, CHART_CHANGES, songSectionBars,
-  sectionAtBar, playAlongIdleFrame, readoutFrame, chartIdFor,
+  sectionAtBar, playAlongIdleFrame, readoutFrame, chartIdFor, shownLevel,
 } from './drills.js';
 import { buildQuestions, chipsFor, judge, poolLabel, promptText, questionMode, quizKindsFor } from './quiz.js';
 import { FADE, HINT_LEVELS, clampLevel } from './fade.js';
 import {
-  applyResult, chordPairRows, dayKey, dueRows, emptyProgress, exportDoc, liveStreak, skillRows, startLevelFor,
+  applyResult, chordPairRows, dayKey, dueRows, emptyProgress, exportDoc, lightLevelOf, liveStreak, skillRows, startLevelFor,
   validateBackup, weakestPair,
 } from './progress.js';
 import { buildSegment, tapTempo, createTransport, LEAD_SEC } from './transport.js';
@@ -37,7 +37,7 @@ import {
   playCounterText, playAlongPassAnnouncement, playAlongStartAnnouncement, quizOutcomeText,
   chordPassAnnouncement, spotGate, openStringCue, EXPORT_FAILED, IMPORT_MESSAGE,
   STORAGE_MESSAGE, MIC_FEEDBACK, MIC_ANNOUNCE, CALIBRATION, skillLabelText, practiseItemText, dimmerView,
-  coachLineText, sessionAnnouncementText, sessionNextText,
+  coachLineText, sessionAnnouncementText, sessionNextText, HINT_LEVEL_NAMES, reportPendingOf,
 } from './panels.js';
 import {
   FAMILY_ORDER, SESSION_BLOCKS, buildSessionPlan, coachScript, coachSignatureOf, emptySession, sessionReduce, sessionSummaryOf,
@@ -144,6 +144,9 @@ let guitar = null;
 let sink = null;
 let transport = null;
 let view = { notes: [] };
+// The Library tab on screen (10-02). settings.tab is the Practice subject, so the tab the Library
+// shows is separate view state: it boots on Songs, lives in memory and is never saved (KEEP-03).
+let libraryTab = 'songs';
 let connected = false;
 let battery = null;
 // The boot preflight's one answer (D-76), kept so the pill can say No Bluetooth without a second probe.
@@ -172,6 +175,10 @@ let backupMessage = { text: '', tone: '' };
 let tapTimes = [];
 let tapPreviewTimer = null;
 let flashFeedbackUntilBeat = 0;
+// LIB-02: the song-fade level renderDrillFrame last painted while the pass was active. Null
+// outside the active phase (cleared in dispatch), so a new pass, a resume or a fresh run
+// stores its first level silently and only a repeat boundary repaints and announces.
+let shownPainted = null;
 let mic = null;
 let tunerActive = false;
 let tunerRequest = 0;
@@ -212,6 +219,19 @@ function isRunning() {
 // The run lock's one predicate, the same one `setDrill` paints as `lockedForProgress`: a pass that
 // is playing or waiting for its boundary decision owns the stage (WR-10).
 const stageOwned = () => isRunning() || !!(run && run.phase === 'passReview');
+// A recall result still waiting for its self-report owns the stage for Library opens: a card,
+// search row or Play button would close the result and drop the report (10 IN-07).
+const reportPending = () => !!(run && run.phase === 'result') && reportPendingOf(run);
+// v2.0 WARN-2: the same lock for every other path that would replace or close that result — Today,
+// Progress, the session and every seed — so the recall always reaches its report. The refusal says
+// why on the feedback line and in the one live region; the report itself releases it.
+const REPORT_LOCK_FEEDBACK = 'Rate the no-light pass first: Clean or Shaky.';
+function reportLocked() {
+  if (!reportPending()) return false;
+  panels.setFeedback(REPORT_LOCK_FEEDBACK);
+  panels.announce(REPORT_LOCK_FEEDBACK);
+  return true;
+}
 
 // ---------- The four views (Phase 6) ----------
 // The single view switcher. Both tablists, every seed and boot come through here: the name is
@@ -225,8 +245,10 @@ function switchView(name, { scroll = true, persist = true, announce = true } = {
     panels.announce(RUN_LOCK_FEEDBACK);
     return false;
   }
+  if ((name === 'today' || name === 'progress') && reportLocked()) return false;
   if (name === 'today') enterToday({ announce });
   else if (name === 'progress') enterProgress();
+  else if (name === 'library') panels.renderLibrary(libraryModel());
   if (persist && settings.view !== name) save({ view: name });
   panels.setView(name);
   // Back on the stage, repaint the drill view so the session boundary returns (A-73).
@@ -1051,12 +1073,177 @@ function buildView() {
   return buildScaleView();
 }
 
+// ---------- The Library (10-02, LIB-01/LIB-03) ----------
+// The one key rule for songs: the current song is shown, opened and played in the key #songKey
+// shows (settings.keyPc, which picking the song already seeded with its own key, A-56); any
+// other song in its own key. Lamps, the card open and Play song all read this helper, so a card
+// never describes one skill while Play song credits another. No song key is stored.
+function songCardKey(song) {
+  const own = Number.isInteger(song.keyPc) && song.keyPc >= 0 && song.keyPc <= 11 ? song.keyPc : 0;
+  return settings.songId === song.id ? settings.keyPc : own;
+}
+
+// The one rule for the family a scale card (and the Scales CTA) opens: Find the note stays Find
+// the note, anything else opens a scale run. The card lamp reads the same family (10 WR-03).
+const scaleOpenFamily = () => (settings.drillFamily === 'findNote' ? 'findNote' : 'scaleRun');
+
+// The cards' data: meta, chord chips and one owned-level lamp per section. Lamp ids come from
+// chartIdFor (own-key safe) and records are read own-key only, so a crafted or missing record
+// reads as Not started (T-10-06). lightLevelOf names the level owned, not the next pass's start.
+function libraryModel() {
+  const progressPlane = store ? store.getProgress() : null;
+  const skills = progressPlane && progressPlane.skills && typeof progressPlane.skills === 'object' ? progressPlane.skills : {};
+  const levelOf = id => lightLevelOf(id && Object.hasOwn(skills, id) ? skills[id] : null);
+  const songs = SONGS.map(song => {
+    const keyPc = songCardKey(song);
+    const sections = Array.isArray(song.sections) ? song.sections : [];
+    const first = sections[0];
+    const chords = first ? expandSongSection(song, first, keyPc, progressionById).map(bar => bar.name) : [];
+    const meter = Array.isArray(song.meter) ? song.meter : [4, 4];
+    return {
+      id: song.id,
+      keyPc,
+      meta: `${KEY_NAMES[keyPc]} · ${meter[0]}/${meter[1]} · ${song.defaultBpm} BPM`,
+      chords,
+      sections: sections.map(section => ({
+        id: section.id,
+        name: section.name,
+        repeats: section.repeats,
+        level: levelOf(chartIdFor({ drillFamily: 'song', songId: song.id, songSectionId: section.id, keyPc })),
+      })),
+    };
+  });
+  const keyName = KEY_NAMES[settings.keyPc] || KEY_NAMES[0];
+  // The scale lamp is the skill a card opens: the current scale keeps its box, any other scale
+  // opens on Whole neck (openItem resets positionId to 'all' on a scale change), and the family is
+  // the one openItem keeps, so Find the note shows the findNote level (10 WR-03).
+  const family = scaleOpenFamily();
+  const positions = positionsForScale(settings.keyPc, SCALE_BY_ID[settings.scaleId] || SCALE_BY_ID.major);
+  const scales = SCALES.map(scale => {
+    const same = settings.scaleId === scale.id;
+    const positionId = same ? settings.positionId : 'all';
+    const box = positionId === 'all' ? null : positions.find(p => p.id === positionId);
+    return {
+      id: scale.id,
+      meta: `${keyName} · ${box ? box.label : 'Whole neck'}`,
+      level: levelOf(chartIdFor({ drillFamily: family, scaleId: scale.id, keyPc: settings.keyPc, positionId })),
+    };
+  });
+  const pairs = CHORD_PAIRS.map(pair => ({
+    id: pair.id,
+    level: levelOf(chartIdFor({ drillFamily: 'chordChanges', chordPairId: pair.id })),
+  }));
+  const progressions = PROGRESSIONS.map(prog => {
+    const names = [...new Set(expandProgression(prog, settings.keyPc).map(bar => bar.name))];
+    return {
+      id: prog.id,
+      meta: `${keyName} · ${names.join(' – ')}`,
+      level: levelOf(chartIdFor({ drillFamily: 'progression', progressionId: prog.id, keyPc: settings.keyPc })),
+    };
+  });
+  const chord = ownEntry(chordById, settings.chordId) || CHORD_FAMILIES[0];
+  const voicings = Array.isArray(chord.voicings) ? chord.voicings : [];
+  return { songs, scales, pairs, progressions, positions, voicings };
+}
+
+// A Library tab click only changes which list the Library shows. It never calls applyTab, so
+// browsing the Library can never tear down a run or move the Practice subject (T-10-07).
+function showLibraryTab(tab) {
+  if (!TABS.includes(tab)) return;
+  libraryTab = tab;
+}
+
+// The browse Play buttons' entry (10-02): a song seeds the key its card lamps describe, through
+// the same songCardKey; a progression keeps settings.keyPc, exactly as before.
+function playFromLibrary(family, id) {
+  if (reportPending()) return;
+  if (family === 'song') {
+    if (!Object.hasOwn(songById, id)) return;
+    seedPlayAlong('song', id, { keyPc: songCardKey(songById[id]) });
+    return;
+  }
+  if (family === 'progression') seedPlayAlong('progression', id);
+}
+
+// Opening a card loads its item in Practice and never starts it (LIB-03, D-59 parity). A song
+// opens its browse subject through applyTab, so the bar chart, bar selection and #playSong's
+// browse-bar section stay reachable. The family is a closed switch and every id is checked
+// own-key before any write (T-10-05).
+function openItem(family, id) {
+  if (stageOwned() || reportPending()) return;
+  if (family === 'song') {
+    const song = ownEntry(songById, id);
+    if (!song) return;
+    const same = settings.songId === song.id;
+    save({ songId: song.id, keyPc: songCardKey(song), barIndex: same ? settings.barIndex : 0 });
+    applyTab('songs');
+    switchView('practice');
+    $('workspaceTitle').focus();
+    return;
+  }
+  if (family === 'progression') {
+    // Progressions open their browse subject too, so onBar → applyBar and the loop-window anchor
+    // (fromBar: settings.barIndex) stay reachable; #playProgression seeds the play-along as today.
+    const prog = ownEntry(progressionById, id);
+    if (!prog) return;
+    const same = settings.progressionId === prog.id;
+    save({ progressionId: prog.id, barIndex: same ? settings.barIndex : 0 });
+    applyTab('progressions');
+    switchView('practice');
+    $('workspaceTitle').focus();
+    return;
+  }
+  if (family === 'pair') {
+    if (!Object.hasOwn(chordPairById, id)) return;
+    seedPair(id);
+    return;
+  }
+  if (family === 'scale') {
+    if (!Object.hasOwn(SCALE_BY_ID, id)) return;
+    // A recorded result is closed first; anything else that owns a run keeps it (the seeds' guard).
+    if (run) {
+      if (run.phase !== 'result') return;
+      backToBrowse();
+    }
+    const patch = { tab: 'scales', scaleId: id, drillFamily: scaleOpenFamily() };
+    // Mirrors applyChange's scaleId rule, so the opened skill is the one the lamp describes.
+    if (settings.scaleId !== id) patch.positionId = 'all';
+    save(patch);
+    focusDrillStage();
+    return;
+  }
+  if (family === 'chord') {
+    const chord = ownEntry(chordById, id);
+    if (!chord) return;
+    const patch = { chordId: chord.id };
+    if (settings.chordId !== chord.id) patch.voicingId = chord.voicings[0].id;
+    save(patch);
+    applyTab('chords');
+    switchView('practice');
+    $('workspaceTitle').focus();
+  }
+}
+
+// Change in Library opens the Library tab of the item being practised: a browse subject is its
+// own tab; on the stage (settings.tab 'scales') the drill family names it.
+function libraryTabForLoaded() {
+  if (settings.tab !== 'scales') return settings.tab;
+  const byFamily = { song: 'songs', progression: 'progressions', chordChanges: 'chords' };
+  return Object.hasOwn(byFamily, settings.drillFamily) ? byFamily[settings.drillFamily] : 'scales';
+}
+
+function changeInLibrary() {
+  libraryTab = libraryTabForLoaded();
+  panels.select(libraryTab, false, false);
+  switchView('library');
+}
+
 // While no drill runs, an idle dimmer preview (idleScene case 'preview') is what the board
 // and the guitar show, so every idle redraw repaints it instead of the browse scene; the
 // browse and play-along cases keep today's paint (play-alongs paint in renderDrillState).
 function renderAll({ forceScene = false } = {}) {
   view = buildView();
-  panels.render(settings, view);
+  panels.render(settings, { ...view, libraryTab, library: libraryModel() });
   const scene = drillLive() ? null : idleScene();
   board.render(scene && scene.kind === 'preview' ? scene.notes : view.notes);
   pushScene(forceScene);
@@ -1396,10 +1583,13 @@ function lightsLive() {
 
 function dimmerModel(position = livePosition()) {
   if (drillLive()) {
-    const counts = dimmerCounts(readoutFrame(run, position), run.chart);
+    const frame = readoutFrame(run, position);
+    const counts = dimmerCounts(frame, run.chart);
     const clean = streaksFor(run).clean;
+    // The lamps name the level the readout frame shows (a darker song repeat), never the base.
+    const level = Number.isInteger(frame.level) ? frame.level : run.hintLevel;
     return dimmerView({
-      level: run.hintLevel, lit: counts.lit, dark: counts.dark,
+      level, lit: counts.lit, dark: counts.dark,
       cleanCount: clean.count, needed: clean.needed, phase: run.phase, lightsLive: lightsLive(),
     });
   }
@@ -1496,7 +1686,20 @@ function renderDrillFrame(position) {
   board.render(boardNotesFromFrame(frame, drillQuestionMode(), !!connected && settings.lightsOn));
   panels.setDimmer(dimmerModel(position));
   const target = frame.target;
-  const level = run.hintLevel;
+  // LIB-02: a song repeat may be shown darker than the run's level; the label, the pair
+  // strip and the stage chart name the level the frame (and so the guitar) shows.
+  const level = Number.isInteger(frame.level) ? frame.level : run.hintLevel;
+  if (run.phase === 'active' && Number.isInteger(frame.level) && frame.level !== shownPainted) {
+    const first = shownPainted === null;
+    shownPainted = frame.level;
+    // A repeat boundary: one repaint (pips, level name, Blink chord visibility, cue classes)
+    // and one announcement. A manual press already announced itself (level-manual), and the
+    // song fade stops after one, so only an automatic change speaks here.
+    if (!first) {
+      renderDrillState();
+      if (!run.passDimmer) panels.announce(`Repeat ${(frame.repeat || 0) + 1}: ${HINT_LEVEL_NAMES[frame.level]}`);
+    }
+  }
   const chord = run.chart.family === 'chordChanges';
   const play = PLAY_FAMILIES.has(run.chart.family);
   const counter = chord
@@ -1531,7 +1734,7 @@ function renderDrillFrame(position) {
   if (play) panels.renderStageChart({ chart: run.chart, level, barIndex: frame.barIndex });
   // Keep the one-flash message until the beat window closes; then the feedback line
   // clears on its own (or a later open-string sentence takes over).
-  const flashWindow = run.hintLevel === 2 && Number.isFinite(run.flashUntilBeat) && position.beat < run.flashUntilBeat;
+  const flashWindow = level === 2 && Number.isFinite(run.flashUntilBeat) && position.beat < run.flashUntilBeat;
   // The Phase 1 open-string sentence is a single-note cue: it belongs to the families whose
   // target *is* the note being practised, and it never outranks a D-52 spot line. A play-along
   // cue is the whole next shape, so the sentence would both lie and mask the required
@@ -1591,7 +1794,9 @@ function renderDrillState() {
     pauseBar,
     audioStartFailed: !!(run && phase === 'paused' && run.pauseReason === 'audio' && run.pausedBeat === 0),
     disconnected: !connected,
-    hintLevel: run ? run.hintLevel : idleLevel,
+    // While a pass runs the pips, the level name, Blink chord and the cue classes follow the
+    // level the guitar shows (LIB-02); pass review and the result name the run's own level.
+    hintLevel: run ? (isRunning() ? shownLevel(run, livePosition()) : run.hintLevel) : idleLevel,
     plan: run ? run.plan : null,
     levelChange: run ? run.levelChange : null,
     passes: run ? run.passes : [],
@@ -1831,6 +2036,7 @@ function dispatch(event) {
   // not, so the block is released. Handled here rather than inside `startDrill`.
   if (event.type === 'START_FAILED' && !(before === 'idle' && run.phase === 'paused')) releaseBlock();
   if (run.phase !== 'countIn' && run.phase !== 'active') flashFeedbackUntilBeat = 0;
+  if (run.phase !== 'active') shownPainted = null;
   applyEffects(effects);
   // A pass boundary, a restart, a resume and a next pass re-arm the stream here rather than
   // waiting for the next animation frame, so the new pass is never silently unscored (CR-01).
@@ -1892,6 +2098,9 @@ function recordResult() {
     panels.announce(STORAGE_MESSAGE.writeFailed);
   }
   resultSkill = Object.hasOwn(progress.skills, summary.skillId) ? progress.skills[summary.skillId] : null;
+  // The Library lamps read the plane just written, so a card never shows the pre-pass level
+  // beside the result that earned the new one; renderLibrary diffs per card (10 WR-01).
+  panels.renderLibrary(libraryModel());
   return summary;
 }
 
@@ -2136,6 +2345,17 @@ function guidedLessonContext(family) {
   };
 }
 
+// The lesson family of the item being practised (KEEP-02). A run's own chart names it first; on
+// the stage (settings.tab 'scales') the drill family does; a browse subject maps to its family
+// through a closed table, so a chord shape opened from Library gets the chord-changes lesson,
+// not the scale run the stage last held.
+const LESSON_FAMILY_OF_SUBJECT = { chords: 'chordChanges', progressions: 'progression', songs: 'song' };
+function lessonFamilyFor(settings, run) {
+  if (run && run.chart) return run.chart.family;
+  if (settings.tab === 'scales') return settings.drillFamily;
+  return Object.hasOwn(LESSON_FAMILY_OF_SUBJECT, settings.tab) ? LESSON_FAMILY_OF_SUBJECT[settings.tab] : settings.drillFamily;
+}
+
 // Reachable at idle only: `#drillStage` is hidden at the pass review and at the result, `Learn` is
 // disabled during a pass, and this guard is the second gate rather than the first — the one that
 // keeps a lesson from opening over a live chart (D-75). The family comes from the run's own chart
@@ -2143,7 +2363,7 @@ function guidedLessonContext(family) {
 function openLesson() {
   if (!store || isRunning() || (run && run.phase === 'passReview')) return;
   if (tunerActive || !$('tunerCard').hidden) stopTuner();
-  const family = run && run.chart ? run.chart.family : settings.drillFamily;
+  const family = lessonFamilyFor(settings, run);
   const base = lessonFor(family) || {};
   // The Blues scale has its own copy, links and clip. The variant is merged over the family
   // lesson, so no second lookup table can drift from the scale picker.
@@ -2326,8 +2546,8 @@ function openPowerChordLesson() {
 // click, so the transient activation that opens the lesson is also the one that resumes audio.
 // A free-choice lesson is never credited to a session block.
 async function startGuidedLesson() {
-  if (!store || isRunning()) return;
-  const family = run && run.chart ? run.chart.family : settings.drillFamily;
+  if (!store || isRunning() || reportLocked()) return;
+  const family = lessonFamilyFor(settings, run);
   switchView('practice', { scroll: false });
   closeLesson();
   pendingBlock = null;
@@ -2362,11 +2582,23 @@ function onMoreClose() {
   if (pendingImport || !$('importConfirm').hidden) cancelImport();
 }
 
-// Library's "Practise this …": the pickers have already written the settings, so the action is
-// only the move to Practice with focus on Start drill. It never starts the drill. The Chords tab
-// browses without a drill stage, so there the focus lands on the Practice title instead, as it
-// does while a pass runs and Start drill is hidden (WR-02).
+// Library's CTA: the pickers have already written the settings, so the shown tab's selected item
+// opens through the same openItem path a card uses (10-02). It never starts the drill. While a
+// pass owns the stage the action is only the move to Practice: focus lands on Start drill, or on
+// the Practice title when Start drill is hidden or the subject browses without a stage (WR-02).
 function practiseSelection() {
+  // 10 IN-07: a result waiting for its self-report keeps the pre-phase behaviour: only the move
+  // to Practice, so the result and its report stay on screen.
+  if (!stageOwned() && !reportPending()) {
+    const selected = {
+      songs: ['song', settings.songId], progressions: ['progression', settings.progressionId],
+      scales: ['scale', settings.scaleId], chords: ['chord', settings.chordId],
+    };
+    if (Object.hasOwn(selected, libraryTab)) {
+      openItem(...selected[libraryTab]);
+      return;
+    }
+  }
   if (!switchView('practice')) return;
   const start = $('startDrill');
   if (!$('transportBar').hidden && !start.hidden && !start.disabled) $('startDrill').focus();
@@ -2377,6 +2609,7 @@ function practiseSelection() {
 // every skill kind seeds its own family, so Practise on a note skill returns to the Find
 // the note stage with the same pool instead of re-running a scale drill in that key.
 function practiseSkill(skillId) {
+  if (reportLocked()) return;
   // A pass review still owns an unrecorded drill; a result has already been recorded,
   // so close it before replacing the settings it describes (WR-10).
   if (run) {
@@ -2432,6 +2665,7 @@ function practiseSkill(skillId) {
 // stage into view and focuses Start drill. It never starts the drill.
 function seedPair(pairId) {
   if (!Object.hasOwn(chordPairById, pairId)) return;
+  if (reportLocked()) return;
   if (run) {
     if (run.phase !== 'result') return;
     backToBrowse();
@@ -2479,6 +2713,7 @@ function seedPlayAlong(family, id, { keyPc = null, sectionId = '' } = {}) {
   if (family !== 'progression' && family !== 'song') return;
   if (family === 'progression' && !Object.hasOwn(progressionById, id)) return;
   if (family === 'song' && !Object.hasOwn(songById, id)) return;
+  if (reportLocked()) return;
   if (run) {
     if (run.phase !== 'result') return;
     backToBrowse();
@@ -2829,7 +3064,7 @@ function closeSession() {
 // One press: the plan is written into the session first so the reducer's START has something to
 // mark, then the reducer and its effects do the rest through the one start path.
 function startSession() {
-  if (session.state !== 'idle') return;
+  if (session.state !== 'idle' || reportLocked()) return;
   if (!previewPlan) previewPlan = buildSessionPlan(sessionInputs());
   session = { ...session, plan: previewPlan };
   const { state, effects } = sessionReduce(session, { type: 'START', now: Date.now() });
@@ -2842,7 +3077,7 @@ function startSession() {
 // freezes a stale plan. Between blocks it is one START_AT through the boundary dispatcher. Either
 // way the block reaches `seedBlock` through its `seedAndStart` effect — the one block start path.
 function startSessionAt(index) {
-  if (session.state !== 'idle') return;
+  if (session.state !== 'idle' || reportLocked()) return;
   if (!previewPlan) previewPlan = buildSessionPlan(sessionInputs());
   const { state, effects } = sessionReduce({ ...session, plan: previewPlan }, { type: 'START_AT', index, now: Date.now() });
   if (!effects.length) return;
@@ -2851,7 +3086,7 @@ function startSessionAt(index) {
 }
 
 function sessionPick(index) {
-  if (!Number.isInteger(index) || stageOwned() || startingDrill) return;
+  if (!Number.isInteger(index) || stageOwned() || startingDrill || reportLocked()) return;
   if (session.state === 'idle') startSessionAt(index);
   else if (session.state === 'running') dispatchSession({ type: 'START_AT', index });
 }
@@ -2915,6 +3150,7 @@ function onPractiseFilter(filter) {
 // families route to the seeds that already exist, and none of them starts a pass (D-73).
 function seedFamily(family) {
   if (!DRILL_FAMILIES.includes(family)) return;
+  if (reportLocked()) return;
   if (family === 'chordChanges') {
     seedPair(settings.chordPairId);
     return;
@@ -2939,6 +3175,7 @@ function seedFamily(family) {
 // The strip's own `Next drill`: the item the recommendation named, seeded through the same three
 // paths the Practise view uses. It never starts a pass and never touches the plan.
 function seedNextItem() {
+  if (reportLocked()) return;
   const item = nextItemFor();
   if (!item) return;
   if (item.skillId) {
@@ -3368,7 +3605,7 @@ function nextPass() {
 // Every other request for more light is Brighter (08-04 retired Show hint and its confirm).
 function onHint() {
   if (!run || (run.phase !== 'countIn' && run.phase !== 'active')) return;
-  if (run.hintLevel !== 2) return;
+  if (shownLevel(run, transport.position()) !== 2) return;
   dispatch({ type: 'FLASH', beat: transport.position().beat });
   flashFeedbackUntilBeat = run.flashUntilBeat;
   panels.setFeedback('Full pattern shown once — back to anchors.');
@@ -3540,6 +3777,9 @@ function applyChange(field, value) {
     return;
   }
   if (isRunning() && ['keyPc', 'scaleId', 'positionId', 'direction', 'bpm', 'tab'].includes(field)) return;
+  // The run's subject never moves while the stage is owned: NEXT_PASS rebuilds through chartFor,
+  // so a picked song or progression would be credited a run it never played (10 CR-01).
+  if (stageOwned() && ['songId', 'progressionId', 'chordId', 'voicingId'].includes(field)) return;
   const patch = { [field]: value };
   if (field === 'keyPc') patch.keyPc = ((value % 12) + 12) % 12;
   // Finger numbers need a position box to be meaningful. Choosing the mode from Whole neck
@@ -3770,7 +4010,7 @@ export function boot() {
 
   panels = createPanels({
     onChange: applyChange,
-    onTab: applyTab,
+    onTab: showLibraryTab,
     onBar: applyBar,
     onTransport,
     onTempo,
@@ -3789,6 +4029,8 @@ export function boot() {
     onSessionClose: closeSession,
     onView: name => switchView(name),
     onPractiseSelection: practiseSelection,
+    onOpenItem: openItem,
+    onChangeInLibrary: changeInLibrary,
     onSessionStart: startSession,
     onSessionNext: sessionNextBlock,
     onSessionPick: sessionPick,
@@ -3804,7 +4046,7 @@ export function boot() {
     onPractiseSkill: practiseSkill,
     onPractisePair: practisePair,
     onPractiseWeakestPair: practiseWeakestPair,
-    onPlay: seedPlayAlong,
+    onPlay: playFromLibrary,
     onIntensity,
     onStem,
     onLoop,

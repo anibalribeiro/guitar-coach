@@ -65,6 +65,8 @@ to try the app: without it, every drill runs on screen only.
 The light Daylight interface has four tabs (**Today**, **Practice**, **Progress**, **Library**:
 a floating bar on phones, pill tabs on desktop), a connection pill that shows the guitar and its
 battery, and a **More** sheet with the Tuner, Microphone, Backup and Settings.
+Library opens on **Songs** (chord line, first lyric line and a lamp per section), with Scales,
+Chords and Progressions tabs and one search field; choosing an item opens it in Practice.
 
 ## How it is built
 

@@ -363,7 +363,15 @@ export function buildPlayAlongChart(instance = {}) {
   // ending bar with no pass behind it (T-04-08).
   if (!windowed.length) return chart;
 
+  // LIB-02: a song section's repeat count, stamped on every step. A repeat starts at the bar
+  // whose integer `barId` does not exceed the previous bar's within the same section; a new
+  // section starts again at repeat 0, and a progression is one repeat.
+  let repeat = 0;
   const steps = windowed.map((bar, index) => {
+    const prev = index > 0 ? windowed[index - 1] : null;
+    if (song && prev && (bar.sectionId || '') !== (prev.sectionId || '')) repeat = 0;
+    else if (song && prev && Number.isInteger(bar.barId) && Number.isInteger(prev.barId)
+      && bar.barId <= prev.barId) repeat += 1;
     const voicing = voiceChord(bar.rootPc, bar.quality, instance.voicingId, CHORD_FAMILIES);
     const notes = voicing ? expandChord(voicing).filter(n => !n.muted) : [];
     // `iv` is the note's interval above *this bar's* root, so the L2 anchor is the chord's
@@ -392,6 +400,7 @@ export function buildPlayAlongChart(instance = {}) {
       // with no branch of its own (A-52). A progression's bars carry neither.
       sectionId: typeof bar.sectionId === 'string' ? bar.sectionId : '',
       barId: Number.isInteger(bar.barId) ? bar.barId : index,
+      repeat: song ? repeat : 0,
       ending: false,
       cells,
       target: rootCell ? { s: rootCell.s, f: rootCell.f, midi: rootCell.midi, iv: 0 } : null,
@@ -410,6 +419,7 @@ export function buildPlayAlongChart(instance = {}) {
     // The ending belongs to the section that just played: it is the same chord, one bar on.
     sectionId: last.sectionId,
     barId: Number.isInteger(last.barId) ? last.barId + 1 : steps.length,
+    repeat: last.repeat,
     ending: true,
     cells: last.cells,
     target: last.target,
@@ -1145,26 +1155,40 @@ export function reduce(state, event = {}) {
     case 'DIMMER': {
       // FADE-08: one level, immediately, without ending the pass. Brighter is -1, Darker
       // +1. Legal only while a pass plays, so a change can never be counted twice against
-      // the boundary decision. Both streaks reset: the auto ladder restarts at the new level.
+      // the boundary decision. Both streaks reset when the base level moves: the auto ladder
+      // restarts at the new level. Undoing a song repeat's automatic fade leaves the base
+      // level where it was, so the streaks stand (10 WR-02).
       if (state.phase !== 'countIn' && state.phase !== 'active') break;
       const delta = event.delta === -1 ? -1 : event.delta === 1 ? 1 : 0;
       if (!delta) break;
-      const fromLevel = state.hintLevel;
+      // LIB-02: step from the level the player sees, so a press during a darker song repeat
+      // never appears to skip a level. The seed keeps the base level, so credit stays honest.
+      const fromLevel = shownLevel(state, { beat: state.beat, phase: state.phase });
       const toLevel = clampLevel(fromLevel + delta);
       if (toLevel === fromLevel) break; // clamped: Brighter at Full pattern, Darker at No lights
-      const prior = state.passDimmer || { startLevel: fromLevel, brightest: fromLevel, brightened: false };
+      const prior = state.passDimmer || { startLevel: state.hintLevel, brightest: state.hintLevel, brightened: false };
+      // v2.0 WARN-1: a Brighter press that only partly undoes a song repeat's fade (it lands at
+      // or above the pass's start level, below the level shown) is not a level change: the base
+      // level and both streaks stand, and the pressed level is only what the pass shows from now.
+      const partial = delta < 0 && fromLevel > state.hintLevel && toLevel >= prior.startLevel;
+      const base = partial ? state.hintLevel : toLevel;
+      const moved = base !== state.hintLevel;
       next = {
         ...state,
-        hintLevel: toLevel,
-        cleanStreak: 0,
-        failStreak: 0,
+        hintLevel: base,
+        cleanStreak: moved ? 0 : state.cleanStreak,
+        failStreak: moved ? 0 : state.failStreak,
+        // FADE-09: guided means brighter than the level the pass was given. Brightening back up
+        // to (never above) the pass's start level is not extra help (10 WR-02).
         passDimmer: {
           startLevel: prior.startLevel,
           brightest: Math.min(prior.brightest, toLevel),
-          brightened: prior.brightened || delta < 0,
+          brightened: prior.brightened || toLevel < prior.startLevel,
+          // Present only while pinned; any other press hands the shown level back to the base.
+          ...(partial ? { shownLevel: toLevel } : {}),
         },
         levelChange: { direction: delta < 0 ? 'down' : 'up', fromLevel, toLevel, reasonKey: REASON.manual },
-        plan: { ...state.plan, totalPasses: totalPassesFor(state.plan.passIndex, toLevel, 0) },
+        plan: { ...state.plan, totalPasses: totalPassesFor(state.plan.passIndex, base, 0) },
         // A one-beat Hint-on-demand flash belongs to the level it was asked at.
         flashUntilBeat: 0,
       };
@@ -1176,8 +1200,9 @@ export function reduce(state, event = {}) {
       // One full-pattern LED flash at Hint on demand, exactly one beat long. The
       // screen does not change and this event never changes the phase.
       if (state.phase !== 'countIn' && state.phase !== 'active') break;
-      if (state.hintLevel !== 2) break;
       const currentBeat = Number.isFinite(event.beat) ? event.beat : state.beat;
+      // Legal only where Hint on demand is shown: a song repeat faded to No lights refuses it.
+      if (shownLevel(state, { beat: currentBeat, phase: state.phase }) !== 2) break;
       next = { ...state, flashUntilBeat: currentBeat + FADE.flashBeats };
       break;
     }
@@ -1266,6 +1291,59 @@ export function reduce(state, event = {}) {
 const fretted = n => !!n && !n.muted
   && Number.isInteger(n.s) && n.s >= 1 && n.s <= 6
   && Number.isInteger(n.f) && n.f >= 1 && n.f <= 24;
+
+// ---------- LIB-02: song repeat fade ----------
+// Repeat k (0-based) of a song section is shown one level darker than the pass's own level:
+// clampLevel(hintLevel + k). The offset is derived from the step, never stored, so FINISH
+// still credits the pass at its start level and the next pass starts from the base. A manual
+// dimmer press (passDimmer non-null) hands the level to the player for the rest of the pass.
+export function songFadeOffset(state, step) {
+  const chart = state && state.chart;
+  if (!chart || chart.family !== 'song' || state.passDimmer) return 0;
+  return step && Number.isInteger(step.repeat) && step.repeat > 0 ? step.repeat : 0;
+}
+
+// The one step resolution the play-along frame, shownLevel, DIMMER and FLASH share, so the
+// level the guitar shows and the level a press steps from can never disagree. The frame
+// previews the next bar, so the level is the next step's repeat. Pass review, the result and
+// the finished board carry no offset: the review names the level the pass was played at.
+function playAlongAt(state, position = {}) {
+  const chart = state.chart;
+  const totalSteps = chart.steps.length;
+  const phase = position.phase || state.phase;
+  const level = clampLevel(state.hintLevel === undefined ? 0 : state.hintLevel);
+  const beatsPerBar = Number.isFinite(chart.beatsPerBar) && chart.beatsPerBar > 0 ? chart.beatsPerBar : 4;
+  const countIn = Number.isFinite(chart.countInBeats) ? chart.countInBeats : 0;
+  const bars = Number.isFinite(chart.bars) ? chart.bars : Math.max(0, totalSteps - 1);
+  const beat = Number.isFinite(position.beat) ? position.beat : state.beat;
+  const atCountIn = phase === 'countIn';
+  const anchorBeat = atCountIn && Number.isFinite(position.activeStartBeat) ? position.activeStartBeat : beat;
+  const barIndex = clamp(stepIndexFor(chart, anchorBeat), 0, Math.max(0, totalSteps - 1));
+  const beatInBar = ((beat - countIn) % beatsPerBar + beatsPerBar) % beatsPerBar;
+  // A-52: the idle stage and the count-in preview bar 1, and on the last chart bar the
+  // next chord is the ending's — the same chord, held one bar longer (D-60). A song's
+  // **section** boundary needs no branch here: every bar carries its own section's id and
+  // its own chord (the builder copies both from the resolved bar list), so the step this
+  // reads at a boundary is already the next section's first chord.
+  const nextIndex = phase === 'idle' || atCountIn ? 0 : Math.min(barIndex + 1, Math.max(0, bars - 1));
+  const step = chart.steps[nextIndex] || null;
+  const live = !(state.phase === 'passReview' || state.phase === 'result' || phase === 'finished');
+  // A partial Brighter (v2.0 WARN-1) pins the shown level above the base for the rest of the pass.
+  const pinned = live && state.passDimmer && Number.isInteger(state.passDimmer.shownLevel)
+    ? state.passDimmer.shownLevel : null;
+  const shown = pinned === null ? clampLevel(level + (live ? songFadeOffset(state, step) : 0)) : clampLevel(pinned);
+  return { beat, barIndex, beatInBar, bars, nextIndex, step, shown };
+}
+
+// The level the player sees at a position: the song repeat fade for a play-along, the run's
+// own level for every other family.
+export function shownLevel(state, position = {}) {
+  if (!state || !state.chart) return 0;
+  if (!PLAY_FAMILIES.has(state.chart.family) || !Array.isArray(state.chart.steps)) {
+    return clampLevel(state.hintLevel === undefined ? 0 : state.hintLevel);
+  }
+  return playAlongAt(state, position).shown;
+}
 
 // Screen frame for the current position, plus the LED set the same frame owns. One
 // matrix per family decides both, so the composition root never filters notes itself.
@@ -1441,21 +1519,7 @@ function frameCore(state, position) {
   // idle/result path on purpose — placed after it, an idle play-along would hand back the
   // whole pass's shape instead of bar 1's next chord (M9).
   if (PLAY_FAMILIES.has(chart.family)) {
-    const beatsPerBar = Number.isFinite(chart.beatsPerBar) && chart.beatsPerBar > 0 ? chart.beatsPerBar : 4;
-    const countIn = Number.isFinite(chart.countInBeats) ? chart.countInBeats : 0;
-    const bars = Number.isFinite(chart.bars) ? chart.bars : Math.max(0, totalSteps - 1);
-    const beat = Number.isFinite(position.beat) ? position.beat : state.beat;
-    const atCountIn = phase === 'countIn';
-    const anchorBeat = atCountIn && Number.isFinite(position.activeStartBeat) ? position.activeStartBeat : beat;
-    const barIndex = clamp(stepIndexFor(chart, anchorBeat), 0, Math.max(0, totalSteps - 1));
-    const beatInBar = ((beat - countIn) % beatsPerBar + beatsPerBar) % beatsPerBar;
-    // A-52: the idle stage and the count-in preview bar 1, and on the last chart bar the
-    // next chord is the ending's — the same chord, held one bar longer (D-60). A song's
-    // **section** boundary needs no branch here: every bar carries its own section's id and
-    // its own chord (the builder copies both from the resolved bar list), so the step this
-    // reads at a boundary is already the next section's first chord.
-    const nextIndex = phase === 'idle' || atCountIn ? 0 : Math.min(barIndex + 1, Math.max(0, bars - 1));
-    const step = chart.steps[nextIndex] || null;
+    const { beat, barIndex, beatInBar, bars, step, shown } = playAlongAt(state, position);
     const cells = step && Array.isArray(step.cells) ? step.cells.map(n => ({ ...n })) : [];
     const roots = cells.filter(n => n.iv === 0);
     // FADE-11: the LED set at Anchors is the chord's roots plus its bass (fretted only); the
@@ -1467,17 +1531,23 @@ function frameCore(state, position) {
       ...base,
       stepNumber: ending ? bars + 1 : barIndex + 1,
       totalSteps: bars,
-      target: level === 3 ? null : (step ? step.target : null),
+      target: shown === 3 ? null : (step ? step.target : null),
       // One held scene per bar, never a blink: the shape on the board is the *next* chord,
       // so a blink would say "now" when it means "next". `blink: false` at every level is
       // deliberate — the sink dedupes identical scenes, so a held scene costs one write.
       blink: false,
-      notes: level === 0 ? cells : level === 1 ? roots : [],
-      led: level === 0 ? cells : level === 1 ? chordAnchors : [],
+      notes: shown === 0 ? cells : shown === 1 ? roots : [],
+      led: shown === 0 ? cells : shown === 1 ? chordAnchors : [],
       // `Blink chord` flashes the next chord's full shape, one beat, exactly as the chord
-      // family flashes its destination.
+      // family flashes its destination. A flash belongs to Hint on demand, so a repeat the
+      // song fade shows at No lights never flashes (LIB-02).
       flashNotes: cells,
-      flash: flashAt(beat),
+      flash: shown === 2 && flashAt(beat),
+      // LIB-02: the level this frame shows, so the stage label and the readout name the
+      // level the guitar is lit at, never the run's base level.
+      level: shown,
+      // The section repeat the previewed bar belongs to (0 for a progression).
+      repeat: step && Number.isInteger(step.repeat) ? step.repeat : 0,
       barIndex,
       bars,
       beatInBar,

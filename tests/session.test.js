@@ -781,16 +781,17 @@ test('09-01 blockResultOf: a brightened pass is guided and never raises the to-l
 });
 
 test('09-01 blockResultOf: a clean pass beside a brightened pass is clean and still guided', () => {
-  let state = runStarted(buildScaleRunChart(RUN_INSTANCE));
+  // 10 WR-02: guided means brighter than the pass's start level, so the second pass, started at
+  // Anchors, goes to Full pattern (a Darker-then-Brighter round trip is no longer guided).
+  let state = runStarted(buildScaleRunChart({ ...RUN_INSTANCE, startLevel: 1 }));
   state = runPass(state);
   state = reduce(state, { type: 'NEXT_PASS' }).state;
-  state = reduce(state, { type: 'DIMMER', delta: 1 }).state;
   state = reduce(state, { type: 'DIMMER', delta: -1 }).state;
   state = runPass(state);
   const result = blockResultOf(summarizeDrill(state));
   assert.equal(result.outcome, 'clean');
   assert.equal(result.guided, true);
-  assert.equal(result.toLevel, 0);
+  assert.equal(result.toLevel, 1);
 });
 
 test('09-01 blockResultOf: stopped early is stopped, only shaky passes is shaky, both stay put', () => {

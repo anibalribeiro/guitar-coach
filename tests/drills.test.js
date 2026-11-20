@@ -6,6 +6,7 @@ import {
   buildScaleRunChart, buildNoteQuizChart, buildChordChangeChart, buildPlayAlongChart,
   createRun, reduce, frameAt, summarize, summarizeDrill, resumeFromBeat, stepIndexFor,
   CHANGE_WINDOW, CHART_CHANGES, songSectionBars, sectionAtBar, playAlongIdleFrame, readoutFrame, chartIdFor,
+  shownLevel, songFadeOffset,
 } from '../app/src/drills.js';
 import { CHORD_FAMILIES, CHORD_PAIRS, chordById, chordPairById, PROGRESSIONS, progressionById, SONGS, songById } from '../app/src/content.js';
 import { anchorNotes } from '../app/src/fade.js';
@@ -3157,13 +3158,19 @@ test('DIMMER is a no-op in idle, paused, passReview and result', () => {
   }
 });
 
-test('a pass with any Brighter press is brightened and credited at its brightest level', () => {
-  // Darker then Brighter from Anchors.
+test('a pass brightened above its start level is brightened and credited at its brightest level', () => {
+  // 10 WR-02: Darker then Brighter back to the start level is not extra help.
   let state = dim(reduce(dimmerRun(1), { type: 'DIMMER', delta: 1 }).state, -1);
   assert.equal(state.hintLevel, 1);
   let pass = finishNow(toActive(state)).passes[0];
-  assert.equal(pass.brightened, true);
+  assert.equal(pass.brightened, false);
   assert.equal(pass.hintLevel, 1);
+  // Brighter above the start level from Anchors: guided, credited at Full pattern.
+  state = dim(dimmerRun(1), -1);
+  assert.equal(state.hintLevel, 0);
+  pass = finishNow(toActive(state)).passes[0];
+  assert.equal(pass.brightened, true);
+  assert.equal(pass.hintLevel, 0);
   // Brighter then Darker from Hint on demand: Darker never raises credit.
   state = dim(dim(dimmerRun(2), -1), 1);
   assert.equal(state.hintLevel, 2);
@@ -3457,4 +3464,261 @@ test('09-02 chartIdFor answers an empty id for unknown or hostile targets and ne
   assert.equal(chartIdFor({ drillFamily: 'scaleRun', scaleId: 'constructor', keyPc: 0, positionId: 'all' }), '');
   assert.equal(chartIdFor({ drillFamily: 'chordChanges', chordPairId: '__proto__' }), '');
   assert.equal(chartIdFor({ drillFamily: 'progression', progressionId: 'toString', keyPc: 0 }), '');
+});
+
+// ---------- 10-01: LIB-02 repeat fade ----------
+// Repeat k (0-based) of a song section is shown at clampLevel(startLevel + k), derived from
+// the beat inside frameAt, and the pass is still credited at its start level.
+test('LIB-02: song steps carry their section repeat; a progression is one repeat', () => {
+  const chart = songChart('willTheCircleBeUnbroken', 'verse', 7);
+  assert.deepEqual(chart.steps.map(step => step.repeat), [0, 0, 0, 0, 1, 1, 1, 1, 1],
+    'bars 1-4 are repeat 0, bars 5-8 repeat 1, the ending keeps the last bar\'s repeat');
+  const prog = syntheticPlayChart({ id: '12-bar-blues' });
+  assert.ok(prog.steps.every(step => step.repeat === 0));
+});
+
+test('LIB-02: each repeat of a song section is one level darker, credited at the start level', () => {
+  const chart = { ...songChart('willTheCircleBeUnbroken', 'verse', 7), startLevel: 0 };
+  let s = reduce(createRun(chart), { type: 'START', at: 0, wallAt: 1 }).state;
+  s = reduce(s, { type: 'TICK', beat: chart.countInBeats }).state;
+  const first = frameAt(s, { phase: 'active', beat: chart.countInBeats });
+  assert.equal(first.level, 0, 'repeat 0 previews bar 2 at Full pattern');
+  const lastOfRepeat0 = chart.countInBeats + 3 * chart.beatsPerBar;
+  const darker = frameAt(s, { phase: 'active', beat: lastOfRepeat0 });
+  assert.equal(darker.level, 1, 'bar 4 previews bar 5, repeat 1, at Anchors');
+  // The LED set at the shown level is the chord's FADE-11 anchors, the set ledCounts counts.
+  assert.deepEqual(darker.led, litOnly(anchorNotes(chart.steps[4].cells, { chord: true })));
+  const fullSameChord = frameAt(s, { phase: 'countIn', beat: 0, activeStartBeat: chart.countInBeats });
+  assert.equal(chart.steps[4].chordName, chart.steps[0].chordName, 'repeat 1 opens on the same chord');
+  assert.equal(fullSameChord.level, 0);
+  assert.ok(ledCounts(darker.led, chart.shape).lit < ledCounts(fullSameChord.led, chart.shape).lit,
+    'the guitar lights fewer notes on the darker repeat');
+  // The readout counts the same frame at the same level.
+  assert.equal(readoutFrame(s, { phase: 'active', beat: lastOfRepeat0 }).level, 1);
+  s = reduce({ ...s, phase: 'active' }, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(s.passes[0].hintLevel, 0, 'credited at the start level, never the darker repeat');
+  assert.equal(s.chart.id, 'song:willTheCircleBeUnbroken:verse:7', 'identity unchanged');
+  // Pass review names the level the pass was played at: no repeat offset leaks into it.
+  assert.equal(readoutFrame(s).level, s.hintLevel);
+});
+
+test('LIB-02: Section loop on shows levels 0, 1, 2, 3 across four repeats', () => {
+  const chart = songChart('willTheCircleBeUnbroken', 'verse', 7, { sectionLoop: true });
+  const s = { ...reduce(createRun(chart), { type: 'START', at: 0, wallAt: 1 }).state, phase: 'active' };
+  const levels = [0, 1, 2, 3].map(k => {
+    const beat = k === 0 ? chart.countInBeats : chart.countInBeats + (4 * k - 1) * chart.beatsPerBar;
+    return frameAt(s, { phase: 'active', beat }).level;
+  });
+  assert.deepEqual(levels, [0, 1, 2, 3]);
+  // Started at Hint on demand, the clamp holds No lights.
+  const hint = { ...s, hintLevel: 2 };
+  const late = frameAt(hint, { phase: 'active', beat: chart.countInBeats + 11 * chart.beatsPerBar });
+  assert.equal(late.level, 3);
+  assert.deepEqual(late.led, []);
+});
+
+test('LIB-02: a progression play-along never fades within a pass', () => {
+  const chart = syntheticPlayChart({ id: '12-bar-blues', startLevel: 1 });
+  const s = { ...reduce(createRun(chart), { type: 'START', at: 0, wallAt: 1 }).state, phase: 'active' };
+  for (let bar = 0; bar < chart.bars; bar++) {
+    assert.equal(frameAt(s, { phase: 'active', beat: chart.countInBeats + bar * chart.beatsPerBar }).level, 1);
+  }
+});
+
+test('LIB-02: the idle frame previews bar 1 at the start level', () => {
+  const chart = songChart('willTheCircleBeUnbroken', 'verse', 7);
+  assert.equal(frameAt(createRun({ ...chart, startLevel: 1 }), { phase: 'idle', beat: 0 }).level, 1);
+  assert.equal(playAlongIdleFrame(chart, 2).level, 2);
+});
+
+// ---------- 10-01: dimmer and Blink on the shown level ----------
+// Brighter and Darker step from the level the player sees, the pass stays credited at its
+// start level, a press stops the song fade for the pass, and Blink chord is legal only where
+// Hint on demand is shown.
+function songRepeat1(startLevel = 0, { sectionLoop = false } = {}) {
+  const chart = { ...songChart('willTheCircleBeUnbroken', 'verse', 7, { sectionLoop }), startLevel };
+  let s = reduce(createRun(chart), { type: 'START', at: 0, wallAt: 1 }).state;
+  // Bar 4 is active: the board previews bar 5, the first bar of repeat 1.
+  s = reduce(s, { type: 'TICK', beat: chart.countInBeats }).state;
+  s = reduce(s, { type: 'TICK', beat: chart.countInBeats + 3 * chart.beatsPerBar }).state;
+  return { chart, s };
+}
+
+test('10-01: Darker in repeat 1 steps from the shown level and credits the start level', () => {
+  const { s } = songRepeat1(0);
+  assert.equal(s.phase, 'active');
+  assert.equal(shownLevel(s, { beat: s.beat, phase: s.phase }), 1);
+  const darker = reduce(s, { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(darker.hintLevel, 2, 'shown Anchors + Darker = Hint on demand, never a skipped level');
+  assert.equal(darker.passDimmer.startLevel, 0);
+  assert.equal(darker.passDimmer.brightest, 0);
+  assert.equal(darker.levelChange.fromLevel, 1);
+  const review = reduce(darker, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(review.passes[0].hintLevel, 0, 'never over-credited');
+});
+
+// 10 WR-02: undoing the song's automatic fade back to the pass's start level is not extra help,
+// so the pass stays unguided and the streaks stand; brightening above the start level is guided.
+test('10-01: Brighter in repeat 1 restores Full pattern without marking the pass guided', () => {
+  const { s } = songRepeat1(0);
+  const streaked = { ...s, cleanStreak: 2, failStreak: 1 };
+  const brighter = reduce(streaked, { type: 'DIMMER', delta: -1 }).state;
+  assert.equal(brighter.hintLevel, 0);
+  assert.equal(brighter.passDimmer.brightened, false);
+  assert.equal(brighter.cleanStreak, 2, 'the base level never moved, so the clean streak stands');
+  assert.equal(brighter.failStreak, 1);
+  const review = reduce(brighter, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(review.passes[0].brightened, false);
+  assert.equal(review.passes[0].hintLevel, 0);
+});
+
+test('10 WR-02: Brighter above the start level in a song repeat still marks the pass guided', () => {
+  // Started at Anchors, repeat 1 is shown at Hint on demand.
+  const { s } = songRepeat1(1);
+  assert.equal(shownLevel(s, { beat: s.beat, phase: s.phase }), 2);
+  const streaked = { ...s, cleanStreak: 2, failStreak: 1 };
+  const back = reduce(streaked, { type: 'DIMMER', delta: -1 }).state;
+  assert.equal(back.hintLevel, 1);
+  assert.equal(back.passDimmer.brightened, false, 'back to the start level is not extra help');
+  assert.equal(back.cleanStreak, 2);
+  const above = reduce(back, { type: 'DIMMER', delta: -1 }).state;
+  assert.equal(above.hintLevel, 0);
+  assert.equal(above.passDimmer.brightened, true, 'brighter than the level the pass was given');
+  assert.equal(above.cleanStreak, 0, 'the base level moved, so the streaks reset');
+  assert.equal(above.failStreak, 0);
+  const review = reduce(above, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(review.passes[0].brightened, true);
+  assert.equal(review.passes[0].hintLevel, 0);
+});
+
+test('10-01: after a manual press the song fade stops for the pass', () => {
+  const { chart, s } = songRepeat1(0, { sectionLoop: true });
+  const pressed = reduce(s, { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(pressed.hintLevel, 2);
+  for (const bar of [4, 7, 11, 14]) {
+    const frame = frameAt(pressed, { phase: 'active', beat: chart.countInBeats + bar * chart.beatsPerBar });
+    assert.equal(frame.level, pressed.hintLevel, `bar ${bar + 1} stays at the pressed level`);
+  }
+  assert.equal(songFadeOffset(pressed, chart.steps[12]), 0);
+});
+
+test('10-01: Darker at a shown No lights is clamped and leaves the state unchanged', () => {
+  const { s } = songRepeat1(2);
+  assert.equal(shownLevel(s, { beat: s.beat, phase: s.phase }), 3);
+  const result = reduce(s, { type: 'DIMMER', delta: 1 });
+  assert.equal(result.state, s);
+  assert.deepEqual(result.effects, []);
+});
+
+test('10-01: FLASH is refused where the shown level is not Hint on demand and accepted where it is', () => {
+  // Started at Hint on demand, repeat 1 is shown at No lights: Blink chord is refused.
+  const { chart, s } = songRepeat1(2);
+  const refused = reduce(s, { type: 'FLASH', beat: s.beat });
+  assert.equal(refused.state, s);
+  // In repeat 0 of the same pass Hint on demand is shown: accepted.
+  const early = reduce({ ...s, beat: chart.countInBeats }, { type: 'FLASH', beat: chart.countInBeats }).state;
+  assert.equal(early.flashUntilBeat > chart.countInBeats, true);
+  // Started at Anchors, repeat 1 is shown at Hint on demand: accepted there.
+  const anchors = songRepeat1(1).s;
+  const accepted = reduce(anchors, { type: 'FLASH', beat: anchors.beat }).state;
+  assert.equal(accepted.flashUntilBeat > anchors.beat, true);
+  assert.equal(shownLevel(anchors, { beat: anchors.beat, phase: anchors.phase }), 2);
+});
+
+test('10-01: shownLevel is the run level for every non-play-along family', () => {
+  const run = { ...active(chart(), 4), hintLevel: 2 };
+  assert.equal(shownLevel(run, { beat: 6, phase: 'active' }), 2);
+  const prog = syntheticPlayChart({ startLevel: 1 });
+  const progRun = { ...reduce(createRun(prog), { type: 'START', at: 0, wallAt: 1 }).state, phase: 'active' };
+  assert.equal(shownLevel(progRun, { beat: prog.countInBeats + 2 * prog.beatsPerBar, phase: 'active' }), 1);
+});
+
+// v2.0 WARN-1: a Brighter press that only partly undoes a song repeat's auto fade (it lands
+// between the pass's start level and the shown level) is not extra help and does not move the
+// base level: the streaks stand and the next pass starts from the old base.
+function songRepeat2(startLevel = 0) {
+  const chart = { ...songChart('willTheCircleBeUnbroken', 'verse', 7, { sectionLoop: true }), startLevel };
+  let s = reduce(createRun(chart), { type: 'START', at: 0, wallAt: 1 }).state;
+  // Bar 8 is active: the board previews bar 9, the first bar of repeat 2.
+  s = reduce(s, { type: 'TICK', beat: chart.countInBeats }).state;
+  s = reduce(s, { type: 'TICK', beat: chart.countInBeats + 7 * chart.beatsPerBar }).state;
+  return { chart, s };
+}
+
+test('v2.0 WARN-1: partial Brighter in repeat 2 keeps the base level and both streaks', () => {
+  const { chart, s } = songRepeat2(0);
+  assert.equal(s.phase, 'active');
+  assert.equal(shownLevel(s, { beat: s.beat, phase: s.phase }), 2, 'repeat 2 from Full pattern is Hint on demand');
+  const streaked = { ...s, cleanStreak: 1, failStreak: 1 };
+  const partial = reduce(streaked, { type: 'DIMMER', delta: -1 }).state;
+  assert.equal(partial.hintLevel, 0, 'the base level stays where the pass began');
+  assert.equal(partial.cleanStreak, 1, 'the clean streak stands');
+  assert.equal(partial.failStreak, 1, 'the fail streak stands');
+  assert.equal(partial.passDimmer.brightened, false, 'no help beyond the start level');
+  assert.equal(shownLevel(partial, { beat: partial.beat, phase: partial.phase }), 1, 'the pressed level is shown');
+  for (const bar of [8, 11, 14]) {
+    const frame = frameAt(partial, { phase: 'active', beat: chart.countInBeats + bar * chart.beatsPerBar });
+    assert.equal(frame.level, 1, `bar ${bar + 1} stays at the pressed level, the auto fade stopped`);
+  }
+  const review = reduce(partial, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(review.phase, 'passReview');
+  assert.equal(review.passes[0].brightened, false);
+  assert.equal(review.passes[0].hintLevel, 0, 'credited at the start level');
+  assert.equal(review.pendingDecision.fromLevel, 0, 'the review names the old base');
+  assert.equal(review.levelChange.fromLevel, 0);
+  const nextPass = reduce({ ...review, cleanStreak: 0, failStreak: 0 }, { type: 'NEXT_PASS' }).state;
+  assert.equal(nextPass.hintLevel, review.pendingDecision.level);
+  assert.equal(nextPass.hintLevel, 0, 'the next pass starts at the old base, never darker');
+});
+
+test('v2.0 WARN-1: Brighter from repeat 2 back to exactly the start level stays unguided', () => {
+  const { s } = songRepeat2(1);
+  assert.equal(shownLevel(s, { beat: s.beat, phase: s.phase }), 3);
+  const streaked = { ...s, cleanStreak: 1, failStreak: 1 };
+  const one = reduce(streaked, { type: 'DIMMER', delta: -1 }).state;
+  assert.equal(one.hintLevel, 1);
+  assert.equal(shownLevel(one, { beat: one.beat, phase: one.phase }), 2);
+  const two = reduce(one, { type: 'DIMMER', delta: -1 }).state;
+  assert.equal(two.hintLevel, 1);
+  assert.equal(shownLevel(two, { beat: two.beat, phase: two.phase }), 1);
+  assert.equal(two.passDimmer.brightened, false);
+  assert.equal(two.cleanStreak, 1);
+  assert.equal(two.failStreak, 1);
+  const review = reduce(two, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(review.passes[0].brightened, false);
+  assert.equal(review.passes[0].hintLevel, 1);
+});
+
+test('v2.0 WARN-1: Brighter above the start level from repeat 2 is still guided', () => {
+  const { s } = songRepeat2(1);
+  let state = { ...s, cleanStreak: 1, failStreak: 1 };
+  state = reduce(state, { type: 'DIMMER', delta: -1 }).state; // No lights -> Hint on demand
+  state = reduce(state, { type: 'DIMMER', delta: -1 }).state; // Hint on demand -> Anchors
+  const above = reduce(state, { type: 'DIMMER', delta: -1 }).state; // Anchors -> Full pattern
+  assert.equal(above.hintLevel, 0);
+  assert.equal(shownLevel(above, { beat: above.beat, phase: above.phase }), 0);
+  assert.equal(above.passDimmer.brightened, true);
+  assert.equal(above.cleanStreak, 0);
+  assert.equal(above.failStreak, 0);
+  const review = reduce(above, { type: 'FINISH', at: 1, wallAt: 2 }).state;
+  assert.equal(review.passes[0].brightened, true);
+  assert.equal(review.passes[0].hintLevel, 0);
+});
+
+test('v2.0 WARN-1: Darker from repeat 2, and Darker after a partial Brighter, keep the old rule', () => {
+  const { s } = songRepeat2(0);
+  const streaked = { ...s, cleanStreak: 1, failStreak: 1 };
+  const darker = reduce(streaked, { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(darker.hintLevel, 3, 'shown Hint on demand + Darker = No lights');
+  assert.equal(darker.cleanStreak, 0);
+  assert.equal(darker.failStreak, 0);
+  assert.equal(darker.passDimmer.brightest, 0);
+  assert.equal(reduce(darker, { type: 'FINISH', at: 1, wallAt: 2 }).state.passes[0].hintLevel, 0);
+  const partial = reduce(streaked, { type: 'DIMMER', delta: -1 }).state;
+  const back = reduce(partial, { type: 'DIMMER', delta: 1 }).state;
+  assert.equal(back.levelChange.fromLevel, 1, 'Darker steps from the pressed level');
+  assert.equal(back.hintLevel, 2);
+  assert.equal(shownLevel(back, { beat: back.beat, phase: back.phase }), 2);
+  assert.equal(back.cleanStreak, 0, 'a Darker press moves the base level and resets the streaks');
+  assert.equal(back.passDimmer.brightened, false);
 });

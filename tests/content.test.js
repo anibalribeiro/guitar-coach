@@ -275,3 +275,102 @@ test('content stays exactly at the v1 cap and LESSONS is the only table the phas
     'CHORD_FAMILIES', 'CHORD_PAIRS', 'PROGRESSIONS', 'SONGS', 'LESSONS',
   ], 'LESSONS is the only new top-level table');
 });
+
+// ---------- 10-01: lyric lines and searchLibrary (LIB-01, LIB-04) ----------
+test('10-01: each song carries exactly one public-domain lyric line', async () => {
+  const { SONGS: songs, CONTENT_VERSION: version } = await import('../app/src/content.js');
+  const expected = {
+    willTheCircleBeUnbroken: 'There are loved ones in the glory',
+    thisLittleLightOfMine: "This little light of mine, I'm gonna let it shine",
+    ohSusanna: 'I come from Alabama with my banjo on my knee',
+    amazingGrace: 'Amazing grace! How sweet the sound',
+  };
+  assert.equal(songs.length, 4);
+  assert.equal(version, 1);
+  for (const song of songs) {
+    assert.equal(song.lyric, expected[song.id], `${song.id} lyric`);
+    assert.equal(typeof song.lyric === 'string' && !song.lyric.includes('\n'), true, 'one line only');
+  }
+});
+
+test('10-01: searchLibrary returns null for an empty query and grouped ids otherwise', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  assert.equal(searchLibrary(''), null);
+  assert.equal(searchLibrary('   '), null);
+  assert.equal(searchLibrary(undefined), null);
+  const none = searchLibrary('zzzz');
+  assert.deepEqual(none, { songs: [], scales: [], chords: [], pairs: [], progressions: [] });
+  // 10 IN-01: text that folds to nothing is a query with no match, never "no query".
+  for (const raw of ['?!', '\u2161', '  ...  ', '\u00bf\u00a1']) {
+    assert.deepEqual(searchLibrary(raw), none, `${JSON.stringify(raw)} shows the empty state`);
+  }
+});
+
+test('10-01: searchLibrary is case- and accent-insensitive', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  assert.deepEqual(searchLibrary('AMAZING').songs, ['amazingGrace']);
+  assert.deepEqual(searchLibrary('amazing').songs, ['amazingGrace']);
+  assert.deepEqual(searchLibrary('Amazíng').songs, ['amazingGrace']);
+  assert.deepEqual(searchLibrary('AMAZING'), searchLibrary('amazing'));
+});
+
+test('10-01: searchLibrary matches family words through the alias table', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  assert.deepEqual(searchLibrary('pentatonic').scales, ['minPent', 'majPent']);
+  const blues = searchLibrary('blues');
+  assert.ok(blues.scales.includes('blues'));
+  assert.ok(blues.progressions.includes('12-bar-blues'));
+  assert.ok(blues.progressions.includes('blues-quick-change'));
+  assert.ok(searchLibrary('hymn').songs.includes('amazingGrace'));
+  assert.ok(searchLibrary('a minor').chords.includes('Am'));
+});
+
+test('10-01: searchLibrary anchors on word starts, so I-IV-V never matches I-vi-IV-V', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  const ascii = searchLibrary('I-IV-V');
+  assert.deepEqual(ascii.progressions, ['I-IV-V']);
+  assert.deepEqual(searchLibrary('I–IV–V'), ascii, 'the en dash form folds to the same query');
+  const am = searchLibrary('am');
+  assert.ok(am.chords.includes('Am'));
+  assert.deepEqual(am.pairs, ['E-Am', 'Am-C', 'Em-Am', 'C-Am-Dm-G', 'Am-Dm-G-C']);
+  assert.ok(am.songs.includes('amazingGrace'));
+});
+
+test('10 IN-03: lyric words are not indexed; titles and aliases still match', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  // "glory" and "gonna" are lyric words; only the title "Amazing Grace" still starts with g.
+  assert.deepEqual(searchLibrary('g').songs, ['amazingGrace'], 'the G chord query lists no song through a lyric word');
+  assert.ok(searchLibrary('g').chords.includes('G'));
+  for (const word of ['glory', 'gonna', 'banjo', 'alabama', 'loved ones']) {
+    assert.deepEqual(searchLibrary(word).songs, [], `${word} is lyric-only`);
+  }
+  assert.deepEqual(searchLibrary('grace').songs, ['amazingGrace'], 'a title word still matches');
+  assert.deepEqual(searchLibrary('foster').songs, ['ohSusanna'], 'an alias still matches');
+  const source = fs.readFileSync(new URL('../app/src/content.js', import.meta.url), 'utf8');
+  assert.ok(!/haystack\(\[[^\]]*song\.lyric/.test(source), 'the song haystack leaves the lyric out');
+});
+
+test('10 IN-02: spaces work like the hyphen and arrow separators, still word-start anchored', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  assert.deepEqual(searchLibrary('ii V I').progressions, ['ii-V-I']);
+  assert.deepEqual(searchLibrary('I V vi IV').progressions, ['I-V-vi-IV']);
+  assert.deepEqual(searchLibrary('I V vi IV'), searchLibrary('I-V-vi-IV'));
+  assert.deepEqual(searchLibrary('I IV V').progressions, ['I-IV-V'], 'never inside I vi IV V');
+  assert.deepEqual(searchLibrary('am c').pairs, ['Am-C']);
+  assert.deepEqual(searchLibrary('am c'), searchLibrary('Am \u2192 C'));
+  assert.deepEqual(searchLibrary('c am dm g').pairs, ['C-Am-Dm-G']);
+});
+
+test('10-01: searchLibrary caps the folded query at 64 characters and never throws', async () => {
+  const { searchLibrary } = await import('../app/src/content.js');
+  assert.doesNotThrow(() => searchLibrary('z'.repeat(500)));
+  assert.deepEqual(searchLibrary('blues' + 'x'.repeat(500)), searchLibrary('blues' + 'x'.repeat(59)));
+  assert.doesNotThrow(() => searchLibrary('(.*+?[]{}\\^$|'));
+});
+
+test('10-01: content.js imports nothing and builds no RegExp from the query', () => {
+  const source = fs.readFileSync(new URL('../app/src/content.js', import.meta.url), 'utf8');
+  assert.ok(!/^import\b/m.test(source), 'content.js stays tier 0');
+  assert.ok(!source.includes('new RegExp'), 'no RegExp constructed from input');
+  assert.match(source, /export function searchLibrary\(query\)/);
+});

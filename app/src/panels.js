@@ -4,24 +4,38 @@
 // All values are written with textContent; templates are fixed copy only.
 import {
   KEYS, KEY_NAMES, SCALES, CHORD_FAMILIES, CHORD_PAIRS, PROGRESSIONS, SONGS, DEGREES, scaleById,
-  chordById, chordPairById, progressionById, songById,
+  chordById, chordPairById, progressionById, songById, searchLibrary,
 } from './content.js';
 import { positionsForScale, OPEN, FRETS } from './theory.js';
 import { daysBetween, familyLevelCounts, lightLevelOf, skillFamily, LIGHT_FAMILIES } from './progress.js';
 
 const $ = id => document.getElementById(id);
-const TABS = ['scales', 'chords', 'progressions', 'songs'];
+// 10-02: the Library leads with Songs (LIB-03). The order is the tablist's arrow-key order.
+const TABS = ['songs', 'scales', 'chords', 'progressions'];
 const TAB_IDS = { scales: 'tab-scales', chords: 'tab-chords', progressions: 'tab-progressions', songs: 'tab-songs' };
+// Each Library tab's card list, prebuilt once at creation (10-02).
+const CARD_LISTS = { songs: 'songCards', scales: 'scaleCards', chords: 'chordCards', progressions: 'progressionCards' };
+// The search result group each family's rows sit in (10-03); chord pairs and shapes share Chords.
+const SEARCH_GROUP_OF = {
+  song: 'searchGroupSongs', scale: 'searchGroupScales', pair: 'searchGroupChords', chord: 'searchGroupChords',
+  progression: 'searchGroupProgressions',
+};
 // The four main views (Phase 6). This tier may not import settings.js, so the list is repeated
 // here and a shell test pins it equal to the settings allow-list `VIEWS`.
 export const NAV_VIEWS = ['today', 'practice', 'progress', 'library'];
 // Both tablists carry the same four tabs: `pill-*` on desktop and `bar-*` on the phone.
 const NAV_PREFIXES = ['pill', 'bar'];
-// The Library's primary action names the family tab it will open in Practice (06-02).
+// The Library's primary action names the family tab it will open in Practice (06-02). Songs,
+// progressions and chords open their browse subject, not a drill, so their label says Open
+// (10-02, 10 IN-06).
 export const CTA_LABEL = {
-  scales: 'Practise this scale', chords: 'Practise this chord',
-  progressions: 'Practise this progression', songs: 'Practise this song',
+  scales: 'Practise this scale', chords: 'Open this chord',
+  progressions: 'Open this progression', songs: 'Open this song',
 };
+// A completed recall whose self-report has not been given yet (10 IN-07). Guided recalls never
+// complete, so they never wait for a report.
+export const reportPendingOf = summary => !!(summary && summary.recall
+  && summary.recall.completed === true && !summary.recall.selfReport);
 // Imported skill content is data, never trusted to be a real content id (CR-02).
 const ownEntry = (map, key) => (typeof key === 'string' && Object.hasOwn(map, key) ? map[key] : null);
 const keyPcOf = content => (Number.isInteger(content.keyPc) && content.keyPc >= 0 && content.keyPc <= 11
@@ -45,9 +59,9 @@ function songSectionOf(content = {}) {
 }
 const MICROCOPY = {
   scales: 'Press Start drill to practise this position with a count-in and metronome.',
-  chords: 'Browse only — chord-change drills run from the drill stage on the Scales tab.',
-  progressions: 'Browse only — play-alongs run from the drill stage on the Scales tab.',
-  songs: 'Browse only — play-alongs run from the drill stage on the Scales tab.',
+  chords: 'Browse only — chord-change drills start from a chord-pair card in Library.',
+  progressions: 'Browse only — pick a bar, then press Play progression in Library to play along.',
+  songs: 'Browse only — pick a bar, then press Play song in Library to play along from that section.',
 };
 // The stage lives under the Scales-tab microcopy, so that one line follows the family.
 const FAMILY_MICROCOPY = {
@@ -197,8 +211,11 @@ const PAUSE_REASON = {
 };
 const DIRECTION = { up: 'Up', down: 'Down', updown: 'Up & down' };
 // Selection is locked while a pass is live or awaiting its boundary decision. The tempo
-// plane is its own list because the chord family edits it *at* the boundary (A-38).
-const LOCKED_IDS = ['key', 'scale', 'position', 'direction'];
+// plane is its own list because the chord family edits it *at* the boundary (A-38). The Songs,
+// Progressions and Chords pickers lock too: a Library tab stays browsable mid-pass, so a live
+// picker could swap the item the run is credited to (10 CR-01).
+const LOCKED_IDS = ['key', 'scale', 'position', 'direction',
+  'song', 'songKey', 'playSong', 'progression', 'progressionKey', 'playProgression', 'chord', 'voicing'];
 const TEMPO_IDS = ['bpm', 'bpmDown5', 'bpmDown1', 'bpmUp1', 'bpmUp5', 'bpmTap'];
 const KEY_PLANE_IDS = ['progressionKey', 'songKey', 'playKey'];
 
@@ -1755,10 +1772,180 @@ export function createPanels({
   onLearn = () => {}, onLessonClose = () => {}, onLessonStart = () => {}, onPowerChord = () => {}, onStartHere = () => {}, onLessonListen = () => {},
   onTunerStart = () => {}, onTunerStop = () => {}, onPowerPractice = () => {},
   onPath = () => {}, onLessonSection = () => {}, onView = () => {}, onPractiseSelection = () => {},
-  onMoreClose = () => {},
+  onMoreClose = () => {}, onOpenItem = () => {}, onChangeInLibrary = () => {},
 } = {}) {
   const tabs = TABS.map(t => $(TAB_IDS[t]));
   const tabpanel = $('tabpanel');
+  // The Library tab on screen (10-02): view state only, never settings.tab and never saved.
+  let shownLibraryTab = 'songs';
+
+  // ---------- Library cards (10-02, LIB-01/LIB-03) ----------
+  // Every card is built once here with createElement/textContent; renderLibrary only rewrites
+  // a card's meta, chord chips and lamps when that card's own key string changes.
+  const libraryCards = [];
+  const cardParts = new Map();
+  function libNode(tag, className = '', text = null) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== null) node.textContent = text;
+    return node;
+  }
+  function buildCard(listId, family, id, title, { meta = '', lyric = '', chords = false, lamps = true } = {}) {
+    const list = $(listId);
+    if (!list) return;
+    const card = libNode('button', 'lib-card');
+    card.type = 'button';
+    card.dataset.family = family;
+    card.dataset.id = id;
+    card.setAttribute('aria-label', `Open ${title} in Practice`);
+    // The label names the action, so everything else the card shows (meta, chord line, lyric and
+    // lamps) stays reachable as the description, in reading order (10 IN-04).
+    const described = [];
+    const metaNode = libNode('span', 'meta', meta);
+    metaNode.id = `meta-${family}-${id}`;
+    described.push(metaNode.id);
+    const head = libNode('span', 't');
+    head.append(libNode('b', '', title), metaNode);
+    card.append(head);
+    const parts = { meta: metaNode, chords: null, verses: null, key: '' };
+    if (chords) {
+      parts.chords = libNode('span', 'chordline');
+      parts.chords.id = `chords-${family}-${id}`;
+      described.push(parts.chords.id);
+      card.append(parts.chords);
+    }
+    // A span, not a <p>: a button may hold phrasing content only.
+    if (lyric) {
+      const lyricNode = libNode('span', 'lyric', lyric);
+      lyricNode.id = `lyric-${family}-${id}`;
+      described.push(lyricNode.id);
+      card.append(lyricNode);
+    }
+    if (lamps) {
+      parts.verses = libNode('span', 'verses');
+      parts.verses.id = `lamps-${family}-${id}`;
+      described.push(parts.verses.id);
+      card.append(parts.verses);
+    }
+    card.setAttribute('aria-describedby', described.join(' '));
+    const item = libNode('li');
+    item.append(card);
+    list.append(item);
+    libraryCards.push(card);
+    cardParts.set(`${family}:${id}`, parts);
+  }
+  function buildLibraryCards() {
+    for (const song of SONGS) {
+      buildCard('songCards', 'song', song.id, song.title, {
+        lyric: typeof song.lyric === 'string' ? song.lyric : '', chords: true,
+      });
+    }
+    for (const scale of SCALES) buildCard('scaleCards', 'scale', scale.id, scale.name);
+    // Chord pairs carry lamps (a skill exists); single chord shapes do not, since nothing records them.
+    for (const pair of CHORD_PAIRS) buildCard('chordCards', 'pair', pair.id, pair.label, { meta: 'Chord change' });
+    for (const chord of CHORD_FAMILIES) {
+      const count = Array.isArray(chord.voicings) ? chord.voicings.length : 0;
+      buildCard('chordCards', 'chord', chord.id, chord.name, {
+        meta: `Chord shape · ${count} ${count === 1 ? 'voicing' : 'voicings'}`, lamps: false,
+      });
+    }
+    for (const prog of PROGRESSIONS) buildCard('progressionCards', 'progression', prog.id, prog.name);
+  }
+
+  // ---------- Library search (10-03, LIB-04) ----------
+  // One result row per item, built once into four groups; a keystroke only toggles `hidden` on
+  // rows and groups. The query lives in this closure and is never saved.
+  const searchRows = [];
+  const SEARCH_EMPTY_TEXT = 'No songs, scales, chords or progressions match.';
+  let searchQuery = '';
+  let searchWasEmpty = false;
+  function buildSearchRow(listId, family, id, name, meta) {
+    const list = $(listId);
+    if (!list) return;
+    const row = libNode('button', 'search-row');
+    row.type = 'button';
+    row.dataset.family = family;
+    row.dataset.id = id;
+    row.append(libNode('b', '', name), libNode('span', 'meta', meta));
+    const item = libNode('li');
+    item.append(row);
+    list.append(item);
+    searchRows.push({ row, item, group: SEARCH_GROUP_OF[family], family, id });
+  }
+  function buildSearchRows() {
+    for (const song of SONGS) buildSearchRow('searchSongs', 'song', song.id, song.title, 'Song');
+    for (const scale of SCALES) buildSearchRow('searchScales', 'scale', scale.id, scale.name, 'Scale');
+    for (const pair of CHORD_PAIRS) buildSearchRow('searchChords', 'pair', pair.id, pair.label, 'Chord change');
+    for (const chord of CHORD_FAMILIES) buildSearchRow('searchChords', 'chord', chord.id, chord.name, 'Chord shape');
+    for (const prog of PROGRESSIONS) buildSearchRow('searchProgressions', 'progression', prog.id, prog.name, 'Progression');
+  }
+  function applySearch(value) {
+    searchQuery = String(value || '');
+    const hits = searchLibrary(searchQuery);
+    const searching = hits !== null;
+    $('searchResults').hidden = !searching;
+    $('tabs').hidden = searching;
+    if (tabpanel) tabpanel.hidden = searching;
+    // The tab CTA names the hidden tab's item, so it hides with the tabs while results show.
+    if ($('libraryCta')) $('libraryCta').hidden = searching;
+    // No query, no count: #librarySearch is described by #searchCount, so a stale "0 results"
+    // must never be read on focus while the tabs show (10 IN-05).
+    if (!searching) { searchWasEmpty = false; $('searchCount').textContent = ''; return; }
+    const keep = {
+      song: new Set(hits.songs), scale: new Set(hits.scales), pair: new Set(hits.pairs),
+      chord: new Set(hits.chords), progression: new Set(hits.progressions),
+    };
+    const shownIn = {};
+    let count = 0;
+    for (const entry of searchRows) {
+      const shown = keep[entry.family].has(entry.id);
+      entry.item.hidden = !shown;
+      if (shown) { count++; shownIn[entry.group] = true; }
+    }
+    for (const group of Object.values(SEARCH_GROUP_OF)) {
+      if ($(group)) $(group).hidden = !shownIn[group];
+    }
+    $('searchCount').textContent = `${count} ${count === 1 ? 'result' : 'results'}`;
+    // The empty state is visible text inside the Library (#feedback is hidden here) plus one
+    // announcement per transition into empty, through the single live region (Pitfall 5).
+    const empty = count === 0;
+    $('searchEmpty').hidden = !empty;
+    $('searchEmpty').textContent = empty ? SEARCH_EMPTY_TEXT : '';
+    if (empty && !searchWasEmpty) announce(SEARCH_EMPTY_TEXT);
+    searchWasEmpty = empty;
+  }
+  // One lamp: a dot-count swatch (data-level only for an owned level 0..3) and the level in words,
+  // `owned: Anchors` or `Not started`, so the lamp never rests on colour alone (Phase 9 convention).
+  function lampNode({ name = '', repeats = 1, level = -1 } = {}) {
+    const group = libNode('span', 'vz');
+    const swatch = libNode('span', 'own-swatch');
+    swatch.setAttribute('aria-hidden', 'true');
+    const owned = Number.isInteger(level) && level >= 0 && level < HINT_LEVEL_NAMES.length;
+    if (owned) swatch.setAttribute('data-level', String(level));
+    const status = owned ? 'owned: ' + ownedLevelName(level) : ownedLevelName(-1);
+    const token = sectionToken(name, repeats);
+    group.append(swatch, libNode('span', '', token ? `${token} · ${status}` : status));
+    return group;
+  }
+  function renderLibrary(model = {}) {
+    const source = model && typeof model === 'object' ? model : {};
+    const families = [['song', source.songs], ['scale', source.scales], ['pair', source.pairs], ['progression', source.progressions]];
+    for (const [family, items] of families) {
+      for (const item of Array.isArray(items) ? items : []) {
+        const parts = item && typeof item.id === 'string' ? cardParts.get(`${family}:${item.id}`) : null;
+        if (!parts) continue;
+        const lamps = Array.isArray(item.sections) ? item.sections : [{ name: '', repeats: 1, level: item.level }];
+        const chords = Array.isArray(item.chords) ? item.chords.map(String) : [];
+        const meta = typeof item.meta === 'string' ? item.meta : parts.meta.textContent;
+        const key = JSON.stringify([meta, chords, lamps.map(l => [l.name, l.repeats, l.level])]);
+        if (key === parts.key) continue;
+        parts.key = key;
+        parts.meta.textContent = meta;
+        if (parts.chords) parts.chords.replaceChildren(...chords.map(name => libNode('span', '', name)));
+        if (parts.verses) parts.verses.replaceChildren(...lamps.map(lampNode));
+      }
+    }
+  }
   // The view on screen (Phase 6). Declared first so the boundary rule can read it from any setter.
   let currentView = 'today';
   const dots = [...$('beatDots').children];
@@ -1833,6 +2020,23 @@ export function createPanels({
         ? PRACTISE_FAMILY_NAMES[settings.drillFamily] : PRACTISE_FAMILY_NAMES.scaleRun;
       title = `${keyName} ${scale.name}`;
       sub = `${position ? position.label + ' · fret ' + position.anchor : 'Whole neck'} · ${settings.bpm} BPM · ${family}`;
+      // 10-04 (LIB-03/KEEP-02): the stage names the loaded item, not the scale behind it. Every id
+      // resolves own-key; a missing one keeps the key-and-scale title above.
+      const song = settings.drillFamily === 'song' ? ownEntry(songById, settings.songId) : null;
+      const progression = settings.drillFamily === 'progression' ? ownEntry(progressionById, settings.progressionId) : null;
+      const pair = settings.drillFamily === 'chordChanges' ? ownEntry(chordPairById, settings.chordPairId) : null;
+      if (song) {
+        const sections = Array.isArray(song.sections) ? song.sections : [];
+        const section = sections.find(entry => entry && entry.id === settings.songSectionId) || sections[0] || null;
+        title = song.title;
+        sub = `${section ? sectionToken(section.name, section.repeats) : 'Song'} · ${settings.bpm} BPM · ${family}`;
+      } else if (progression) {
+        title = `${progression.name} in ${keyName}`;
+        sub = `${settings.bpm} BPM · ${family}`;
+      } else if (pair) {
+        title = pair.label;
+        sub = `${settings.bpm} BPM · ${family}`;
+      }
     } else if (tab === 'chords') {
       const chord = ownEntry(chordById, settings.chordId) || CHORD_FAMILIES[0];
       const voicing = (view.voicings || []).find(entry => entry.id === settings.voicingId);
@@ -1886,18 +2090,27 @@ export function createPanels({
     $('voicing').value = options.some(o => o.value === selectedId) ? selectedId : (options[0] ? options[0].value : '');
   }
 
-  function setTabVisual(tab) {
+  // 10-02 splits the old tab painter in two. The Library tab shown (in-memory) owns the tablist,
+  // the CTA, the picker rows and the card lists; the Practice subject (settings.tab) owns the
+  // scale chips, the chord detail, the bar chart and the microcopy.
+  function setLibraryTabVisual(tab) {
+    if (!TABS.includes(tab)) return;
+    shownLibraryTab = tab;
     TABS.forEach((name, i) => {
       const active = name === tab;
       tabs[i].setAttribute('aria-selected', active ? 'true' : 'false');
       tabs[i].tabIndex = active ? 0 : -1;
     });
     if (tabpanel) tabpanel.setAttribute('aria-labelledby', TAB_IDS[tab]);
-    if ($('libraryCta')) $('libraryCta').textContent = CTA_LABEL[tab] || CTA_LABEL.scales;
-    $('controls-scales').hidden = tab !== 'scales';
-    $('controls-chords').hidden = tab !== 'chords';
-    $('controls-progressions').hidden = tab !== 'progressions';
-    $('controls-songs').hidden = tab !== 'songs';
+    if ($('libraryCta')) $('libraryCta').textContent = CTA_LABEL[tab] || CTA_LABEL.songs;
+    for (const name of TABS) {
+      $(`controls-${name}`).hidden = name !== tab;
+      const list = $(CARD_LISTS[name]);
+      if (list) list.hidden = name !== tab;
+    }
+  }
+
+  function setSubjectVisual(tab) {
     $('scaleChips').hidden = tab !== 'scales';
     $('chordDetail').hidden = tab !== 'chords';
     $('chart').hidden = !(tab === 'progressions' || tab === 'songs');
@@ -2079,9 +2292,15 @@ export function createPanels({
 
   function render(settings, view = {}) {
     setFamilyPicker(settings.drillFamily || 'scaleRun', false);
-    setTabVisual(settings.tab);
-    fillPositions(view.positions || [], settings.positionId);
-    fillVoicings(view.voicings || [], settings.voicingId);
+    // The Library tab never follows settings.tab: main passes its in-memory libraryTab (10-02).
+    setLibraryTabVisual(TABS.includes(view.libraryTab) ? view.libraryTab : shownLibraryTab);
+    setSubjectVisual(settings.tab);
+    if (view.library) renderLibrary(view.library);
+    // The Library picker rows follow the library model, so #position and #voicing stay right
+    // whatever the Practice subject is (10-02); a view without one keeps the subject's lists.
+    const lib = view.library && typeof view.library === 'object' ? view.library : {};
+    fillPositions(Array.isArray(lib.positions) ? lib.positions : (view.positions || []), settings.positionId);
+    fillVoicings(Array.isArray(lib.voicings) ? lib.voicings : (view.voicings || []), settings.voicingId);
 
     $('key').value = String(settings.keyPc);
     $('progressionKey').value = String(settings.keyPc);
@@ -2194,7 +2413,7 @@ export function createPanels({
 
   function select(tab, focus = false, notify = true) {
     if (!TABS.includes(tab)) return;
-    setTabVisual(tab);
+    setLibraryTabVisual(tab);
     if (focus) $(TAB_IDS[tab]).focus();
     if (notify) onTab(tab);
   }
@@ -2202,9 +2421,19 @@ export function createPanels({
   // ---------- Drill surfaces ----------
   function setLocked(locked) {
     for (const id of LOCKED_IDS) $(id).disabled = locked;
-    for (const tab of tabs) tab.disabled = locked;
+    setOpensLocked(locked);
     $('lockedHelper').hidden = !locked;
   }
+  // 10-02: the cards lock with the pickers; the tabs stay usable, since a tab click only
+  // changes which list the Library shows (RESEARCH Pattern 2). 10-03: result rows lock with the
+  // cards; the search field stays usable. 10 IN-07: a recall result still waiting for its
+  // self-report locks these opens (and the two Play buttons) on its own, since opening an item
+  // would close that result.
+  function setOpensLocked(locked) {
+    for (const card of libraryCards) card.disabled = locked;
+    for (const { row } of searchRows) row.disabled = locked;
+  }
+  const OPEN_PLAY_IDS = ['playSong', 'playProgression'];
 
   // The tempo is locked during count-in, active and paused, and live at idle, the pass
   // review and the result. It never changes inside a phrase (CHORD-05, T-03-10).
@@ -2595,6 +2824,12 @@ export function createPanels({
     // A-38: the tempo plane is live at the boundary, so it has its own lock and is
     // disabled only while a pass is actually running.
     setTempoLocked(playing);
+    // 10 IN-07: a completed recall with no self-report yet keeps its result: no card, row or
+    // Play button may replace it (the pickers stay live; they only pick, never open).
+    if (phase === 'result' && reportPendingOf(summary)) {
+      setOpensLocked(true);
+      for (const id of OPEN_PLAY_IDS) $(id).disabled = true;
+    }
     // The guidance channel fades with the same level as the LEDs: chips disappear
     // from Anchors, and the browser chart/detail disappear at No lights.
     $('appShell').classList.toggle('cue-fade', available && playing && hintLevel >= 1);
@@ -4442,7 +4677,7 @@ export function createPanels({
       else onTunerStop();
     });
     $('tunerClose').addEventListener('click', () => onTunerStop());
-    if ($('changeInLibrary')) $('changeInLibrary').addEventListener('click', () => onView('library'));
+    if ($('changeInLibrary')) $('changeInLibrary').addEventListener('click', () => onChangeInLibrary());
     // The empty Progress view's one action goes through the same switcher (the run lock applies).
     if ($('openToday')) $('openToday').addEventListener('click', () => onView('today'));
     if ($('libraryCta')) $('libraryCta').addEventListener('click', () => onPractiseSelection());
@@ -4565,6 +4800,33 @@ export function createPanels({
       onBar(+btn.dataset.bar);
     });
 
+    // One delegated listener per Library card list (10-02). main re-checks the family and the id
+    // against its own tables, so the dataset is never trusted (T-10-05).
+    for (const listId of Object.values(CARD_LISTS)) {
+      const list = $(listId);
+      if (!list) continue;
+      list.addEventListener('click', e => {
+        const target = e && e.target;
+        const card = target && typeof target.closest === 'function' ? target.closest('.lib-card') : null;
+        if (!card || card.disabled) return;
+        onOpenItem(card.dataset.family, card.dataset.id);
+      });
+    }
+
+    // The Library search (10-03): every keystroke filters the prebuilt rows; clearing restores the tab.
+    const search = $('librarySearch');
+    if (search) search.addEventListener('input', () => applySearch(search.value));
+    // A result opens exactly as its card does: main re-checks family and id (T-10-10).
+    const results = $('searchResults');
+    if (results) {
+      results.addEventListener('click', e => {
+        const target = e && e.target;
+        const row = target && typeof target.closest === 'function' ? target.closest('.search-row') : null;
+        if (!row || row.disabled) return;
+        onOpenItem(row.dataset.family, row.dataset.id);
+      });
+    }
+
     // The main navigation: eight tabs, two bars, one handler. Click, Enter and Space all arrive as
     // a click and go to `onView`, which owns the run lock. Arrow keys move focus with roving
     // tabindex and activate the target, except a locked tab: moving focus onto it is silent.
@@ -4605,9 +4867,12 @@ export function createPanels({
   }
 
   fillStaticOptions();
+  buildLibraryCards();
+  buildSearchRows();
   wire();
   return {
     render, setStatus, setConnection, openConnMenu, closeConnMenu, isConnMenuOpen, setFeedback, announce, setLights, select, revealLessonSection,
+    renderLibrary,
     setDrill, renderBeat, resetBeat, setNowPlaying, setProgress, setTempoValue,
     renderStageChart, setDimmer,
     setTapPreview, setSelfReport, setHint, setPassReview, setStageMode,
